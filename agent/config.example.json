@@ -1,0 +1,9 @@
+{
+  "api_base_url": "http://192.168.1.28:8000",
+  "equipment_id": 1,
+  "agent_token": "COLE_AQUI_O_TOKEN_GERADO_NO_ADMIN",
+  "interval_seconds": 60,
+  "collect_logged_user": false,
+  "local_notifications_enabled": true,
+  "notification_cooldown_minutes": 30
+}

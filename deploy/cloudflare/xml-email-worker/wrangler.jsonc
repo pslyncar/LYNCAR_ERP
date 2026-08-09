@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "lyncar-xml-email-inbound",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-18",
+  "workers_dev": false,
+  "vars": {
+    "API_BASE_URL": "https://api.lyncar.com.br",
+    "INBOUND_DOMAIN": "lyncar.com.br",
+    "MAX_XML_BYTES": "5000000"
+  }
+}

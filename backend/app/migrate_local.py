@@ -1,0 +1,871 @@
+from sqlalchemy import text
+
+from app.core.database import Base, engine
+from app.core.master_database import MasterSessionLocal
+from app.models.company import Company
+from app.models import access_control, cash_closing, client, company, equipment, equipment_status, fiscal, fiscal_assistant, monitoring, payable, pdv_cash_session, pdv_operator, pdv_terminal, product, product_batch, product_composition, production_order, receivable, sale, service_contract, service_order, stock_entry, stock_movement, supplier, ticket, user, xml_inbox  # noqa: F401
+from app.services.access_control import seed_default_access_control
+from app.migrate_master import main as migrate_master
+from app.services.master_user_index import upsert_user_index
+from app.services.tenancy import seed_default_company
+
+
+CLIENT_COLUMNS = [
+    ("person_type", "VARCHAR(2) NOT NULL DEFAULT 'PF'"),
+    ("trade_name", "VARCHAR(180)"),
+    ("document_number", "VARCHAR(30)"),
+    ("state_registration", "VARCHAR(40)"),
+    ("municipal_registration", "VARCHAR(40)"),
+    ("tax_contributor_type", "VARCHAR(20)"),
+    ("city_code", "VARCHAR(20)"),
+    ("country_code", "VARCHAR(4)"),
+    ("country_name", "VARCHAR(80)"),
+    ("suframa", "VARCHAR(20)"),
+    ("contact_person", "VARCHAR(150)"),
+    ("mobile_phone", "VARCHAR(40)"),
+    ("secondary_email", "VARCHAR(180)"),
+    ("address_number", "VARCHAR(20)"),
+    ("address_complement", "VARCHAR(120)"),
+    ("neighborhood", "VARCHAR(120)"),
+    ("city", "VARCHAR(120)"),
+    ("state", "VARCHAR(2)"),
+    ("zip_code", "VARCHAR(20)"),
+    ("monthly_fee", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("monthly_due_day", "INTEGER"),
+    ("allow_credit", "BOOLEAN NOT NULL DEFAULT false"),
+    ("credit_limit", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("credit_status", "VARCHAR(30) NOT NULL DEFAULT 'liberado'"),
+    ("payment_terms", "VARCHAR(80)"),
+    ("billing_notes", "TEXT"),
+]
+
+EQUIPMENT_COLUMNS = [
+    ("asset_tag", "VARCHAR(80)"),
+    ("location", "VARCHAR(120)"),
+    ("responsible_user", "VARCHAR(150)"),
+    ("agent_version", "VARCHAR(40)"),
+    ("last_ip_address", "VARCHAR(60)"),
+    ("last_logged_user", "VARCHAR(150)"),
+]
+
+ALERT_COLUMNS = [
+    ("metric_value", "NUMERIC(5, 2) NOT NULL DEFAULT 0"),
+]
+
+EQUIPMENT_CURRENT_STATUS_COLUMNS = [
+    ("storage_volumes", "JSON NOT NULL DEFAULT '[]'"),
+]
+
+SERVICE_ORDER_COLUMNS = [
+    ("received_equipment", "VARCHAR(180)"),
+    ("waiting_reason", "VARCHAR(220)"),
+]
+
+PRODUCT_COLUMNS = [
+    ("barcode", "VARCHAR(80)"),
+    ("image_url", "TEXT"),
+    ("brand", "VARCHAR(100)"),
+    ("model", "VARCHAR(100)"),
+    ("category", "VARCHAR(100)"),
+    ("stock_location", "VARCHAR(120)"),
+    ("tracks_batch", "BOOLEAN NOT NULL DEFAULT false"),
+    ("initial_batch_number", "VARCHAR(80)"),
+    ("initial_expiration_date", "DATE"),
+    ("offer_price", "NUMERIC(12, 4)"),
+    ("offer_start_at", "TIMESTAMP WITH TIME ZONE"),
+    ("offer_end_at", "TIMESTAMP WITH TIME ZONE"),
+    ("purchase_total_cost", "NUMERIC(12, 2)"),
+    ("purchase_quantity", "NUMERIC(12, 3)"),
+    ("purchase_conversion_enabled", "BOOLEAN NOT NULL DEFAULT false"),
+    ("purchase_invoice_unit", "VARCHAR(20)"),
+    ("purchase_package_factor", "NUMERIC(12, 4)"),
+    ("purchase_package_barcode", "VARCHAR(80)"),
+    ("average_cost", "NUMERIC(12, 4)"),
+    ("stock_value", "NUMERIC(14, 4) NOT NULL DEFAULT 0"),
+    ("margin_percent", "NUMERIC(7, 2)"),
+    ("fiscal_received_quantity", "NUMERIC(12, 3) NOT NULL DEFAULT 0"),
+    ("fiscal_issued_quantity", "NUMERIC(12, 3) NOT NULL DEFAULT 0"),
+    ("fiscal_available_quantity", "NUMERIC(12, 3) NOT NULL DEFAULT 0"),
+    ("fiscal_entry_count", "INTEGER NOT NULL DEFAULT 0"),
+    ("ncm", "VARCHAR(20)"),
+    ("cest", "VARCHAR(20)"),
+    ("cfop_sale", "VARCHAR(10)"),
+    ("origin", "VARCHAR(2)"),
+    ("cst", "VARCHAR(10)"),
+    ("csosn", "VARCHAR(10)"),
+    ("icms_rate", "NUMERIC(7, 4)"),
+    ("pis_rate", "NUMERIC(7, 4)"),
+    ("cofins_rate", "NUMERIC(7, 4)"),
+    ("ipi_rate", "NUMERIC(7, 4)"),
+    ("iss_rate", "NUMERIC(7, 4)"),
+    ("municipal_service_code", "VARCHAR(40)"),
+    ("tax_rate", "NUMERIC(7, 4)"),
+    ("fiscal_notes", "TEXT"),
+    ("ibs_cbs_cst", "VARCHAR(10)"),
+    ("ibs_cbs_classification", "VARCHAR(20)"),
+    ("cbs_rate", "NUMERIC(7, 4)"),
+    ("ibs_state_rate", "NUMERIC(7, 4)"),
+    ("ibs_city_rate", "NUMERIC(7, 4)"),
+    ("selective_tax_cst", "VARCHAR(10)"),
+    ("selective_tax_classification", "VARCHAR(20)"),
+    ("selective_tax_rate", "NUMERIC(7, 4)"),
+    ("new_tax_system", "BOOLEAN NOT NULL DEFAULT false"),
+    ("old_tax_system_notes", "TEXT"),
+    ("new_tax_system_notes", "TEXT"),
+]
+
+STOCK_ENTRY_COLUMNS = [
+    ("confirmed_at", "TIMESTAMP WITH TIME ZONE"),
+]
+
+STOCK_ENTRY_ITEM_COLUMNS = [
+    ("invoice_quantity", "NUMERIC(12, 3)"),
+    ("invoice_unit", "VARCHAR(20)"),
+    ("package_conversion_factor", "NUMERIC(12, 4)"),
+    ("received_quantity", "NUMERIC(12, 3)"),
+    ("batch_number", "VARCHAR(80)"),
+    ("expiration_date", "DATE"),
+    ("check_status", "VARCHAR(30) NOT NULL DEFAULT 'accepted'"),
+    ("check_notes", "TEXT"),
+    ("origin", "VARCHAR(2)"),
+    ("cst", "VARCHAR(10)"),
+    ("csosn", "VARCHAR(10)"),
+    ("icms_rate", "NUMERIC(7, 4)"),
+    ("pis_rate", "NUMERIC(7, 4)"),
+    ("cofins_rate", "NUMERIC(7, 4)"),
+    ("ipi_rate", "NUMERIC(7, 4)"),
+    ("ibs_cbs_cst", "VARCHAR(10)"),
+    ("ibs_cbs_classification", "VARCHAR(20)"),
+    ("cbs_rate", "NUMERIC(7, 4)"),
+    ("ibs_state_rate", "NUMERIC(7, 4)"),
+    ("ibs_city_rate", "NUMERIC(7, 4)"),
+    ("selective_tax_cst", "VARCHAR(10)"),
+    ("selective_tax_classification", "VARCHAR(20)"),
+    ("selective_tax_rate", "NUMERIC(7, 4)"),
+]
+
+CASH_CLOSING_COLUMNS = [
+    ("cash_session_id", "INTEGER"),
+    ("cash_register_number", "VARCHAR(10)"),
+    ("authorized_by_operator_id", "INTEGER"),
+    ("authorized_by_operator_name", "VARCHAR(150)"),
+    ("business_date", "DATE"),
+    ("crossed_business_day", "BOOLEAN NOT NULL DEFAULT false"),
+    ("business_day_cutoff_minutes", "INTEGER NOT NULL DEFAULT 180"),
+]
+
+CASH_CLOSING_MOVEMENT_COLUMNS = [
+    ("authorized_by_operator_id", "INTEGER"),
+    ("authorized_by_operator_name", "VARCHAR(150)"),
+]
+
+SALE_COLUMNS = [
+    ("cash_session_id", "INTEGER"),
+    ("consumer_cpf", "VARCHAR(14)"),
+    ("offline_client_id", "VARCHAR(80)"),
+    ("cash_register_number", "VARCHAR(10)"),
+]
+
+PDV_TERMINAL_COLUMNS = [
+    ("activation_code_hash", "VARCHAR(180)"),
+    ("activation_code_expires_at", "TIMESTAMP WITH TIME ZONE"),
+    ("activated_at", "TIMESTAMP WITH TIME ZONE"),
+    ("activation_status", "VARCHAR(30) NOT NULL DEFAULT 'active'"),
+    ("machine_name", "VARCHAR(120)"),
+    ("windows_user", "VARCHAR(120)"),
+    ("windows_version", "VARCHAR(120)"),
+    ("device_fingerprint", "VARCHAR(180)"),
+    ("current_status", "VARCHAR(30)"),
+    ("current_operator_name", "VARCHAR(150)"),
+    ("cash_opened_at", "TIMESTAMP WITH TIME ZONE"),
+    ("current_session_total_amount", "NUMERIC(12, 2)"),
+]
+
+USER_COLUMNS = [
+    ("seller_code", "VARCHAR(40)"),
+    ("must_change_password", "BOOLEAN NOT NULL DEFAULT false"),
+    ("password_changed_at", "TIMESTAMP WITH TIME ZONE"),
+]
+
+FISCAL_SETTING_COLUMNS = [
+    ("certificate_encrypted_blob", "BYTEA"),
+    ("certificate_password_encrypted", "TEXT"),
+    ("certificate_file_sha256", "VARCHAR(64)"),
+    ("pdv_nfce_enabled", "BOOLEAN NOT NULL DEFAULT false"),
+    ("address_line", "VARCHAR(180)"),
+    ("address_number", "VARCHAR(20)"),
+    ("neighborhood", "VARCHAR(120)"),
+    ("city", "VARCHAR(120)"),
+    ("zip_code", "VARCHAR(20)"),
+    ("logo_url", "TEXT"),
+]
+
+FISCAL_DOCUMENT_COLUMNS = [
+    ("cancellation_reason", "VARCHAR(255)"),
+    ("cancellation_protocol", "VARCHAR(80)"),
+    ("cancellation_status_code", "VARCHAR(20)"),
+    ("cancellation_message", "TEXT"),
+    ("cancellation_xml", "TEXT"),
+    ("operation_nature", "VARCHAR(120)"),
+    ("payment_condition", "VARCHAR(20)"),
+    ("fiscal_notes", "TEXT"),
+]
+
+PRODUCTION_ORDER_COLUMNS = [
+    ("completed_by_user_id", "INTEGER"),
+    ("canceled_by_user_id", "INTEGER"),
+    ("produced_quantity", "NUMERIC(12, 3) NOT NULL DEFAULT 0"),
+    ("estimated_unit_cost", "NUMERIC(12, 2)"),
+    ("estimated_total_cost", "NUMERIC(12, 2)"),
+    ("due_date", "DATE"),
+    ("cancellation_reason", "TEXT"),
+    ("started_at", "TIMESTAMP WITH TIME ZONE"),
+    ("completed_at", "TIMESTAMP WITH TIME ZONE"),
+    ("canceled_at", "TIMESTAMP WITH TIME ZONE"),
+]
+
+
+def column_exists(table_name: str, column_name: str, bind_engine=engine) -> bool:
+    with bind_engine.connect() as connection:
+        return column_exists_in_connection(connection, table_name, column_name)
+
+
+def column_exists_in_connection(connection, table_name: str, column_name: str) -> bool:
+    result = connection.execute(
+        text(
+            """
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = :table_name
+              AND column_name = :column_name
+            """
+        ),
+        {"table_name": table_name, "column_name": column_name},
+    )
+    return result.first() is not None
+
+
+def add_client_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in CLIENT_COLUMNS:
+            if not column_exists_in_connection(connection, "clients", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE clients ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text("ALTER TABLE clients ALTER COLUMN person_type SET DEFAULT 'PF'")
+        )
+
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_clients_document_number
+                ON clients(document_number)
+                """
+            )
+        )
+
+
+def add_equipment_columns() -> None:
+    with engine.begin() as connection:
+        for column_name, column_type in EQUIPMENT_COLUMNS:
+            if not column_exists("equipments", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE equipments ADD COLUMN {column_name} {column_type}")
+                )
+
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_equipments_asset_tag
+                ON equipments(asset_tag)
+                """
+            )
+        )
+
+
+def add_alert_columns() -> None:
+    with engine.begin() as connection:
+        for column_name, column_type in ALERT_COLUMNS:
+            if not column_exists("alerts", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE alerts ADD COLUMN {column_name} {column_type}")
+                )
+
+
+def add_equipment_current_status_columns() -> None:
+    with engine.begin() as connection:
+        for column_name, column_type in EQUIPMENT_CURRENT_STATUS_COLUMNS:
+            if not column_exists("equipment_current_status", column_name):
+                connection.execute(
+                    text(
+                        "ALTER TABLE equipment_current_status "
+                        f"ADD COLUMN {column_name} {column_type}"
+                    )
+                )
+
+
+def add_service_order_columns() -> None:
+    with engine.begin() as connection:
+        for column_name, column_type in SERVICE_ORDER_COLUMNS:
+            if not column_exists("service_orders", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE service_orders ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                """
+                UPDATE service_orders
+                SET number = 'M' || id
+                WHERE number IS NULL OR trim(number) = ''
+                """
+            )
+        )
+
+
+def add_product_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        if (
+            column_exists_in_connection(connection, "products", "cost_price")
+            and not column_exists_in_connection(connection, "products", "purchase_total_cost")
+        ):
+            connection.execute(text("ALTER TABLE products RENAME COLUMN cost_price TO purchase_total_cost"))
+        if (
+            column_exists_in_connection(connection, "products", "cost_quantity")
+            and not column_exists_in_connection(connection, "products", "purchase_quantity")
+        ):
+            connection.execute(text("ALTER TABLE products RENAME COLUMN cost_quantity TO purchase_quantity"))
+        for column_name, column_type in PRODUCT_COLUMNS:
+            if not column_exists_in_connection(connection, "products", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE products ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE products
+                    ALTER COLUMN sale_price TYPE NUMERIC(12, 4) USING sale_price::NUMERIC(12, 4),
+                    ALTER COLUMN offer_price TYPE NUMERIC(12, 4) USING offer_price::NUMERIC(12, 4)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_products_barcode
+                ON products(barcode)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_products_purchase_package_barcode
+                ON products(purchase_package_barcode)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE products
+                SET purchase_quantity = stock_quantity
+                WHERE purchase_quantity IS NULL
+                  AND purchase_total_cost IS NOT NULL
+                  AND stock_quantity > 0
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE products
+                SET average_cost = CASE
+                    WHEN average_cost IS NOT NULL THEN average_cost
+                    WHEN purchase_total_cost IS NOT NULL AND purchase_quantity IS NOT NULL AND purchase_quantity > 0
+                        THEN purchase_total_cost / purchase_quantity
+                    WHEN purchase_total_cost IS NOT NULL AND stock_quantity > 0
+                        THEN purchase_total_cost / stock_quantity
+                    ELSE 0
+                END
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE products
+                SET stock_value = COALESCE(stock_quantity, 0) * COALESCE(average_cost, 0)
+                WHERE stock_value IS NULL OR stock_value = 0
+                """
+            )
+        )
+
+
+def add_stock_entry_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in STOCK_ENTRY_COLUMNS:
+            if not column_exists_in_connection(connection, "stock_entries", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE stock_entries ADD COLUMN {column_name} {column_type}")
+                )
+        for column_name, column_type in STOCK_ENTRY_ITEM_COLUMNS:
+            if not column_exists_in_connection(connection, "stock_entry_items", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE stock_entry_items ADD COLUMN {column_name} {column_type}")
+                )
+
+
+def add_cash_closing_audit_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in CASH_CLOSING_COLUMNS:
+            if not column_exists_in_connection(connection, "cash_closings", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE cash_closings ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_cash_closings_cash_session_id
+                ON cash_closings(cash_session_id)
+                """
+            )
+        )
+        for column_name, column_type in CASH_CLOSING_MOVEMENT_COLUMNS:
+            if not column_exists_in_connection(connection, "cash_closing_movements", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE cash_closing_movements ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE stock_entry_items
+                ALTER COLUMN product_id DROP NOT NULL
+                """
+            )
+        )
+
+
+def add_sale_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in SALE_COLUMNS:
+            if not column_exists_in_connection(connection, "sales", column_name):
+                connection.execute(text(f"ALTER TABLE sales ADD COLUMN {column_name} {column_type}"))
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sales_cash_session_id
+                ON sales(cash_session_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_sales_consumer_cpf
+                ON sales(consumer_cpf)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_sales_offline_client_id
+                ON sales(offline_client_id)
+                WHERE offline_client_id IS NOT NULL AND offline_client_id <> ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE sale_items
+                    ALTER COLUMN unit_price TYPE NUMERIC(12, 4) USING unit_price::NUMERIC(12, 4)
+                """
+            )
+        )
+
+
+def add_pdv_terminal_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                ALTER TABLE pdv_terminals
+                    ALTER COLUMN terminal_key TYPE VARCHAR(180)
+                    USING terminal_key::VARCHAR(180)
+                """
+            )
+        )
+        for column_name, column_type in PDV_TERMINAL_COLUMNS:
+            if not column_exists_in_connection(connection, "pdv_terminals", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE pdv_terminals ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_pdv_terminal_cash_register_number
+                ON pdv_terminals(cash_register_number)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_pdv_terminal_terminal_key
+                ON pdv_terminals(terminal_key)
+                """
+            )
+        )
+
+
+def add_user_seller_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in USER_COLUMNS:
+            if not column_exists_in_connection(connection, "users", column_name):
+                connection.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}"))
+        connection.execute(
+            text(
+                """
+                UPDATE users
+                SET seller_code = 'V' || LPAD(id::text, 3, '0')
+                WHERE seller_code IS NULL OR seller_code = ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_seller_code
+                ON users(seller_code)
+                WHERE seller_code IS NOT NULL
+                """
+            )
+        )
+
+
+def normalize_sale_sources(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                UPDATE sales
+                SET source = 'pdv'
+                WHERE source = 'teste'
+                """
+            )
+        )
+
+
+def add_fiscal_setting_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in FISCAL_SETTING_COLUMNS:
+            if not column_exists_in_connection(connection, "company_fiscal_settings", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE company_fiscal_settings ADD COLUMN {column_name} {column_type}")
+                )
+        for column_name, column_type in FISCAL_DOCUMENT_COLUMNS:
+            if not column_exists_in_connection(connection, "fiscal_documents", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE fiscal_documents ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                """
+                UPDATE company_fiscal_settings
+                SET pdv_nfce_enabled = false
+                WHERE pdv_nfce_enabled IS NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE company_fiscal_settings
+                ALTER COLUMN pdv_nfce_enabled SET DEFAULT false,
+                ALTER COLUMN pdv_nfce_enabled SET NOT NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                ALTER TABLE stock_entries
+                ALTER COLUMN confirmed_at DROP NOT NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE stock_entry_items
+                SET received_quantity = quantity
+                WHERE received_quantity IS NULL
+                """
+            )
+        )
+
+
+def add_production_order_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in PRODUCTION_ORDER_COLUMNS:
+            if not column_exists_in_connection(connection, "production_orders", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE production_orders ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                """
+                UPDATE production_orders
+                SET produced_quantity = quantity
+                WHERE status = 'concluida'
+                  AND COALESCE(produced_quantity, 0) = 0
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                UPDATE production_orders
+                SET status = 'planejada'
+                WHERE status IS NULL OR trim(status) = ''
+                """
+            )
+        )
+
+
+def backfill_product_batches(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO product_batches (
+                    product_id,
+                    batch_number,
+                    expiration_date,
+                    quantity,
+                    unit,
+                    source_type,
+                    source_id,
+                    source_number,
+                    supplier_name,
+                    invoice_number,
+                    invoice_series,
+                    notes,
+                    active
+                )
+                SELECT
+                    item.product_id,
+                    NULLIF(trim(item.batch_number), ''),
+                    item.expiration_date,
+                    SUM(COALESCE(item.received_quantity, item.quantity)),
+                    product.unit,
+                    'stock_entry',
+                    MIN(entry.id),
+                    MIN(entry.invoice_number),
+                    MIN(entry.supplier_name),
+                    MIN(entry.invoice_number),
+                    MIN(entry.invoice_series),
+                    'Lote reconstruido pela migracao a partir de entrada de estoque.',
+                    true
+                FROM stock_entry_items item
+                JOIN stock_entries entry ON entry.id = item.stock_entry_id
+                JOIN products product ON product.id = item.product_id
+                WHERE item.product_id IS NOT NULL
+                  AND COALESCE(item.check_status, 'accepted') = 'accepted'
+                  AND COALESCE(item.received_quantity, item.quantity) > 0
+                  AND (
+                    product.tracks_batch = true
+                    OR item.batch_number IS NOT NULL
+                    OR item.expiration_date IS NOT NULL
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM product_batches existing
+                    WHERE existing.product_id = item.product_id
+                      AND COALESCE(existing.batch_number, '') = COALESCE(NULLIF(trim(item.batch_number), ''), '')
+                      AND COALESCE(existing.expiration_date, DATE '1900-01-01') =
+                          COALESCE(item.expiration_date, DATE '1900-01-01')
+                  )
+                GROUP BY
+                    item.product_id,
+                    NULLIF(trim(item.batch_number), ''),
+                    item.expiration_date,
+                    product.unit
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                INSERT INTO product_batches (
+                    product_id,
+                    batch_number,
+                    expiration_date,
+                    quantity,
+                    unit,
+                    source_type,
+                    source_id,
+                    source_number,
+                    notes,
+                    active
+                )
+                SELECT
+                    product.id,
+                    NULLIF(trim(product.initial_batch_number), ''),
+                    product.initial_expiration_date,
+                    product.stock_quantity,
+                    product.unit,
+                    'product_initial',
+                    product.id,
+                    product.internal_code,
+                    'Saldo inicial reconstruido pela migracao do cadastro do produto.',
+                    true
+                FROM products product
+                WHERE product.stock_quantity > 0
+                  AND (
+                    product.tracks_batch = true
+                    OR product.initial_batch_number IS NOT NULL
+                    OR product.initial_expiration_date IS NOT NULL
+                  )
+                  AND NOT EXISTS (
+                    SELECT 1
+                    FROM product_batches existing
+                    WHERE existing.product_id = product.id
+                  )
+                """
+            )
+        )
+
+
+def migrate_registered_tenants() -> None:
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    with MasterSessionLocal() as master_db:
+        companies = list(master_db.query(Company).all())
+
+    for registered_company in companies:
+        tenant_engine = create_engine(registered_company.database_url, pool_pre_ping=True)
+        try:
+            Base.metadata.create_all(bind=tenant_engine)
+            add_client_columns(tenant_engine)
+            add_product_columns(tenant_engine)
+            add_stock_entry_columns(tenant_engine)
+            add_cash_closing_audit_columns(tenant_engine)
+            add_sale_columns(tenant_engine)
+            add_pdv_terminal_columns(tenant_engine)
+            normalize_sale_sources(tenant_engine)
+            add_user_seller_columns(tenant_engine)
+            add_fiscal_setting_columns(tenant_engine)
+            with tenant_engine.begin() as connection:
+                connection.execute(
+                    text(
+                        """
+                        UPDATE company_fiscal_settings
+                        SET
+                            cnpj = COALESCE(NULLIF(cnpj, ''), :cnpj),
+                            state_registration = COALESCE(NULLIF(state_registration, ''), :state_registration),
+                            address_line = COALESCE(NULLIF(address_line, ''), :address_line),
+                            address_number = COALESCE(NULLIF(address_number, ''), :address_number),
+                            neighborhood = COALESCE(NULLIF(neighborhood, ''), :neighborhood),
+                            city = COALESCE(NULLIF(city, ''), :city),
+                            city_code = COALESCE(NULLIF(city_code, ''), :city_code),
+                            uf = COALESCE(NULLIF(uf, ''), :state),
+                            zip_code = COALESCE(NULLIF(zip_code, ''), :zip_code)
+                        """
+                    ),
+                    {
+                        "cnpj": registered_company.document_number,
+                        "state_registration": registered_company.state_registration,
+                        "address_line": registered_company.address_line,
+                        "address_number": registered_company.address_number,
+                        "neighborhood": registered_company.neighborhood,
+                        "city": registered_company.city,
+                        "city_code": registered_company.city_code,
+                        "state": registered_company.state,
+                        "zip_code": registered_company.zip_code,
+                    },
+                )
+            add_production_order_columns(tenant_engine)
+            backfill_product_batches(tenant_engine)
+            TenantSessionLocal = sessionmaker(
+                bind=tenant_engine,
+                autocommit=False,
+                autoflush=False,
+            )
+            with TenantSessionLocal() as tenant_db:
+                seed_default_access_control(tenant_db)
+        finally:
+            tenant_engine.dispose()
+
+
+def sync_master_user_index_from_tenants() -> None:
+    from sqlalchemy import create_engine, text
+
+    with MasterSessionLocal() as master_db:
+        companies = list(master_db.query(Company).all())
+
+    for registered_company in companies:
+        tenant_engine = create_engine(registered_company.database_url, pool_pre_ping=True)
+        try:
+            with tenant_engine.connect() as connection:
+                if (
+                    connection.execute(text("SELECT to_regclass('public.users')")).scalar()
+                    is None
+                ):
+                    continue
+                users = connection.execute(
+                    text(
+                        """
+                        SELECT id, name, lower(trim(email)) AS email, role, active
+                        FROM users
+                        WHERE email IS NOT NULL AND trim(email) <> ''
+                        ORDER BY id
+                        """
+                    )
+                ).mappings()
+                for existing_user in users:
+                    upsert_user_index(
+                        company_code=registered_company.code,
+                        company_name=registered_company.name,
+                        user_id=existing_user["id"],
+                        name=existing_user["name"],
+                        email=existing_user["email"],
+                        role=existing_user["role"],
+                        active=existing_user["active"],
+                    )
+        finally:
+            tenant_engine.dispose()
+
+
+def main() -> None:
+    migrate_master()
+    Base.metadata.create_all(bind=engine)
+    add_client_columns()
+    add_equipment_columns()
+    add_alert_columns()
+    add_equipment_current_status_columns()
+    add_service_order_columns()
+    add_product_columns()
+    add_stock_entry_columns()
+    add_cash_closing_audit_columns()
+    add_sale_columns()
+    add_pdv_terminal_columns()
+    normalize_sale_sources()
+    add_user_seller_columns()
+    add_fiscal_setting_columns()
+    add_production_order_columns()
+    backfill_product_batches()
+    from app.core.database import SessionLocal
+
+    with SessionLocal() as db:
+        seed_default_access_control(db)
+    migrate_registered_tenants()
+    sync_master_user_index_from_tenants()
+    print("Migracao local aplicada com sucesso.")
+
+
+if __name__ == "__main__":
+    main()

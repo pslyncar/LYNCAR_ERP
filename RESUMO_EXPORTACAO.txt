@@ -1,0 +1,23 @@
+﻿ERP_ATUAL_SERVIDOR
+
+Exportado em: 2026-07-17 21:43:24
+Revisado/limpo em: 2026-07-17 21:47:40
+Origem: C:\Lynkar\ERP-PAPEZZOSYNC
+Destino: F:\ERP_ATUAL_SERVIDOR_20260717-214152
+
+Conteudo:
+- Codigo-fonte atual do backend e Flutter/admin_app.
+- Scripts deploy/windows.
+- Configuracoes de projeto sem segredos.
+
+Removido da exportacao para evitar peso/segredos:
+- backend\.venv
+- backend\.env
+- admin_app\admin_flutter\.dart_tool
+- admin_app\admin_flutter\build
+- .git
+- uploads
+- __pycache__ / *.pyc
+
+Observacao:
+Este pacote e copia do codigo atual do servidor. Nao inclui banco de dados ativo, dumps, .env, certificados ou uploads.

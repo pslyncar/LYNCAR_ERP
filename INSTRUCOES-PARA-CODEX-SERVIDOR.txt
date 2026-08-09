@@ -1,0 +1,128 @@
+﻿PACOTE DO SISTEMA LYNKAR / PAPEZZOSYNC
+Gerado em: 2026-05-31
+Origem: maquina de desenvolvimento
+Destino: servidor Windows 11 Pro
+
+IMPORTANTE
+- Esta pasta de rede e apenas ponte de transferencia.
+- Nao rode o sistema direto daqui.
+- O sistema deve ficar local no servidor em:
+  C:\Lynkar\ERP-PAPEZZOSYNC
+
+ARQUIVO DO PACOTE
+- ERP-PAPEZZOSYNC-20260531-220605.zip
+
+O QUE FAZER NO SERVIDOR
+
+1. No servidor, crie a pasta:
+   C:\Lynkar
+
+2. Extraia o ZIP:
+   ERP-PAPEZZOSYNC-20260531-220605.zip
+
+   Para ficar assim:
+   C:\Lynkar\ERP-PAPEZZOSYNC
+
+   Atencao: se ficar assim, esta errado:
+   C:\Lynkar\ERP-PAPEZZOSYNC\ERP-PAPEZZOSYNC
+
+   Se acontecer, mova o conteudo da pasta de dentro para:
+   C:\Lynkar\ERP-PAPEZZOSYNC
+
+3. Abra o Codex no servidor e diga exatamente isto:
+
+   "Estou no servidor Windows 11 Pro. O projeto foi extraido em C:\Lynkar\ERP-PAPEZZOSYNC. Continue o deploy do Lynkar/PapezzoSync a partir daqui. Leia primeiro C:\Lynkar\ERP-PAPEZZOSYNC\INSTRUCOES-PARA-CODEX-SERVIDOR.txt e siga os passos."
+
+4. Se quiser fazer manualmente sem Codex, abra PowerShell como Administrador e rode:
+
+   cd C:\Lynkar\ERP-PAPEZZOSYNC
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\server-install.ps1
+
+5. O script vai criar:
+   C:\Lynkar\ERP-PAPEZZOSYNC\backend\.env
+
+   Edite esse arquivo antes de continuar.
+
+CONFIGURACOES IMPORTANTES DO .ENV
+
+Usar algo parecido com:
+
+APP_NAME=Lynkar API
+APP_ENV=production
+DATABASE_URL=postgresql+psycopg://postgres:SENHA_DO_POSTGRES@localhost:5432/lynkar_master
+MASTER_DATABASE_URL=postgresql+psycopg://postgres:SENHA_DO_POSTGRES@localhost:5432/lynkar_master
+SECRET_KEY=GERAR_UMA_CHAVE_GRANDE_E_ALEATORIA
+ACCESS_TOKEN_EXPIRE_MINUTES=60
+CORS_ORIGINS=https://app.lynkar.com.br,https://lynkar.com.br,http://localhost:5000,http://127.0.0.1:5000
+CORS_ORIGIN_REGEX=https://([a-z0-9-]+\.)?lynkar\.com\.br
+DEFAULT_COMPANY_CODE=lynkar
+DEFAULT_COMPANY_NAME=Lynkar
+MASTER_COMPANY_CODE=master
+MASTER_COMPANY_NAME=Lynkar Master
+MASTER_ADMIN_EMAIL=admin@lynkar.com.br
+MASTER_ADMIN_PASSWORD=CRIAR_SENHA_FORTE
+
+DEPENDENCIAS NECESSARIAS NO SERVIDOR
+
+- Python 3.12 ou superior.
+- PostgreSQL instalado e rodando.
+- Flutter, se for gerar build web no servidor.
+- Git opcional, recomendado depois.
+
+COMANDOS DEPOIS DO .ENV AJUSTADO
+
+cd C:\Lynkar\ERP-PAPEZZOSYNC
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\server-install.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\server-update.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\windows\server-start.ps1
+
+ACESSOS LOCAIS NO SERVIDOR
+
+Web:
+http://127.0.0.1:5000
+
+API:
+http://127.0.0.1:8000/docs
+
+LOGIN MASTER
+
+Empresa: master
+E-mail: o valor de MASTER_ADMIN_EMAIL no .env
+Senha: o valor de MASTER_ADMIN_PASSWORD no .env
+
+DOMINIO
+
+Dominio comprado: lynkar.com.br
+
+Planejado:
+- lynkar.com.br: site/entrada comercial
+- app.lynkar.com.br: sistema web
+- api.lynkar.com.br: API
+
+Depois configurar DuckDNS/No-IP, DNS do dominio, proxy reverso e HTTPS.
+
+O QUE PEDIR AO CODEX NO SERVIDOR
+
+Copie e cole esta mensagem no Codex do servidor:
+
+"Estou no servidor Windows 11 Pro do Lynkar. O projeto esta em C:\Lynkar\ERP-PAPEZZOSYNC. Preciso continuar o deploy do sistema. Verifique o conteudo da pasta, leia INSTRUCOES-PARA-CODEX-SERVIDOR.txt, confira Python/PostgreSQL/Flutter, configure backend\.env com seguranca, rode migracoes, gere build web se possivel, inicie API e web localmente e me diga os proximos passos para DuckDNS/dominio lynkar.com.br."
+
+OBSERVACOES TECNICAS DO PROJETO
+
+- Backend: FastAPI em backend\app.
+- Frontend: Flutter web em admin_app\admin_flutter.
+- Banco: PostgreSQL.
+- Multiempresa/SaaS:
+  - Login master usa Empresa: master.
+  - Superadmin fica em tabela master_users no banco master.
+  - Clientes do sistema ficam em companies.
+  - Cada cliente/tenant tem banco proprio.
+- Scripts do servidor ficam em:
+  deploy\windows
+
+NAO ESQUECER
+
+- Nao deixar SECRET_KEY padrao.
+- Nao deixar senha fraca no MASTER_ADMIN_PASSWORD.
+- Nao expor portas 5000/8000 direto na internet em producao final.
+- Para internet, usar HTTPS/proxy reverso depois.

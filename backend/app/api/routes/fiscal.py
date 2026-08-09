@@ -1,0 +1,1652 @@
+from datetime import date, datetime
+from decimal import Decimal
+from types import SimpleNamespace
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.serialization import pkcs12
+from sqlalchemy import func, or_, select
+from sqlalchemy.orm import Session, selectinload
+
+from app.api.dependencies import require_any_permission, require_permission
+from app.core.database import get_db
+from app.models.fiscal import (
+    CompanyFiscalSetting,
+    FiscalDocument,
+    FiscalDocumentItem,
+    FiscalOutputRule,
+    FiscalSettingsAuditLog,
+)
+from app.models.client import Client
+from app.models.product import Product
+from app.models.sale import Sale, SaleItem
+from app.models.stock_movement import StockMovement
+from app.models.user import User
+from app.schemas.fiscal import (
+    CompanyFiscalSettingRead,
+    CompanyFiscalSettingUpdate,
+    FiscalCertificateUploadRead,
+    FiscalDocumentPrepare,
+    FiscalDocumentDraftRead,
+    FiscalDocumentItemDraftRead,
+    FiscalDocumentPrepareWithItems,
+    FiscalDocumentPrepareManual,
+    FiscalProductLookupRead,
+    FiscalDocumentCancel,
+    FiscalDocumentRead,
+    FiscalOutputRuleCreate,
+    FiscalOutputRuleRead,
+    FiscalOutputRuleUpdate,
+    FiscalDocumentsRecoveryRead,
+    FiscalSetupChecklistItem,
+    FiscalSetupChecklistRead,
+    NfceNumberingSyncRead,
+)
+from app.services.fiscal_stock import refresh_many_product_fiscal_balances
+from app.services.fiscal_certificate import encrypt_certificate_bytes, encrypt_secret, sha256_hex
+from app.services.nfce_sp import (
+    NfceValidationError,
+    authorize_nfce,
+    prepare_nfce_offline_contingency,
+    transmit_nfce_offline_contingency,
+)
+from app.services.nfce_listagem_chaves_sp import sync_nfce_next_number_from_sefaz
+from app.services.fiscal_recovery import RecoveredFiscalDocument, recover_fiscal_documents
+from app.services.nfe_sp import authorize_nfe
+from app.services.fiscal_output_rules import effective_crt
+from app.services.rtc_compliance import (
+    RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
+    RTC_PRODUCTION_CRT3_MANDATORY_FROM,
+    RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM,
+    RtcComplianceError,
+    is_rtc_mandatory,
+    rtc_product_issues,
+    rtc_rates_for,
+    validate_rtc_document,
+)
+from app.services.fiscal_events_sp import send_cancellation_event
+from app.services.fiscal_pdf import generate_danfe_pdf
+from app.services.product_batches import apply_batch_out, return_to_batch
+from app.services.product_costs import apply_stock_in, apply_stock_out
+
+router = APIRouter()
+
+
+def _get_or_create_settings(db: Session) -> CompanyFiscalSetting:
+    setting = db.scalar(select(CompanyFiscalSetting).order_by(CompanyFiscalSetting.id.asc()))
+    if setting is not None:
+        return setting
+    setting = CompanyFiscalSetting()
+    db.add(setting)
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+def _rule_read(rule: FiscalOutputRule) -> FiscalOutputRuleRead:
+    return FiscalOutputRuleRead.model_validate(
+        {
+            **rule.__dict__,
+            "product_name": rule.product.name if rule.product is not None else None,
+        }
+    )
+
+
+def _clean_rule_payload(data: dict) -> dict:
+    cleaned = {}
+    for key, value in data.items():
+        if isinstance(value, str):
+            value = " ".join(value.split())
+            cleaned[key] = value or None
+        else:
+            cleaned[key] = value
+    if cleaned.get("document_model") in {"", "todos", "all"}:
+        cleaned["document_model"] = None
+    if cleaned.get("operation_type") in {None, ""}:
+        cleaned["operation_type"] = "sale"
+    return cleaned
+
+
+def _load_active_output_rules(db: Session) -> list[FiscalOutputRule]:
+    return list(
+        db.scalars(
+            select(FiscalOutputRule)
+            .options(selectinload(FiscalOutputRule.product))
+            .where(FiscalOutputRule.active.is_(True))
+            .order_by(FiscalOutputRule.priority.desc(), FiscalOutputRule.id.desc())
+        ).all()
+    )
+
+
+def _attach_output_rules(setting: CompanyFiscalSetting, db: Session) -> CompanyFiscalSetting:
+    setattr(setting, "output_rules", _load_active_output_rules(db))
+    return setting
+
+
+SECRET_FISCAL_FIELDS = {
+    "certificate_encrypted_blob",
+    "certificate_password_encrypted",
+    "certificate_storage_key",
+    "certificate_password_secret_key",
+    "nfce_csc_secret_key",
+}
+
+
+def _audit_value(field: str, value) -> str | None:
+    if field in SECRET_FISCAL_FIELDS:
+        return "***" if value else None
+    if value is None:
+        return None
+    return str(value)
+
+
+def _add_fiscal_audit(
+    db: Session,
+    user: User | None,
+    *,
+    action: str,
+    field_name: str | None = None,
+    old_value=None,
+    new_value=None,
+    notes: str | None = None,
+) -> None:
+    db.add(
+        FiscalSettingsAuditLog(
+            user_id=user.id if user is not None else None,
+            action=action,
+            field_name=field_name,
+            old_value=_audit_value(field_name or "", old_value),
+            new_value=_audit_value(field_name or "", new_value),
+            notes=notes,
+        )
+    )
+
+
+def _present(value: str | int | None) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
+def _checklist_item(
+    code: str,
+    title: str,
+    ok: bool,
+    *,
+    owner: str,
+    ok_message: str,
+    pending_message: str,
+    blocks_nfe: bool = False,
+    blocks_nfce: bool = False,
+    attention: bool = False,
+) -> FiscalSetupChecklistItem:
+    return FiscalSetupChecklistItem(
+        code=code,
+        title=title,
+        status="ok" if ok else "attention" if attention else "pending",
+        owner=owner,
+        message=ok_message if ok else pending_message,
+        blocks_nfe=blocks_nfe and not ok,
+        blocks_nfce=blocks_nfce and not ok,
+    )
+
+
+def _build_fiscal_setup_checklist(db: Session, setting: CompanyFiscalSetting) -> FiscalSetupChecklistRead:
+    setting = _attach_output_rules(setting, db)
+    items: list[FiscalSetupChecklistItem] = []
+    has_company_identity = all(
+        _present(value)
+        for value in (setting.legal_name, setting.cnpj, setting.uf, setting.city_code)
+    )
+    has_address = all(
+        _present(value)
+        for value in (
+            setting.address_line,
+            setting.address_number,
+            setting.neighborhood,
+            setting.city,
+            setting.zip_code,
+        )
+    )
+    has_regime = _present(setting.crt) and _present(setting.tax_regime)
+    has_certificate = bool(setting.certificate_encrypted_blob and setting.certificate_password_encrypted)
+    certificate_expired = bool(setting.certificate_expires_at and setting.certificate_expires_at < date.today())
+    has_nfce_numbering = bool(setting.nfce_series and setting.nfce_next_number)
+    has_nfe_numbering = bool(setting.nfe_series and setting.nfe_next_number)
+    has_csc = bool(setting.nfce_csc_id and setting.nfce_csc_secret_key)
+    products_missing_basic = db.scalar(
+        select(func.count(Product.id)).where(
+            Product.active.is_(True),
+            or_(Product.ncm.is_(None), Product.ncm == "", Product.origin.is_(None), Product.origin == ""),
+        )
+    ) or 0
+    rtc_nfce = get_rtc_compliance(model="65", db=db, current_user=None)  # type: ignore[arg-type]
+    rtc_nfe = get_rtc_compliance(model="55", db=db, current_user=None)  # type: ignore[arg-type]
+
+    items.extend(
+        [
+            _checklist_item(
+                "company_identity",
+                "Cadastro da empresa",
+                has_company_identity,
+                owner="master",
+                ok_message="Razao social, CNPJ, UF e cidade IBGE preenchidos.",
+                pending_message="Preencha razao social, CNPJ, UF e codigo IBGE da cidade.",
+                blocks_nfe=True,
+                blocks_nfce=True,
+            ),
+            _checklist_item(
+                "company_address",
+                "Endereco fiscal",
+                has_address,
+                owner="master",
+                ok_message="Endereco fiscal completo.",
+                pending_message="Complete logradouro, numero, bairro, cidade e CEP.",
+                blocks_nfe=True,
+                blocks_nfce=True,
+            ),
+            _checklist_item(
+                "tax_regime",
+                "Regime/CRT",
+                has_regime,
+                owner="contador",
+                ok_message=f"CRT {setting.crt} e regime {setting.tax_regime} configurados.",
+                pending_message="Defina CRT e regime tributario com o contador.",
+                blocks_nfe=True,
+                blocks_nfce=True,
+            ),
+            _checklist_item(
+                "certificate",
+                "Certificado A1",
+                has_certificate and not certificate_expired,
+                owner="cliente",
+                ok_message="Certificado A1 cadastrado e dentro da validade.",
+                pending_message="Cadastre um certificado A1 valido para assinatura e comunicacao SEFAZ.",
+                blocks_nfe=True,
+                blocks_nfce=True,
+                attention=certificate_expired,
+            ),
+            _checklist_item(
+                "nfce_csc",
+                "CSC/ID NFC-e",
+                has_csc or not setting.nfce_enabled,
+                owner="cliente",
+                ok_message="CSC/ID configurado ou NFC-e desabilitada.",
+                pending_message="Para emitir NFC-e, informe ID do CSC e token CSC.",
+                blocks_nfce=bool(setting.nfce_enabled),
+            ),
+            _checklist_item(
+                "nfce_numbering",
+                "Serie e numero NFC-e",
+                has_nfce_numbering or not setting.nfce_enabled,
+                owner="contador",
+                ok_message="Serie e proximo numero de NFC-e configurados.",
+                pending_message="Informe serie e proximo numero de NFC-e ou sincronize com a SEFAZ.",
+                blocks_nfce=bool(setting.nfce_enabled),
+            ),
+            _checklist_item(
+                "nfe_numbering",
+                "Serie e numero NF-e",
+                has_nfe_numbering or not setting.nfe_enabled,
+                owner="contador",
+                ok_message="Serie e proximo numero de NF-e configurados.",
+                pending_message="Informe serie e proximo numero de NF-e.",
+                blocks_nfe=bool(setting.nfe_enabled),
+            ),
+            _checklist_item(
+                "products_basic_tax",
+                "Produtos fiscais",
+                products_missing_basic == 0,
+                owner="contador",
+                ok_message="Produtos ativos com NCM e origem preenchidos.",
+                pending_message=f"{products_missing_basic} produto(s) ativo(s) sem NCM ou origem.",
+                blocks_nfe=True,
+                blocks_nfce=True,
+            ),
+            _checklist_item(
+                "rtc_nfce",
+                "IBS/CBS NFC-e",
+                bool(rtc_nfce["ready"]),
+                owner="contador",
+                ok_message=str(rtc_nfce["message"]),
+                pending_message=str(rtc_nfce["message"]),
+                blocks_nfce=bool(rtc_nfce["mandatory"]),
+            ),
+            _checklist_item(
+                "rtc_nfe",
+                "IBS/CBS NF-e",
+                bool(rtc_nfe["ready"]),
+                owner="contador",
+                ok_message=str(rtc_nfe["message"]),
+                pending_message=str(rtc_nfe["message"]),
+                blocks_nfe=bool(rtc_nfe["mandatory"]),
+            ),
+        ]
+    )
+    ready_for_nfe = not any(item.blocks_nfe for item in items)
+    ready_for_nfce = not any(item.blocks_nfce for item in items)
+    return FiscalSetupChecklistRead(
+        ready_for_nfe=ready_for_nfe,
+        ready_for_nfce=ready_for_nfce,
+        environment=setting.environment,
+        crt=effective_crt(setting),
+        tax_regime=setting.tax_regime,
+        items=items,
+    )
+
+
+def _is_sefaz_connection_failure(exc: Exception) -> bool:
+    name = type(exc).__name__.lower()
+    message = str(exc).lower()
+    markers = (
+        "connection",
+        "connect",
+        "timeout",
+        "timed out",
+        "dns",
+        "ssl",
+        "max retries",
+        "temporarily unavailable",
+        "remote end closed",
+    )
+    return any(marker in name or marker in message for marker in markers)
+
+
+def _line_total(quantity: Decimal, unit_price: Decimal, discount: Decimal) -> Decimal:
+    total = (quantity or Decimal("0")) * (unit_price or Decimal("0")) - (discount or Decimal("0"))
+    return total if total > 0 else Decimal("0")
+
+
+SEFAZ_REJECTION_HINTS: dict[str, str] = {
+    "204": "Duplicidade de NF-e/NFC-e. Verifique se a nota ja foi autorizada antes de reenviar.",
+    "215": "Falha no XML/schema. Revise campos obrigatorios, formato de numeros, datas e grupos fiscais.",
+    "225": "XML rejeitado pelo schema da SEFAZ. Geralmente e campo obrigatorio ausente ou formato invalido.",
+    "232": "IE do destinatario nao informada ou invalida para a operacao.",
+    "234": "IE do destinatario nao vinculada ao CNPJ/CPF informado.",
+    "245": "CNPJ do emitente nao cadastrado/autorizado na UF para emitir este documento.",
+    "302": "Uso denegado. Conferir situacao fiscal do emitente/destinatario.",
+    "327": "CFOP invalido para NFC-e. NFC-e normalmente exige operacao interna/consumidor final.",
+    "386": "CFOP nao permitido para o CST/CSOSN informado. Revise CFOP e tributacao do produto.",
+    "391": "Pagamento com cartao exige dados do cartao/credenciadora. Informe bandeira, autorizacao e/ou CNPJ da credenciadora conforme a forma de pagamento.",
+    "508": "CST incompatível com o CSOSN/regime tributario. Revise CRT, CST e CSOSN do produto.",
+    "539": "Duplicidade com diferenca na chave. Verifique numeracao, serie e ambiente antes de reenviar.",
+    "610": "Total da nota difere da soma dos itens/impostos. Revise valores, descontos e totais.",
+    "778": "NFC-e com NCM inexistente/invalido. Revise o NCM do produto.",
+    "806": "Operacao com ICMS-ST exige CEST quando aplicavel. Revise NCM/CEST do produto.",
+}
+
+
+def _friendly_sefaz_message(status_code: str | None, message: str | None) -> str:
+    original = " ".join((message or "Retorno SEFAZ sem mensagem.").split())
+    code = (status_code or "").strip()
+    hint = SEFAZ_REJECTION_HINTS.get(code)
+    if hint:
+        return f"SEFAZ {code}: {original}. O que verificar: {hint}"
+    if code:
+        return f"SEFAZ {code}: {original}. Confira os dados destacados na mensagem e valide com o contador/responsavel fiscal."
+    return f"{original}. Confira os dados da nota e valide com o contador/responsavel fiscal."
+
+
+def _sale_or_404(db: Session, sale_id: int | None = None, sale_number: str | None = None) -> Sale:
+    query = (
+        select(Sale)
+        .options(
+            selectinload(Sale.items).selectinload(SaleItem.product),
+            selectinload(Sale.payments),
+            selectinload(Sale.client),
+        )
+    )
+    if sale_id is not None:
+        query = query.where(Sale.id == sale_id)
+    elif sale_number:
+        query = query.where(Sale.number == sale_number)
+    else:
+        raise HTTPException(status_code=400, detail="Informe o numero da venda.")
+    sale = db.scalar(query)
+    if sale is None:
+        raise HTTPException(status_code=404, detail="Venda nao encontrada.")
+    return sale
+
+
+def _draft_item_from_sale_item(item: SaleItem) -> FiscalDocumentItemDraftRead:
+    product = item.product
+    return FiscalDocumentItemDraftRead(
+        sale_item_id=item.id,
+        original_product_id=item.product_id,
+        original_product_name=product.name if product is not None else None,
+        fiscal_product_id=item.product_id,
+        fiscal_product_name=product.name if product is not None else None,
+        original_description=item.description,
+        fiscal_description=product.name if product is not None else item.description,
+        quantity=Decimal(item.quantity or 0),
+        unit=item.unit,
+        unit_price=Decimal(item.unit_price or 0),
+        discount_amount=Decimal(item.discount_amount or 0),
+        total_price=Decimal(item.total_price or 0),
+        barcode=item.barcode,
+        included=True,
+    )
+
+
+def _draft_read_from_sale(sale: Sale) -> FiscalDocumentDraftRead:
+    items = [_draft_item_from_sale_item(item) for item in sale.items]
+    return FiscalDocumentDraftRead(
+        sale_id=sale.id,
+        sale_number=sale.number,
+        sale_total=Decimal(sale.total_amount or 0),
+        fiscal_total=sum((item.total_price for item in items), Decimal("0")),
+        consumer_cpf=sale.consumer_cpf,
+        items=items,
+    )
+
+
+def _document_item_to_sale_item_view(item: FiscalDocumentItem) -> SimpleNamespace:
+    product = item.fiscal_product
+    return SimpleNamespace(
+        id=item.sale_item_id,
+        product_id=item.fiscal_product_id,
+        product=product,
+        description=item.fiscal_description,
+        quantity=item.quantity,
+        unit=item.unit,
+        unit_price=item.unit_price,
+        discount_amount=item.discount_amount,
+        total_price=item.total_price,
+        barcode=item.barcode or (product.barcode if product is not None else None),
+    )
+
+
+def _fiscal_sale_view(document: FiscalDocument, sale: Sale) -> Sale | SimpleNamespace:
+    fiscal_client = document.fiscal_client or sale.client
+    included_items = [
+        _document_item_to_sale_item_view(item)
+        for item in document.fiscal_items
+        if item.included
+    ]
+    if not included_items and fiscal_client is None:
+        return sale
+    effective_items = included_items if included_items else list(sale.items)
+    fiscal_total = sum(
+        (Decimal(item.total_price or 0) for item in effective_items),
+        Decimal("0"),
+    )
+    payment_method = sale.payments[0].method if sale.payments else "dinheiro"
+    authorization_code = sale.payments[0].authorization_code if sale.payments else None
+    payment = SimpleNamespace(
+        method=payment_method,
+        amount=fiscal_total,
+        authorization_code=authorization_code,
+        notes="Pagamento fiscal ajustado automaticamente ao total da pre-nota.",
+    )
+    return SimpleNamespace(
+        id=sale.id,
+        number=sale.number,
+        status=sale.status,
+        items=effective_items,
+        payments=[payment],
+        client=fiscal_client,
+        consumer_cpf=document.consumer_cpf
+        or (fiscal_client.document_number if fiscal_client is not None else None)
+        or sale.consumer_cpf,
+        total_amount=fiscal_total,
+        discount_amount=Decimal("0"),
+        change_amount=Decimal("0"),
+    )
+
+
+def _manual_fiscal_sale_view(document: FiscalDocument) -> SimpleNamespace:
+    included_items = [
+        _document_item_to_sale_item_view(item)
+        for item in document.fiscal_items
+        if item.included
+    ]
+    fiscal_total = sum(
+        (Decimal(item.total_price or 0) for item in included_items),
+        Decimal("0"),
+    )
+    payment = SimpleNamespace(
+        method="dinheiro",
+        amount=fiscal_total,
+        authorization_code=None,
+        notes="Pagamento informado na nota manual.",
+    )
+    return SimpleNamespace(
+        id=document.id,
+        number=f"NF-MANUAL-{document.id}",
+        status="finalizada",
+        items=included_items,
+        payments=[payment],
+        client=document.fiscal_client,
+        consumer_cpf=document.consumer_cpf
+        or (document.fiscal_client.document_number if document.fiscal_client is not None else None),
+        total_amount=fiscal_total,
+        discount_amount=Decimal("0"),
+        change_amount=Decimal("0"),
+    )
+
+
+def _resolve_fiscal_client(db: Session, client_id: int | None) -> Client | None:
+    if client_id is None:
+        return None
+    client = db.get(Client, client_id)
+    if client is None:
+        raise HTTPException(status_code=404, detail="Cliente fiscal nao encontrado.")
+    if not client.active:
+        raise HTTPException(status_code=400, detail="Cliente fiscal esta inativo.")
+    return client
+
+
+def _refresh_document_fiscal_balances(db: Session, document: FiscalDocument) -> None:
+    product_ids = {
+        item.fiscal_product_id
+        for item in document.fiscal_items
+        if item.fiscal_product_id is not None
+    }
+    refresh_many_product_fiscal_balances(db, product_ids)
+
+
+def _document_source_number(document: FiscalDocument) -> str:
+    if document.number:
+        return f"{document.document_type.upper()} {document.series or '-'}-{document.number}"
+    return f"PRE-NOTA {document.id}"
+
+
+def _post_manual_document_stock_out(db: Session, document: FiscalDocument, user_id: int | None) -> None:
+    for item in document.fiscal_items:
+        if not item.included or item.fiscal_product_id is None:
+            continue
+        product = item.fiscal_product or db.get(Product, item.fiscal_product_id)
+        if product is None:
+            continue
+        quantity = Decimal(item.quantity or 0)
+        if quantity <= 0:
+            continue
+        quantity_before = product.stock_quantity
+        unit_cost, total_cost = apply_stock_out(product, quantity)
+        apply_batch_out(
+            db,
+            product,
+            quantity,
+            source_type="fiscal_manual",
+            source_id=document.id,
+            source_number=_document_source_number(document),
+        )
+        db.add(
+            StockMovement(
+                product_id=product.id,
+                user_id=user_id,
+                movement_type="fiscal_manual_out",
+                source_type="fiscal_document",
+                source_id=document.id,
+                source_number=_document_source_number(document),
+                quantity_delta=-quantity,
+                quantity_before=quantity_before,
+                quantity_after=product.stock_quantity,
+                unit=item.unit or product.unit,
+                unit_price=unit_cost,
+                total_value=total_cost,
+                reason="Baixa de estoque por nota fiscal manual autorizada.",
+                notes=f"Item fiscal: {item.fiscal_description}",
+            )
+        )
+
+
+def _post_manual_document_stock_return(db: Session, document: FiscalDocument, user_id: int | None) -> None:
+    for item in document.fiscal_items:
+        if not item.included or item.fiscal_product_id is None:
+            continue
+        product = item.fiscal_product or db.get(Product, item.fiscal_product_id)
+        if product is None:
+            continue
+        quantity = Decimal(item.quantity or 0)
+        if quantity <= 0:
+            continue
+        quantity_before = product.stock_quantity
+        unit_cost, total_cost = apply_stock_in(product, quantity, None)
+        return_to_batch(
+            db,
+            product,
+            quantity,
+            source_type="fiscal_manual_cancel",
+            source_id=document.id,
+            source_number=_document_source_number(document),
+        )
+        db.add(
+            StockMovement(
+                product_id=product.id,
+                user_id=user_id,
+                movement_type="fiscal_manual_cancel_return",
+                source_type="fiscal_document",
+                source_id=document.id,
+                source_number=_document_source_number(document),
+                quantity_delta=quantity,
+                quantity_before=quantity_before,
+                quantity_after=product.stock_quantity,
+                unit=item.unit or product.unit,
+                unit_price=unit_cost,
+                total_value=total_cost,
+                reason="Estorno de estoque por cancelamento de nota fiscal manual.",
+                notes=f"Item fiscal: {item.fiscal_description}",
+            )
+        )
+
+
+def _post_sale_stock_return(db: Session, document: FiscalDocument, user_id: int | None) -> None:
+    if document.sale_id is None:
+        return
+    already_returned = db.scalar(
+        select(StockMovement.id)
+        .where(
+            StockMovement.movement_type == "sale_cancel_return",
+            StockMovement.source_type == "fiscal_document",
+            StockMovement.source_id == document.id,
+        )
+        .limit(1)
+    )
+    if already_returned is not None:
+        return
+    sale = db.get(Sale, document.sale_id)
+    if sale is None:
+        return
+    for item in sale.items:
+        if item.product_id is None or item.quantity <= 0:
+            continue
+        product = db.get(Product, item.product_id)
+        if product is None or product.product_type == "servico":
+            continue
+        quantity_before = product.stock_quantity
+        unit_cost, total_cost = apply_stock_in(product, item.quantity, None)
+        return_to_batch(
+            db,
+            product,
+            item.quantity,
+            source_type="fiscal_cancel",
+            source_id=document.id,
+            source_number=_document_source_number(document),
+        )
+        db.add(
+            StockMovement(
+                product_id=product.id,
+                user_id=user_id,
+                movement_type="sale_cancel_return",
+                source_type="fiscal_document",
+                source_id=document.id,
+                source_number=_document_source_number(document),
+                quantity_delta=item.quantity,
+                quantity_before=quantity_before,
+                quantity_after=product.stock_quantity,
+                unit=item.unit,
+                unit_price=unit_cost,
+                total_value=total_cost,
+                reason="Estorno de estoque por cancelamento da nota fiscal.",
+                notes=f"Estorno automatico da venda {sale.number} apos cancelamento fiscal.",
+            )
+        )
+
+
+@router.get("/settings", response_model=CompanyFiscalSettingRead)
+def get_fiscal_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:view")),
+) -> CompanyFiscalSetting:
+    return _get_or_create_settings(db)
+
+
+@router.get("/settings/pdv-logo", response_model=CompanyFiscalSettingRead)
+def get_pdv_logo_settings(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_permission("pdv_operators:manage", "sales:create")),
+) -> CompanyFiscalSetting:
+    return _get_or_create_settings(db)
+
+
+@router.get("/settings/checklist", response_model=FiscalSetupChecklistRead)
+def get_fiscal_setup_checklist(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:view")),
+) -> FiscalSetupChecklistRead:
+    return _build_fiscal_setup_checklist(db, _get_or_create_settings(db))
+
+
+@router.post("/settings/sync-nfce-numbering", response_model=NfceNumberingSyncRead)
+def sync_nfce_numbering(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> NfceNumberingSyncRead:
+    setting = _get_or_create_settings(db)
+    if setting.environment != "homologacao":
+        raise HTTPException(
+            status_code=400,
+            detail="Sincronizacao manual bloqueada fora do ambiente de homologacao.",
+        )
+    try:
+        result = sync_nfce_next_number_from_sefaz(setting)
+    except NfceValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao consultar NFCeListagemChaves na SEFAZ: {type(exc).__name__}: {str(exc)[:300]}",
+        ) from exc
+    setting.nfce_next_number = max(int(setting.nfce_next_number or 1), result.updated_next_number)
+    db.commit()
+    return NfceNumberingSyncRead(**result.__dict__)
+
+
+def _upsert_recovered_document(db: Session, recovered: RecoveredFiscalDocument) -> tuple[str, FiscalDocument | None]:
+    if not recovered.access_key:
+        return "skipped", None
+    document = db.scalar(select(FiscalDocument).where(FiscalDocument.access_key == recovered.access_key))
+    action = "updated" if document is not None else "imported"
+    if document is None:
+        document = FiscalDocument(
+            document_type=recovered.document_type,
+            model=recovered.model,
+            environment=recovered.environment,
+            access_key=recovered.access_key,
+            status=recovered.status,
+            sefaz_message=recovered.message,
+        )
+        db.add(document)
+    document.document_type = recovered.document_type
+    document.model = recovered.model
+    document.environment = recovered.environment
+    document.series = recovered.series or document.series
+    document.number = recovered.number or document.number
+    document.status = recovered.status or document.status
+    document.sefaz_protocol = recovered.protocol or document.sefaz_protocol
+    document.sefaz_status_code = recovered.status_code or document.sefaz_status_code
+    document.sefaz_message = recovered.message or document.sefaz_message
+    document.issued_at = recovered.issued_at or document.issued_at
+    if recovered.status == "authorized" and document.authorized_at is None:
+        document.authorized_at = recovered.issued_at or datetime.utcnow()
+    if recovered.authorized_xml:
+        document.xml_authorized = recovered.authorized_xml
+    return action, document
+
+
+@router.post("/documents/recover-from-sefaz", response_model=FiscalDocumentsRecoveryRead)
+def recover_documents_from_sefaz(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> FiscalDocumentsRecoveryRead:
+    setting = _get_or_create_settings(db)
+    if setting.environment != "homologacao":
+        raise HTTPException(
+            status_code=400,
+            detail="Recuperacao fiscal bloqueada fora do ambiente de homologacao.",
+        )
+    try:
+        recovery = recover_fiscal_documents(setting)
+    except NfceValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao recuperar documentos fiscais na SEFAZ: {type(exc).__name__}: {str(exc)[:300]}",
+        ) from exc
+
+    counts = {"imported": 0, "updated": 0, "skipped": 0}
+    max_nfce = int(setting.nfce_next_number or 1) - 1
+    max_nfe = int(setting.nfe_next_number or 1) - 1
+    for recovered in recovery.documents:
+        action, document = _upsert_recovered_document(db, recovered)
+        counts[action] += 1
+        if document is None or document.number is None:
+            continue
+        if document.document_type == "nfce":
+            max_nfce = max(max_nfce, int(document.number))
+        elif document.document_type == "nfe":
+            max_nfe = max(max_nfe, int(document.number))
+    setting.nfce_next_number = max(int(setting.nfce_next_number or 1), max_nfce + 1)
+    setting.nfe_next_number = max(int(setting.nfe_next_number or 1), max_nfe + 1)
+    db.commit()
+    return FiscalDocumentsRecoveryRead(
+        **counts,
+        nfce_keys=recovery.nfce_keys,
+        nfce_downloaded=recovery.nfce_downloaded,
+        nfe_docs=recovery.nfe_docs,
+        incomplete=recovery.incomplete,
+        ult_nsu=recovery.ult_nsu,
+        max_nsu=recovery.max_nsu,
+        messages=list(recovery.messages),
+    )
+
+
+@router.get("/rtc-compliance")
+def get_rtc_compliance(
+    model: str = Query(default="65", pattern="^(55|65)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:view")),
+) -> dict:
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
+    today = date.today()
+    crt = effective_crt(setting)
+    mandatory = is_rtc_mandatory(setting, today)
+    products = list(
+        db.scalars(
+            select(Product)
+            .where(Product.active.is_(True))
+            .order_by(Product.name.asc(), Product.id.asc())
+        ).all()
+    )
+    incomplete_products = []
+    for product in products:
+        issues = rtc_product_issues(setting, product, model=model)
+        if issues:
+            incomplete_products.append(
+                {
+                    "id": product.id,
+                    "name": product.name,
+                    "internal_code": product.internal_code,
+                    "missing_fields": issues,
+                }
+            )
+
+    rates = None
+    if today.year == 2026:
+        current_rates = rtc_rates_for(today)
+        rates = {
+            "cbs": float(current_rates.cbs),
+            "ibs_uf": float(current_rates.ibs_uf),
+            "ibs_mun": float(current_rates.ibs_mun),
+        }
+
+    mandatory_from = (
+        RTC_HOMOLOGATION_CRT3_MANDATORY_FROM
+        if str(setting.environment or "").lower() == "homologacao" and crt == "3"
+        else RTC_PRODUCTION_CRT3_MANDATORY_FROM
+        if crt == "3"
+        else RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM
+        if crt in {"1", "2", "4"}
+        else None
+    )
+
+    if mandatory and incomplete_products:
+        message = (
+            "Emissão IBS/CBS obrigatória para CRT 3. Complete os dados fiscais "
+            "indicados antes de transmitir para a SEFAZ."
+        )
+    elif mandatory:
+        message = "Cadastro pronto para a obrigatoriedade IBS/CBS do CRT 3."
+    else:
+        message = (
+            f"CRT {crt} preservado pelo cronograma atual. IBS/CBS não é "
+            "obrigatório para este emitente nesta data."
+        )
+
+    return {
+        "effective_crt": crt,
+        "mandatory": mandatory,
+        "mandatory_from": mandatory_from.isoformat() if mandatory_from else None,
+        "ready": not mandatory or not incomplete_products,
+        "message": message,
+        "document_model": model,
+        "rates": rates,
+        "products_total": len(products),
+        "products_incomplete": len(incomplete_products),
+        "incomplete_products": incomplete_products,
+    }
+
+
+@router.put("/settings", response_model=CompanyFiscalSettingRead)
+def update_fiscal_settings(
+    payload: CompanyFiscalSettingUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> CompanyFiscalSetting:
+    setting = _get_or_create_settings(db)
+    data = payload.model_dump(exclude_unset=True)
+    if "nfce_csc_secret_key" in data and data["nfce_csc_secret_key"]:
+        data["nfce_csc_secret_key"] = encrypt_secret(data["nfce_csc_secret_key"])
+    for key, value in data.items():
+        old_value = getattr(setting, key)
+        setattr(setting, key, value)
+        if old_value != value:
+            _add_fiscal_audit(
+                db,
+                current_user,
+                action="settings_update",
+                field_name=key,
+                old_value=old_value,
+                new_value=value,
+            )
+    if data.get("certificate_storage_key") and data.get("certificate_password_secret_key"):
+        setting.certificate_uploaded_at = datetime.utcnow()
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+@router.put("/settings/pdv-logo", response_model=CompanyFiscalSettingRead)
+def update_pdv_logo_settings(
+    payload: CompanyFiscalSettingUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_permission("pdv_operators:manage")),
+) -> CompanyFiscalSetting:
+    setting = _get_or_create_settings(db)
+    old_value = setting.logo_url
+    setting.logo_url = payload.logo_url
+    if old_value != setting.logo_url:
+        _add_fiscal_audit(
+            db,
+            current_user,
+            action="pdv_logo_update",
+            field_name="logo_url",
+            old_value="stored" if old_value else None,
+            new_value="stored" if setting.logo_url else None,
+        )
+    db.commit()
+    db.refresh(setting)
+    return setting
+
+
+@router.get("/output-rules", response_model=list[FiscalOutputRuleRead])
+def list_fiscal_output_rules(
+    active: bool | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:view")),
+) -> list[FiscalOutputRuleRead]:
+    query = (
+        select(FiscalOutputRule)
+        .options(selectinload(FiscalOutputRule.product))
+        .order_by(FiscalOutputRule.priority.desc(), FiscalOutputRule.id.desc())
+    )
+    if active is not None:
+        query = query.where(FiscalOutputRule.active.is_(active))
+    return [_rule_read(rule) for rule in db.scalars(query).all()]
+
+
+@router.post("/output-rules", response_model=FiscalOutputRuleRead, status_code=status.HTTP_201_CREATED)
+def create_fiscal_output_rule(
+    payload: FiscalOutputRuleCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> FiscalOutputRuleRead:
+    data = _clean_rule_payload(payload.model_dump())
+    product_id = data.get("product_id")
+    if product_id is not None and db.get(Product, product_id) is None:
+        raise HTTPException(status_code=404, detail="Produto da regra fiscal nao encontrado.")
+    if data.get("effective_from") and data.get("effective_to") and data["effective_to"] < data["effective_from"]:
+        raise HTTPException(status_code=400, detail="Vigencia final nao pode ser anterior a inicial.")
+    rule = FiscalOutputRule(**data)
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+    rule = db.scalar(
+        select(FiscalOutputRule)
+        .options(selectinload(FiscalOutputRule.product))
+        .where(FiscalOutputRule.id == rule.id)
+    )
+    return _rule_read(rule)
+
+
+@router.put("/output-rules/{rule_id}", response_model=FiscalOutputRuleRead)
+def update_fiscal_output_rule(
+    rule_id: int,
+    payload: FiscalOutputRuleUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> FiscalOutputRuleRead:
+    rule = db.get(FiscalOutputRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Regra fiscal nao encontrada.")
+    data = _clean_rule_payload(payload.model_dump(exclude_unset=True))
+    product_id = data.get("product_id")
+    if product_id is not None and db.get(Product, product_id) is None:
+        raise HTTPException(status_code=404, detail="Produto da regra fiscal nao encontrado.")
+    effective_from = data.get("effective_from", rule.effective_from)
+    effective_to = data.get("effective_to", rule.effective_to)
+    if effective_from and effective_to and effective_to < effective_from:
+        raise HTTPException(status_code=400, detail="Vigencia final nao pode ser anterior a inicial.")
+    for key, value in data.items():
+        setattr(rule, key, value)
+    db.commit()
+    db.refresh(rule)
+    rule = db.scalar(
+        select(FiscalOutputRule)
+        .options(selectinload(FiscalOutputRule.product))
+        .where(FiscalOutputRule.id == rule.id)
+    )
+    return _rule_read(rule)
+
+
+@router.delete("/output-rules/{rule_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_fiscal_output_rule(
+    rule_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> Response:
+    rule = db.get(FiscalOutputRule, rule_id)
+    if rule is None:
+        raise HTTPException(status_code=404, detail="Regra fiscal nao encontrada.")
+    db.delete(rule)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/certificate", response_model=FiscalCertificateUploadRead)
+async def upload_fiscal_certificate(
+    certificate: UploadFile = File(...),
+    password: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> FiscalCertificateUploadRead:
+    filename = certificate.filename or "certificado-a1.pfx"
+    lower_name = filename.lower()
+    if not (lower_name.endswith(".pfx") or lower_name.endswith(".p12")):
+        raise HTTPException(status_code=400, detail="Envie um certificado A1 .pfx ou .p12.")
+    raw = await certificate.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Arquivo do certificado vazio.")
+    if len(raw) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Certificado maior que o limite de 10 MB.")
+    if not password.strip():
+        raise HTTPException(status_code=400, detail="Informe a senha do certificado.")
+    try:
+        private_key, certificate_data, extra_certificates = pkcs12.load_key_and_certificates(
+            raw,
+            password.encode("utf-8"),
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Nao foi possivel abrir o certificado A1. Confira se o arquivo e a senha estao corretos.",
+        ) from exc
+    if private_key is None or certificate_data is None:
+        raise HTTPException(status_code=400, detail="Certificado A1 sem certificado valido.")
+    raw = pkcs12.serialize_key_and_certificates(
+        name=filename.encode("utf-8"),
+        key=private_key,
+        cert=certificate_data,
+        cas=extra_certificates,
+        encryption_algorithm=serialization.BestAvailableEncryption(
+            password.encode("utf-8")
+        ),
+    )
+
+    setting = _get_or_create_settings(db)
+    file_hash = sha256_hex(raw)
+    setting.certificate_name = filename
+    setting.certificate_storage_key = f"tenant-db:a1:{uuid4()}"
+    setting.certificate_password_secret_key = f"tenant-db:a1-password:{uuid4()}"
+    setting.certificate_encrypted_blob = encrypt_certificate_bytes(raw)
+    setting.certificate_password_encrypted = encrypt_secret(password)
+    setting.certificate_file_sha256 = file_hash
+    setting.certificate_expires_at = certificate_data.not_valid_after_utc.date()
+    setting.certificate_uploaded_at = datetime.utcnow()
+    _add_fiscal_audit(
+        db,
+        current_user,
+        action="certificate_upload",
+        field_name="certificate_encrypted_blob",
+        old_value=None,
+        new_value="uploaded",
+        notes=f"Arquivo {filename}, hash {file_hash}.",
+    )
+    db.commit()
+    return FiscalCertificateUploadRead(
+        certificate_name=filename,
+        certificate_file_sha256=file_hash,
+        has_certificate=True,
+        message="Certificado A1 armazenado criptografado no banco separado desta empresa.",
+    )
+
+
+@router.delete("/certificate")
+def delete_fiscal_certificate(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:settings")),
+) -> dict[str, str]:
+    setting = _get_or_create_settings(db)
+    setting.certificate_name = None
+    setting.certificate_storage_key = None
+    setting.certificate_password_secret_key = None
+    setting.certificate_encrypted_blob = None
+    setting.certificate_password_encrypted = None
+    setting.certificate_file_sha256 = None
+    setting.certificate_expires_at = None
+    setting.certificate_uploaded_at = None
+    _add_fiscal_audit(
+        db,
+        current_user,
+        action="certificate_delete",
+        field_name="certificate_encrypted_blob",
+        old_value="stored",
+        new_value=None,
+    )
+    db.commit()
+    return {"message": "Certificado fiscal removido desta empresa."}
+
+
+@router.get("/documents", response_model=list[FiscalDocumentRead])
+def list_fiscal_documents(
+    status_filter: str | None = Query(default=None, alias="status"),
+    limit: int = Query(default=50, ge=1, le=200),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:documents:view")),
+) -> list[FiscalDocument]:
+    query = (
+        select(FiscalDocument)
+        .options(
+            selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
+            selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.original_product),
+        )
+        .order_by(FiscalDocument.created_at.desc())
+        .limit(limit)
+    )
+    if status_filter:
+        query = query.where(FiscalDocument.status == status_filter)
+    return list(db.scalars(query).all())
+
+
+@router.get("/sales/{sale_number}/draft", response_model=FiscalDocumentDraftRead)
+def get_fiscal_sale_draft(
+    sale_number: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocumentDraftRead:
+    sale = _sale_or_404(db, sale_number=sale_number.strip())
+    if sale.status != "finalizada":
+        raise HTTPException(status_code=400, detail="Somente venda finalizada pode emitir nota.")
+    return _draft_read_from_sale(sale)
+
+
+@router.get("/products/lookup", response_model=list[FiscalProductLookupRead])
+def lookup_fiscal_products(
+    q: str = Query(default=""),
+    limit: int = Query(default=200, ge=1, le=300),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> list[Product]:
+    query_text = q.strip()
+    query = select(Product).where(Product.active.is_(True))
+    if query_text:
+        like = f"%{query_text.lower()}%"
+        query = query.where(
+            (Product.name.ilike(like))
+            | (Product.internal_code == query_text)
+            | (Product.barcode == query_text)
+            | (Product.purchase_package_barcode == query_text)
+        )
+    query = query.order_by(Product.name).limit(limit)
+    products = list(db.scalars(query).all())
+    refresh_many_product_fiscal_balances(db, {product.id for product in products})
+    return products
+
+
+@router.post("/documents/prepare", response_model=FiscalDocumentRead, status_code=status.HTTP_201_CREATED)
+def prepare_fiscal_document(
+    payload: FiscalDocumentPrepare,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocument:
+    sale = db.scalar(
+        select(Sale)
+        .options(
+            selectinload(Sale.items).selectinload(SaleItem.product),
+            selectinload(Sale.payments),
+            selectinload(Sale.client),
+        )
+        .where(Sale.id == payload.sale_id)
+    )
+    if sale is None:
+        raise HTTPException(status_code=404, detail="Venda nao encontrada.")
+    setting = _get_or_create_settings(db)
+    if payload.document_type == "nfce" and not setting.nfce_enabled:
+        raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
+    if payload.document_type == "nfe" and not setting.nfe_enabled:
+        raise HTTPException(status_code=400, detail="NF-e não está habilitada para esta empresa.")
+
+    fiscal_client = _resolve_fiscal_client(db, payload.fiscal_client_id)
+    recipient_document = fiscal_client.document_number if fiscal_client is not None else None
+    recipient_name = fiscal_client.name if fiscal_client is not None else None
+    consumer_cpf = payload.consumer_cpf or recipient_document
+    operation_nature = " ".join((payload.operation_nature or "").split()) or "VENDA DE MERCADORIA"
+    fiscal_notes = " ".join((payload.fiscal_notes or "").split()) or None
+    status_value = (
+        "draft"
+        if setting.certificate_encrypted_blob and setting.certificate_password_encrypted
+        else "pending_certificate"
+    )
+    document = FiscalDocument(
+        sale_id=sale.id,
+        fiscal_client_id=fiscal_client.id if fiscal_client is not None else None,
+        document_type=payload.document_type,
+        model="65" if payload.document_type == "nfce" else "55",
+        environment=setting.environment,
+        consumer_cpf=consumer_cpf,
+        recipient_document=recipient_document,
+        recipient_name=recipient_name,
+        operation_nature=operation_nature[:120],
+        payment_condition=payload.payment_condition,
+        fiscal_notes=fiscal_notes,
+        status=status_value,
+        sefaz_message="Documento preparado para assinatura A1 e envio a SEFAZ.",
+    )
+    db.add(document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.post("/documents/prepare-with-items", response_model=FiscalDocumentRead, status_code=status.HTTP_201_CREATED)
+def prepare_fiscal_document_with_items(
+    payload: FiscalDocumentPrepareWithItems,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocument:
+    sale = _sale_or_404(db, sale_id=payload.sale_id)
+    if sale.status != "finalizada":
+        raise HTTPException(status_code=400, detail="Somente venda finalizada pode emitir nota.")
+    setting = _get_or_create_settings(db)
+    if payload.document_type == "nfce" and not setting.nfce_enabled:
+        raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
+    if payload.document_type == "nfe" and not setting.nfe_enabled:
+        raise HTTPException(status_code=400, detail="NF-e nao esta habilitada para esta empresa.")
+
+    fiscal_client = _resolve_fiscal_client(db, payload.fiscal_client_id)
+    recipient_document = fiscal_client.document_number if fiscal_client is not None else None
+    recipient_name = fiscal_client.name if fiscal_client is not None else None
+    consumer_cpf = payload.consumer_cpf or recipient_document
+    sale_items_by_id = {item.id: item for item in sale.items}
+    operation_nature = " ".join((payload.operation_nature or "").split()) or "VENDA DE MERCADORIA"
+    fiscal_notes = " ".join((payload.fiscal_notes or "").split()) or None
+    status_value = (
+        "draft"
+        if setting.certificate_encrypted_blob and setting.certificate_password_encrypted
+        else "pending_certificate"
+    )
+    document = FiscalDocument(
+        sale_id=sale.id,
+        fiscal_client_id=fiscal_client.id if fiscal_client is not None else None,
+        document_type=payload.document_type,
+        model="65" if payload.document_type == "nfce" else "55",
+        environment=setting.environment,
+        consumer_cpf=consumer_cpf,
+        recipient_document=recipient_document,
+        recipient_name=recipient_name,
+        operation_nature=operation_nature[:120],
+        payment_condition=payload.payment_condition,
+        fiscal_notes=fiscal_notes,
+        status=status_value,
+        sefaz_message="Documento preparado com rascunho fiscal ajustavel. Venda original preservada.",
+    )
+    db.add(document)
+    db.flush()
+
+    included_count = 0
+    for override in payload.items:
+        sale_item = sale_items_by_id.get(override.sale_item_id) if override.sale_item_id is not None else None
+        product = db.get(Product, override.fiscal_product_id) if override.fiscal_product_id is not None else None
+        if override.included and product is None:
+            raise HTTPException(status_code=400, detail="Item incluido precisa ter produto fiscal vinculado.")
+        if override.included:
+            included_count += 1
+        quantity = Decimal(override.quantity or 0)
+        unit_price = Decimal(override.unit_price or 0)
+        discount = Decimal(override.discount_amount or 0)
+        total = _line_total(quantity, unit_price, discount)
+        fiscal_description = " ".join((override.fiscal_description or "").split())
+        if not fiscal_description:
+            fiscal_description = product.name if product is not None else (
+                sale_item.description if sale_item is not None else "Item fiscal"
+            )
+        unit = " ".join((override.unit or "").split()) or (
+            product.unit if product is not None else (sale_item.unit if sale_item is not None else "un")
+        )
+        db.add(
+            FiscalDocumentItem(
+                fiscal_document_id=document.id,
+                sale_item_id=sale_item.id if sale_item is not None else None,
+                original_product_id=sale_item.product_id if sale_item is not None else None,
+                fiscal_product_id=product.id if product is not None else None,
+                original_description=sale_item.description if sale_item is not None else None,
+                fiscal_description=fiscal_description[:220],
+                quantity=quantity,
+                unit=unit[:20],
+                unit_price=unit_price,
+                discount_amount=discount,
+                total_price=total,
+                barcode=product.barcode if product is not None else (sale_item.barcode if sale_item is not None else None),
+                included=override.included,
+                adjustment_reason=override.adjustment_reason,
+                created_by_user_id=current_user.id,
+            )
+        )
+    if included_count == 0:
+        raise HTTPException(status_code=400, detail="A nota precisa ter pelo menos um item incluido.")
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.post("/documents/prepare-manual", response_model=FiscalDocumentRead, status_code=status.HTTP_201_CREATED)
+def prepare_manual_fiscal_document(
+    payload: FiscalDocumentPrepareManual,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocument:
+    setting = _get_or_create_settings(db)
+    if payload.document_type == "nfce" and not setting.nfce_enabled:
+        raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
+    if payload.document_type == "nfe" and not setting.nfe_enabled:
+        raise HTTPException(status_code=400, detail="NF-e nao esta habilitada para esta empresa.")
+
+    fiscal_client = _resolve_fiscal_client(db, payload.fiscal_client_id)
+    if payload.document_type == "nfe" and fiscal_client is None:
+        raise HTTPException(status_code=400, detail="NF-e manual precisa de cliente/destinatario cadastrado.")
+    recipient_document = fiscal_client.document_number if fiscal_client is not None else None
+    recipient_name = fiscal_client.name if fiscal_client is not None else None
+    consumer_cpf = payload.consumer_cpf or recipient_document
+    operation_nature = " ".join((payload.operation_nature or "").split()) or "VENDA DE MERCADORIA"
+    fiscal_notes = " ".join((payload.fiscal_notes or "").split()) or None
+    status_value = (
+        "draft"
+        if setting.certificate_encrypted_blob and setting.certificate_password_encrypted
+        else "pending_certificate"
+    )
+    document = FiscalDocument(
+        sale_id=None,
+        fiscal_client_id=fiscal_client.id if fiscal_client is not None else None,
+        document_type=payload.document_type,
+        model="65" if payload.document_type == "nfce" else "55",
+        environment=setting.environment,
+        consumer_cpf=consumer_cpf,
+        recipient_document=recipient_document,
+        recipient_name=recipient_name,
+        operation_nature=operation_nature[:120],
+        payment_condition=payload.payment_condition,
+        fiscal_notes=fiscal_notes,
+        status=status_value,
+        sefaz_message=(
+            "Nota fiscal manual preparada. Ao autorizar, o estoque sera baixado pelos itens informados."
+            if payload.stock_deduction_on_authorize
+            else "Nota fiscal manual preparada sem baixa automatica de estoque."
+        ),
+    )
+    db.add(document)
+    db.flush()
+
+    included_count = 0
+    for override in payload.items:
+        product = db.get(Product, override.fiscal_product_id) if override.fiscal_product_id is not None else None
+        if override.included and product is None:
+            raise HTTPException(status_code=400, detail="Item manual precisa ter produto do estoque vinculado.")
+        if override.included:
+            included_count += 1
+        quantity = Decimal(override.quantity or 0)
+        unit_price = Decimal(override.unit_price or 0)
+        discount = Decimal(override.discount_amount or 0)
+        total = _line_total(quantity, unit_price, discount)
+        fiscal_description = " ".join((override.fiscal_description or "").split())
+        if not fiscal_description:
+            fiscal_description = product.name if product is not None else "Item fiscal manual"
+        unit = " ".join((override.unit or "").split()) or (product.unit if product is not None else "un")
+        db.add(
+            FiscalDocumentItem(
+                fiscal_document_id=document.id,
+                sale_item_id=None,
+                original_product_id=None,
+                fiscal_product_id=product.id if product is not None else None,
+                original_description=None,
+                fiscal_description=fiscal_description[:220],
+                quantity=quantity,
+                unit=unit[:20],
+                unit_price=unit_price,
+                discount_amount=discount,
+                total_price=total,
+                barcode=product.barcode if product is not None else None,
+                included=override.included,
+                adjustment_reason=override.adjustment_reason or "Item incluido em nota fiscal manual.",
+                created_by_user_id=current_user.id,
+            )
+        )
+    if included_count == 0:
+        raise HTTPException(status_code=400, detail="A nota manual precisa ter pelo menos um item incluido.")
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.post("/documents/{document_id}/authorize", response_model=FiscalDocumentRead)
+def authorize_fiscal_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocument:
+    document = db.scalar(
+        select(FiscalDocument)
+        .options(
+            selectinload(FiscalDocument.sale).selectinload(Sale.items).selectinload(SaleItem.product),
+            selectinload(FiscalDocument.sale).selectinload(Sale.payments),
+            selectinload(FiscalDocument.sale).selectinload(Sale.client),
+            selectinload(FiscalDocument.fiscal_client),
+            selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
+            selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.original_product),
+        )
+        .where(FiscalDocument.id == document_id)
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    if document.status == "authorized":
+        return document
+    if document.sale is None and not any(item.included for item in document.fiscal_items):
+        raise HTTPException(status_code=400, detail="Nota manual precisa ter pelo menos um item fiscal incluido.")
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
+    if document.document_type == "nfce" and not setting.nfce_enabled:
+        raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
+    if document.document_type == "nfe" and not setting.nfe_enabled:
+        raise HTTPException(status_code=400, detail="NF-e nao esta habilitada para esta empresa.")
+    fiscal_sale = (
+        _fiscal_sale_view(document, document.sale)
+        if document.sale is not None
+        else _manual_fiscal_sale_view(document)
+    )
+    try:
+        validate_rtc_document(
+            setting,
+            fiscal_sale,
+            model="65" if document.document_type == "nfce" else "55",
+            issue_date=datetime.now().date(),
+        )
+        result = (
+            authorize_nfce(setting, document, fiscal_sale)
+            if document.document_type == "nfce"
+            else authorize_nfe(setting, document, fiscal_sale)
+        )
+    except (NfceValidationError, RtcComplianceError) as exc:
+        document.status = "rejected"
+        document.sefaz_status_code = "VALIDACAO"
+        document.sefaz_message = _friendly_sefaz_message("VALIDACAO", str(exc))
+        db.commit()
+        db.refresh(document)
+        return document
+    except Exception as exc:
+        if document.document_type == "nfce" and _is_sefaz_connection_failure(exc):
+            try:
+                result = prepare_nfce_offline_contingency(setting, document, fiscal_sale)
+            except NfceValidationError as validation_exc:
+                document.status = "rejected"
+                document.sefaz_status_code = "VALIDACAO_CONTINGENCIA"
+                document.sefaz_message = _friendly_sefaz_message("VALIDACAO_CONTINGENCIA", str(validation_exc))
+                db.commit()
+                db.refresh(document)
+                return document
+            document.status = result.status
+            document.sefaz_status_code = result.status_code
+            document.sefaz_message = (
+                f"{result.message} Motivo da contingencia: {type(exc).__name__}: {str(exc)[:300]}"
+            )
+            document.sefaz_protocol = None
+            document.xml_authorized = None
+            setting.nfce_next_number = max(setting.nfce_next_number, int(document.number or 0) + 1)
+            db.commit()
+            db.refresh(document)
+            return document
+        document.status = "rejected"
+        document.sefaz_status_code = "ERRO_ENVIO"
+        document.sefaz_message = _friendly_sefaz_message(
+            "ERRO_ENVIO",
+            f"Falha ao enviar para a SEFAZ: {type(exc).__name__}: {str(exc)[:400]}",
+        )
+        db.commit()
+        db.refresh(document)
+        return document
+
+    document.status = result.status
+    document.sefaz_status_code = result.status_code
+    document.sefaz_message = _friendly_sefaz_message(result.status_code, result.message) if result.status != "authorized" else result.message
+    document.sefaz_protocol = result.protocol
+    document.xml_authorized = result.authorized_xml
+    if result.status == "authorized":
+        document.authorized_at = datetime.utcnow()
+        if document.sale is None:
+            _post_manual_document_stock_out(db, document, current_user.id)
+        _refresh_document_fiscal_balances(db, document)
+        if document.document_type == "nfce":
+            setting.nfce_next_number = max(setting.nfce_next_number, int(document.number or 0) + 1)
+        else:
+            setting.nfe_next_number = max(setting.nfe_next_number, int(document.number or 0) + 1)
+            recipient = document.fiscal_client or (document.sale.client if document.sale is not None else None)
+            if recipient is not None:
+                document.recipient_document = recipient.document_number
+                document.recipient_name = recipient.name
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.post("/documents/{document_id}/transmit-contingency", response_model=FiscalDocumentRead)
+def transmit_contingency_fiscal_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocument:
+    document = db.scalar(
+        select(FiscalDocument)
+        .options(
+            selectinload(FiscalDocument.sale).selectinload(Sale.items).selectinload(SaleItem.product),
+            selectinload(FiscalDocument.sale).selectinload(Sale.payments),
+            selectinload(FiscalDocument.sale).selectinload(Sale.client),
+            selectinload(FiscalDocument.fiscal_client),
+            selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
+        )
+        .where(FiscalDocument.id == document_id)
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    if document.document_type != "nfce":
+        raise HTTPException(status_code=400, detail="Contingencia offline disponivel somente para NFC-e.")
+    if document.status == "authorized":
+        return document
+    if document.status != "contingency_offline":
+        raise HTTPException(status_code=400, detail="Somente NFC-e em contingencia offline pode ser transmitida.")
+    setting = _get_or_create_settings(db)
+    try:
+        result = transmit_nfce_offline_contingency(setting, document)
+    except NfceValidationError as exc:
+        document.sefaz_status_code = "VALIDACAO"
+        document.sefaz_message = _friendly_sefaz_message("VALIDACAO", str(exc))
+        db.commit()
+        db.refresh(document)
+        return document
+    except Exception as exc:
+        document.sefaz_status_code = "ERRO_ENVIO"
+        document.sefaz_message = _friendly_sefaz_message(
+            "ERRO_ENVIO",
+            f"Falha ao transmitir contingencia para a SEFAZ: {type(exc).__name__}: {str(exc)[:400]}",
+        )
+        db.commit()
+        db.refresh(document)
+        return document
+
+    document.status = result.status
+    document.sefaz_status_code = result.status_code
+    document.sefaz_message = _friendly_sefaz_message(result.status_code, result.message) if result.status != "authorized" else result.message
+    document.sefaz_protocol = result.protocol
+    document.xml_authorized = result.authorized_xml
+    if result.status == "authorized":
+        document.authorized_at = datetime.utcnow()
+        if document.sale_id is None:
+            _post_manual_document_stock_out(db, document, current_user.id)
+        _refresh_document_fiscal_balances(db, document)
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.post("/documents/{document_id}/cancel", response_model=FiscalDocumentRead)
+def cancel_fiscal_document(
+    document_id: int,
+    payload: FiscalDocumentCancel,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:cancel")),
+) -> FiscalDocument:
+    document = db.get(FiscalDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    if document.status == "cancelled":
+        return document
+    if document.status != "authorized":
+        raise HTTPException(status_code=400, detail="Somente nota autorizada pode ser cancelada.")
+    setting = _get_or_create_settings(db)
+    try:
+        result = send_cancellation_event(setting, document, payload.reason)
+    except NfceValidationError as exc:
+        raise HTTPException(status_code=400, detail=_friendly_sefaz_message("VALIDACAO_CANCELAMENTO", str(exc))) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Falha ao transmitir cancelamento para a SEFAZ: {type(exc).__name__}: {str(exc)[:300]}",
+        ) from exc
+    document.cancellation_reason = " ".join(payload.reason.split())
+    document.cancellation_status_code = result.status_code
+    document.cancellation_message = (
+        result.message if result.accepted else _friendly_sefaz_message(result.status_code, result.message)
+    )
+    document.cancellation_protocol = result.protocol
+    document.cancellation_xml = result.response_xml
+    if result.accepted:
+        document.status = "cancelled"
+        document.cancelled_at = datetime.utcnow()
+        document.sefaz_message = result.message
+        if document.sale_id is None:
+            _post_manual_document_stock_return(db, document, current_user.id)
+        else:
+            _post_sale_stock_return(db, document, current_user.id)
+        _refresh_document_fiscal_balances(db, document)
+    db.commit()
+    db.refresh(document)
+    if not result.accepted:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "A SEFAZ nao aceitou o cancelamento.",
+                "status_code": result.status_code,
+                "sefaz_message": result.message,
+            },
+        )
+    return document
+
+
+@router.get("/documents/{document_id}/danfe")
+def get_fiscal_document_danfe(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:documents:view")),
+) -> Response:
+    document = db.get(FiscalDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    setting = _get_or_create_settings(db)
+    try:
+        pdf = generate_danfe_pdf(setting, document)
+    except NfceValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    number = document.number or document.id
+    filename = f"danfe-{document.document_type}-{number}.pdf"
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )

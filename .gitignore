@@ -1,0 +1,65 @@
+# Environment and secrets
+.env
+*.env
+!.env.example
+config.json
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Flutter/Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+pubspec.lock
+*.iml
+web/
+
+# IDEs
+.idea/
+.vscode/
+CEREBRO_OBSIDIAN/CEREBRO/.obsidian/workspace.json
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Logs and temporary files
+*.log
+tmp/
+temp/
+
+# Local/runtime data
+uploads/
+logs/
+BANCO_LOCAL_POSTGRES/
+database/
+
+# Local toolchains and generated delivery packages
+tools/
+outputs/
+dist/
+node_modules/
+.wrangler/
+
+# Manual backups and generated transfer folders
+backups/
+BACKUP*/
+*_BACKUP*/
+*BACKUP*
+
+# Local diagnostic exports
+*_check.json
+fiscal_*.json
+_codex_*.txt
