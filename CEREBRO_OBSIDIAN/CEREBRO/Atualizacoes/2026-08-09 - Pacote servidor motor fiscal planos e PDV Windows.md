@@ -4,6 +4,13 @@
 - Levar ao servidor a atualizacao completa feita em 2026-08-09.
 - Escopo principal: motor fiscal NF-e/NFC-e, sincronizacao SEFAZ, cadastro fiscal master/tenant, checklist fiscal, regras RTC IBS/CBS, planos por modulos e separacao PDV Web x PDV Windows.
 
+## GitHub / servidor
+- Repositorio oficial: `https://github.com/pslyncar/LYNCAR_ERP.git`
+- Branch: `main`
+- Commit alinhado com servidor apos ajustes finais: `32d6c84 Alinha ajustes do servidor no GitHub`
+- Tag do baseline/pacote fiscal: `pacote-servidor-2026-08-09`
+- Servidor confirmou fluxo novo usando `git fetch`, `git status` e `git log --oneline HEAD..origin/main`.
+
 ## Regras de produto decididas
 - O motor fiscal deve ir como codigo de producao, com ambiente configuravel por empresa.
 - O cadastro master preenche dados fiscais iniciais do cliente e o tenant usa esses dados como base.
