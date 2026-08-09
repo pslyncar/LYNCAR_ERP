@@ -616,11 +616,11 @@ class _FiscalScreenState extends State<FiscalScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Sincronizar numeraÃ§Ã£o NFC-e'),
+        title: const Text('Sincronizar numeração NFC-e'),
         content: Text(
           'O sistema vai consultar a NFCeListagemChaves da SEFAZ-SP em homologacao, '
-          'identificar o maior nÃºmero autorizado da sÃ©rie ${current.nfceSeries} '
-          'e gravar a prÃ³xima NFC-e sem reduzir a sequÃªncia atual.',
+          'identificar o maior número autorizado da série ${current.nfceSeries} '
+          'e gravar a próxima NFC-e sem reduzir a sequência atual.',
         ),
         actions: [
           TextButton(

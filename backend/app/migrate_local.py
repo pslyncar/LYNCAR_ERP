@@ -804,6 +804,8 @@ def migrate_registered_tenants() -> None:
 def sync_master_user_index_from_tenants() -> None:
     from sqlalchemy import create_engine, text
 
+    ignored_emails = {"_pdv_terminal@lyncar.local"}
+
     with MasterSessionLocal() as master_db:
         companies = list(master_db.query(Company).all())
 
@@ -827,6 +829,8 @@ def sync_master_user_index_from_tenants() -> None:
                     )
                 ).mappings()
                 for existing_user in users:
+                    if existing_user["email"] in ignored_emails:
+                        continue
                     upsert_user_index(
                         company_code=registered_company.code,
                         company_name=registered_company.name,

@@ -1,0 +1,96 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Lyncar">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="Lyncar">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=20260704">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png?v=20260704"/>
+
+  <title>Lyncar</title>
+  <link rel="manifest" href="manifest.json?v=20260704">
+</head>
+<body>
+  <script>
+    // Em ambiente administrativo/localhost, o service worker do Flutter pode manter
+    // uma versÃ£o antiga do sistema no navegador. Limpamos antes de carregar o app.
+    window.__clearOldFlutterCache = function clearOldFlutterCache() {
+      var serviceWorkerCleanup = Promise.resolve();
+      if ('serviceWorker' in navigator) {
+        serviceWorkerCleanup = navigator.serviceWorker
+          .getRegistrations()
+          .then(function (registrations) {
+            return Promise.all(registrations.map(function (registration) {
+              return registration.unregister();
+            }));
+          })
+          .catch(function () {});
+      }
+      var cacheCleanup = Promise.resolve();
+      if ('caches' in window) {
+        cacheCleanup = caches
+          .keys()
+          .then(function (keys) {
+            return Promise.all(keys.map(function (key) {
+              return caches.delete(key);
+            }));
+          })
+          .catch(function () {});
+      }
+      return Promise.all([serviceWorkerCleanup, cacheCleanup]);
+    };
+
+    // O PDV usa teclas de funcao como comandos de caixa. No navegador,
+    // algumas delas tem acao padrao (F5 recarrega, F6 foca a barra de endereco).
+    // Bloqueamos a acao do Chrome e deixamos o evento seguir para o Flutter.
+    window.addEventListener('keydown', function (event) {
+      const pdvKeys = ['F2', 'F4', 'F5', 'F6', 'F9'];
+      if (pdvKeys.includes(event.key) && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+      }
+    }, true);
+  </script>
+  <!--
+    You can customize the "flutter_bootstrap.js" script.
+    This is useful to provide a custom configuration to the Flutter loader
+    or to give the user feedback during the initialization process.
+
+    For more details:
+    * https://docs.flutter.dev/platform-integration/web/initialization
+  -->
+  <script>
+    (window.__clearOldFlutterCache ? window.__clearOldFlutterCache() : Promise.resolve())
+      .then(function () {
+        var script = document.createElement('script');
+        script.src = 'flutter_bootstrap.js?v=20260808-rtc-fiscal-v2';
+        script.async = true;
+        document.body.appendChild(script);
+      });
+  </script>
+</body>
+</html>
+
+
+

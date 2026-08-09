@@ -23,7 +23,7 @@ env/
 build/
 pubspec.lock
 *.iml
-web/
+/web/
 
 # IDEs
 .idea/
