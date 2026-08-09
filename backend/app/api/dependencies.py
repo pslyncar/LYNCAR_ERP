@@ -12,9 +12,40 @@ from app.services.access_control import user_has_permission
 from app.services.company_modules import permission_allowed_by_modules
 from app.services.master_permissions import master_user_has_permission
 from app.services.plan_limits import enforce_database_limit
-from app.services.tenancy import get_enabled_modules_for_company
+from app.services.tenancy import get_enabled_modules_for_company, require_active_company
 
 bearer_scheme = HTTPBearer(auto_error=False)
+PDV_CLIENT_TYPES = {"pdv", "pdv_windows", "windows_pdv", "pdv_desktop"}
+
+
+def _is_pdv_client_type(value: object) -> bool:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    return normalized in PDV_CLIENT_TYPES
+
+
+def _ensure_company_access(payload: dict | None) -> list[str] | None:
+    if payload is None or payload.get("scope") == "master":
+        return None
+    company_code = payload.get("company_code")
+    if not isinstance(company_code, str) or not company_code.strip():
+        return None
+    try:
+        require_active_company(company_code)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Empresa bloqueada ou inativa. Procure a Lyncar.",
+        ) from exc
+    enabled_modules = get_enabled_modules_for_company(company_code)
+    if (
+        _is_pdv_client_type(payload.get("client_type"))
+        and "pdv_windows" not in enabled_modules
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PDV Windows nao liberado para esta empresa. Procure a Lyncar.",
+        )
+    return enabled_modules
 
 
 def _decode_credentials_or_401(
@@ -52,6 +83,7 @@ def get_current_user(
     try:
         payload = decode_access_token(credentials.credentials)
         user_id = int(payload["sub"])
+        _ensure_company_access(payload)
     except ExpiredSignatureError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -174,7 +206,7 @@ def require_permission(permission_code: str):
         if payload is not None:
             company_code = payload.get("company_code")
             if isinstance(company_code, str) and payload.get("scope") != "master":
-                enabled_modules = get_enabled_modules_for_company(company_code)
+                enabled_modules = _ensure_company_access(payload) or []
                 if not permission_allowed_by_modules(permission_code, enabled_modules):
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
@@ -199,7 +231,7 @@ def require_any_permission(*permission_codes: str):
         if payload is not None:
             company_code = payload.get("company_code")
             if isinstance(company_code, str) and payload.get("scope") != "master":
-                enabled_modules = get_enabled_modules_for_company(company_code)
+                enabled_modules = _ensure_company_access(payload) or []
                 allowed_codes = {
                     code
                     for code in allowed_codes

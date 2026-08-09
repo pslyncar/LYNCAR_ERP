@@ -55,6 +55,24 @@ def _is_pdv_client_type(value: str | None) -> bool:
     return normalized in {"pdv", "pdv_windows", "windows_pdv", "pdv_desktop"}
 
 
+def _ensure_pdv_windows_enabled(company_code: str) -> None:
+    if "pdv_windows" not in get_enabled_modules_for_company(company_code):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PDV Windows nao liberado para esta empresa. Procure a Lyncar.",
+        )
+
+
+def _ensure_company_active(company_code: str) -> None:
+    try:
+        require_active_company(company_code)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Empresa bloqueada ou inativa. Procure a Lyncar.",
+        ) from exc
+
+
 def _validate_company_code(company_code: str) -> tuple[str, str]:
     settings = get_settings()
     normalized = normalize_company_code(company_code)
@@ -76,6 +94,7 @@ def _token_response_for_tenant_user(
     *,
     client_type: str | None = None,
 ) -> TokenResponse:
+    _ensure_company_active(company_code)
     company = get_company_by_code(company_code)
     company_name = company.name if company else company_code
     plan_code = (company.plan or "start") if company else "start"
@@ -84,6 +103,11 @@ def _token_response_for_tenant_user(
         company.enabled_modules if company else None,
         plan_code,
     )
+    if _is_pdv_client_type(client_type) and "pdv_windows" not in enabled_modules:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PDV Windows nao liberado para esta empresa. Procure a Lyncar.",
+        )
     with session_for_company(company_code) as db:
         current = db.get(User, user.id)
         if current is None or not current.active:
@@ -179,7 +203,10 @@ def activate_pdv_terminal(payload: PdvTerminalActivationRequest) -> dict:
     with MasterSessionLocal() as master_db:
         companies = list(
             master_db.scalars(
-                select(Company).where(Company.active.is_(True))
+                select(Company).where(
+                    Company.active.is_(True),
+                    Company.status == "active",
+                )
             ).all()
         )
     for company in companies:
@@ -377,6 +404,7 @@ def change_password(
         return ChangePasswordResponse()
 
     company_code = normalize_company_code(str(token_data.get("company_code") or ""))
+    _ensure_company_active(company_code)
     user_id = int(subject)
     with session_for_company(company_code) as db:
         user = db.get(User, user_id)
@@ -426,6 +454,7 @@ def refresh_token(
             return _token_response_for_master_user(user)
 
     user_id = int(subject)
+    _ensure_company_active(company_code)
     with session_for_company(company_code) as db:
         user = db.get(User, user_id)
         if user is None or not user.active:
@@ -482,13 +511,8 @@ def refresh_pdv_token(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Empresa da sessao do PDV nao identificada.",
         )
-    try:
-        require_active_company(company_code)
-    except LookupError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Empresa inativa ou nao encontrada.",
-        ) from exc
+    _ensure_company_active(company_code)
+    _ensure_pdv_windows_enabled(company_code)
 
     try:
         user_id = int(str(payload.get("sub") or ""))
@@ -646,6 +670,7 @@ def read_current_user(
             )
 
     company = get_company_by_code(company_code)
+    _ensure_company_active(company_code)
     plan_code = company.plan if company else "start"
     enabled_modules = modules_for_business_type(
         company.business_type if company else "custom",

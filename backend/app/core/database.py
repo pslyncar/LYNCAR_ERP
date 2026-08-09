@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -35,7 +35,13 @@ def _company_code_from_request(request: Request) -> str:
 
 
 def get_db(request: Request) -> Generator[Session, None, None]:
-    db = session_for_company(_company_code_from_request(request))
+    try:
+        db = session_for_company(_company_code_from_request(request))
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Empresa bloqueada ou inativa. Procure a Lyncar.",
+        ) from exc
     try:
         yield db
     finally:

@@ -368,9 +368,12 @@ class _PdvTerminalGateState extends State<_PdvTerminalGate>
         await _storage.remove(_sessionKey);
         _sessionRefreshTimer?.cancel();
         if (mounted) {
+          final message = error.statusCode == 403
+              ? error.message
+              : 'Sessao do PDV expirada. Entre novamente.';
           setState(() {
             _session = null;
-            _error = 'Sessao do PDV expirada. Entre novamente.';
+            _error = message;
           });
         }
       }
