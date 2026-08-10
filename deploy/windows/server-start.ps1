@@ -4,6 +4,7 @@ $ProjectRoot = "C:\Lynkar\ERP-PAPEZZOSYNC"
 $BackendRoot = Join-Path $ProjectRoot "backend"
 $WebRoot = Join-Path $ProjectRoot "admin_app\admin_flutter\build\web"
 $PublicSiteRoot = "C:\Lynkar\SITE-LYNCAR-COM-BR\build\web"
+$PublicSiteFavicon = Join-Path $ProjectRoot "deploy\site-public\favicon.ico"
 $UpdatesRoot = "C:\Lynkar\updates"
 $Python = Join-Path $BackendRoot ".venv\Scripts\python.exe"
 $Logs = "C:\Lynkar\logs"
@@ -39,6 +40,9 @@ if (Test-Path (Join-Path $WebRoot "index.html")) {
 }
 
 if (Test-Path (Join-Path $PublicSiteRoot "index.html")) {
+    if (Test-Path $PublicSiteFavicon) {
+        Copy-Item -LiteralPath $PublicSiteFavicon -Destination (Join-Path $PublicSiteRoot "favicon.ico") -Force
+    }
     Start-Process `
         -FilePath $Python `
         -ArgumentList "-m", "http.server", "5100", "--bind", "0.0.0.0" `
