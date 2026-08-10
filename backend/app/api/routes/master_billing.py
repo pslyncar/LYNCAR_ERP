@@ -13,7 +13,11 @@ from app.schemas.company_billing import (
     CompanyBillingRead,
     CompanyBillingUpdate,
 )
-from app.services.company_billing import ensure_due_billings_for_all_companies
+from app.services.company_billing import (
+    AUTO_BILLING_NOTE,
+    ensure_due_billings_for_all_companies,
+    is_automatic_billing,
+)
 from app.services.mercado_pago import (
     apply_payment_status,
     create_pix_for_billing,
@@ -21,6 +25,7 @@ from app.services.mercado_pago import (
 )
 
 router = APIRouter()
+MANUAL_OVERRIDE_NOTE = "Ajuste manual aplicado nesta mensalidade."
 
 
 def _read(row: CompanyBilling) -> CompanyBillingRead:
@@ -165,6 +170,14 @@ def update_billing(
         for field, value in data.items():
             setattr(billing, field, value)
         if financial_change and billing.status == "pending":
+            if is_automatic_billing(billing):
+                billing.notes = f"{AUTO_BILLING_NOTE}\n{MANUAL_OVERRIDE_NOTE}"
+            elif MANUAL_OVERRIDE_NOTE not in (billing.notes or ""):
+                billing.notes = (
+                    f"{billing.notes}\n{MANUAL_OVERRIDE_NOTE}"
+                    if billing.notes
+                    else MANUAL_OVERRIDE_NOTE
+                )
             billing.mercado_pago_payment_id = None
             billing.mercado_pago_status = None
             billing.mercado_pago_external_reference = None
