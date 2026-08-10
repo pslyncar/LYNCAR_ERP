@@ -1,5 +1,6 @@
 from pathlib import Path
 from re import sub
+from urllib.parse import unquote, urlparse
 from uuid import uuid4
 
 from fastapi import HTTPException, UploadFile, status
@@ -32,6 +33,41 @@ def _safe_extension(filename: str | None) -> str:
     return suffix[:20] or ".bin"
 
 
+def safe_scope_name(scope: str) -> str:
+    return "".join(
+        character if character.isalnum() or character in {"-", "_"} else "-"
+        for character in scope.lower()
+    ).strip("-") or "geral"
+
+
+def delete_public_file_if_safe(url: str | None, expected_scope: str) -> bool:
+    if not url:
+        return False
+    parsed = urlparse(str(url))
+    public_path = unquote(parsed.path or str(url))
+    prefix = "/public/"
+    if not public_path.startswith(prefix):
+        return False
+    parts = [part for part in public_path[len(prefix) :].split("/") if part]
+    if len(parts) != 2:
+        return False
+    scope, filename = parts
+    safe_scope = safe_scope_name(expected_scope)
+    if scope != safe_scope or filename in {"", ".", ".."}:
+        return False
+    target_dir = (UPLOAD_ROOT / safe_scope).resolve()
+    target_path = (target_dir / filename).resolve()
+    if target_dir not in target_path.parents:
+        return False
+    if not target_path.is_file():
+        return False
+    try:
+        target_path.unlink()
+        return True
+    except OSError:
+        return False
+
+
 async def save_public_image(file: UploadFile, scope: str, max_bytes: int | None = None) -> str:
     content_type = (file.content_type or "").lower()
     extension = ALLOWED_IMAGE_TYPES.get(content_type)
@@ -54,10 +90,7 @@ async def save_public_image(file: UploadFile, scope: str, max_bytes: int | None 
             detail=f"Imagem muito grande. Envie arquivo de ate {upload_limit // 1024 // 1024} MB.",
         )
 
-    safe_scope = "".join(
-        character if character.isalnum() or character in {"-", "_"} else "-"
-        for character in scope.lower()
-    ).strip("-") or "geral"
+    safe_scope = safe_scope_name(scope)
     target_dir = UPLOAD_ROOT / safe_scope
     target_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex}{extension}"
@@ -95,10 +128,7 @@ async def save_public_file(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail=f"Arquivo muito grande. Envie arquivo de ate {max_bytes // 1024 // 1024} MB.",
         )
-    safe_scope = "".join(
-        character if character.isalnum() or character in {"-", "_"} else "-"
-        for character in scope.lower()
-    ).strip("-") or "geral"
+    safe_scope = safe_scope_name(scope)
     target_dir = UPLOAD_ROOT / safe_scope
     target_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex}{extension}"

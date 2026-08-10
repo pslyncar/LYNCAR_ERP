@@ -1,11 +1,13 @@
 from datetime import date, datetime, time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import require_any_permission, require_permission
+from app.api.dependencies import bearer_scheme, require_any_permission, require_permission
 from app.core.database import get_db
+from app.core.security import decode_access_token
 from app.models.product import Product
 from app.models.product_composition import ProductCompositionItem
 from app.models.product_batch import ProductBatch
@@ -29,7 +31,9 @@ from app.services.product_batches import apply_batch_out
 from app.services.product_costs import apply_stock_out, base_unit_cost, refresh_inventory_value
 from app.services.fiscal_assistant import learn_from_product
 from app.services.fiscal_stock import refresh_many_product_fiscal_balances
+from app.services.tenancy import normalize_company_code
 from app.services.unit_conversion import are_units_compatible
+from app.services.uploads import delete_public_file_if_safe
 
 router = APIRouter()
 
@@ -87,6 +91,46 @@ def _validate_offer_period(data: dict) -> None:
             status_code=400,
             detail="Fim da oferta precisa ser depois do inicio.",
         )
+
+
+def _product_image_scope(
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    company_code = "tenant"
+    if credentials is not None:
+        payload = decode_access_token(credentials.credentials)
+        company_code = normalize_company_code(
+            str(payload.get("company_code") or "tenant")
+        )
+    return f"tenant-products-{company_code}"
+
+
+def _image_used_by_another_product(
+    db: Session,
+    image_url: str | None,
+    product_id: int,
+) -> bool:
+    if not image_url:
+        return False
+    return db.scalar(
+        select(Product.id).where(
+            Product.id != product_id,
+            Product.image_url == image_url,
+        )
+    ) is not None
+
+
+def _delete_product_image_if_orphan(
+    db: Session,
+    image_url: str | None,
+    product_id: int,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> None:
+    if not image_url:
+        return
+    if _image_used_by_another_product(db, image_url, product_id):
+        return
+    delete_public_file_if_safe(image_url, _product_image_scope(credentials))
 
 
 @router.post("", response_model=ProductRead, status_code=status.HTTP_201_CREATED)
@@ -579,12 +623,14 @@ def update_product(
     product_in: ProductUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("products:update")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> Product:
     product = db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Produto/servico nao encontrado.")
 
     update_data = product_in.model_dump(exclude_unset=True)
+    old_image_url = product.image_url
     if "barcode" in update_data:
         update_data["barcode"] = _normalize_gtin(update_data.get("barcode"))
         _ensure_unique_gtin(db, update_data.get("barcode"), product_id=product.id)
@@ -624,6 +670,8 @@ def update_product(
     learn_from_product(db, product)
     ensure_initial_product_batch(db, product)
     db.commit()
+    if "image_url" in update_data and old_image_url != product.image_url:
+        _delete_product_image_if_orphan(db, old_image_url, product.id, credentials)
     db.refresh(product)
     return product
 
@@ -633,9 +681,13 @@ def delete_product(
     product_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("products:delete")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> None:
     product = db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Produto/servico nao encontrado.")
+    old_image_url = product.image_url
+    product_id = product.id
     db.delete(product)
     db.commit()
+    _delete_product_image_if_orphan(db, old_image_url, product_id, credentials)

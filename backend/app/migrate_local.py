@@ -1,3 +1,5 @@
+from urllib.parse import unquote, urlparse
+
 from sqlalchemy import text
 
 from app.core.database import Base, engine
@@ -8,6 +10,7 @@ from app.services.access_control import seed_default_access_control
 from app.migrate_master import main as migrate_master
 from app.services.master_user_index import upsert_user_index
 from app.services.tenancy import seed_default_company
+from app.services.uploads import UPLOAD_ROOT, safe_scope_name
 
 
 CLIENT_COLUMNS = [
@@ -739,6 +742,57 @@ def backfill_product_batches(bind_engine=engine) -> None:
         )
 
 
+def _public_upload_path(url: str | None) -> str | None:
+    if not url:
+        return None
+    parsed = urlparse(str(url))
+    public_path = unquote(parsed.path or str(url))
+    if public_path.startswith("/public/"):
+        return public_path
+    return None
+
+
+def cleanup_orphan_product_images(company_code: str, bind_engine=engine) -> None:
+    scope = safe_scope_name(f"tenant-products-{company_code}")
+    target_dir = (UPLOAD_ROOT / scope).resolve()
+    if not target_dir.is_dir():
+        return
+    with bind_engine.connect() as connection:
+        if (
+            connection.execute(text("SELECT to_regclass('public.products')")).scalar()
+            is None
+        ):
+            return
+        rows = connection.execute(
+            text(
+                """
+                SELECT image_url
+                FROM products
+                WHERE image_url IS NOT NULL
+                  AND trim(image_url) <> ''
+                """
+            )
+        ).scalars()
+        used_paths = {
+            path
+            for path in (_public_upload_path(row) for row in rows)
+            if path is not None
+        }
+    for file_path in target_dir.iterdir():
+        if not file_path.is_file():
+            continue
+        resolved = file_path.resolve()
+        if target_dir not in resolved.parents:
+            continue
+        public_path = f"/public/{scope}/{file_path.name}"
+        if public_path in used_paths:
+            continue
+        try:
+            resolved.unlink()
+        except OSError:
+            continue
+
+
 def migrate_registered_tenants() -> None:
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -797,6 +851,7 @@ def migrate_registered_tenants() -> None:
             )
             with TenantSessionLocal() as tenant_db:
                 seed_default_access_control(tenant_db)
+            cleanup_orphan_product_images(registered_company.code, tenant_engine)
         finally:
             tenant_engine.dispose()
 
@@ -862,6 +917,7 @@ def main() -> None:
     add_fiscal_setting_columns()
     add_production_order_columns()
     backfill_product_batches()
+    cleanup_orphan_product_images("tenant")
     from app.core.database import SessionLocal
 
     with SessionLocal() as db:
