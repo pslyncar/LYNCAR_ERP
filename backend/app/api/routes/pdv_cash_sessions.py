@@ -55,6 +55,8 @@ def open_cash_session(
         db.flush()
         existing.status = "open"
         existing.last_heartbeat_at = datetime.utcnow()
+        db.commit()
+        db.refresh(existing)
         return existing
 
     cash_session = PdvCashSession(
@@ -69,6 +71,8 @@ def open_cash_session(
     )
     db.add(cash_session)
     db.flush()
+    db.commit()
+    db.refresh(cash_session)
     return cash_session
 
 
@@ -87,6 +91,8 @@ def heartbeat_cash_session(
     cash_session.last_heartbeat_at = datetime.utcnow()
     if payload.last_error:
         cash_session.last_error = payload.last_error[:4000]
+    db.commit()
+    db.refresh(cash_session)
     return cash_session
 
 
@@ -107,4 +113,6 @@ def close_cash_session(
     cash_session.closed_by_user_id = current_user.id
     cash_session.closing_id = payload.closing_id
     cash_session.last_heartbeat_at = datetime.utcnow()
+    db.commit()
+    db.refresh(cash_session)
     return cash_session
