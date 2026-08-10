@@ -36,6 +36,7 @@ router = APIRouter()
 
 _SYSTEM_ROLES = {"admin"}
 _LEGACY_ROLES = {"technician", "seller", "cashier", "client"}
+_SYSTEM_USER_EMAILS = {"_pdv_terminal@lyncar.local"}
 
 
 def _enabled_modules_from_credentials(
@@ -196,7 +197,7 @@ def list_users(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> list[UserRead]:
     enabled_modules = _enabled_modules_from_credentials(credentials)
-    query = select(User).order_by(User.name)
+    query = select(User).where(User.email.notin_(_SYSTEM_USER_EMAILS)).order_by(User.name)
     if role is not None:
         query = query.where(User.role == role)
     return [
