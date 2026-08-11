@@ -69,3 +69,16 @@ Tambem existe migracao de compatibilidade para os novos modulos de menu lateral:
 - `settings` para Configuracoes
 
 Essa compatibilidade completa planos, segmentos e clientes antigos uma vez, quando o banco ainda nao possui esses modulos nos planos. Depois disso, alteracoes nos planos devem ser feitas pelo Master, porque mudar um plano propaga para todos os clientes daquele plano.
+
+## Ajuste 2026-08-11 - Seed somente em banco vazio
+
+Os seeds de planos e segmentos agora servem apenas para instalacao nova, quando a tabela ainda esta vazia.
+
+Em producao madura, o Master passa a ser a fonte principal:
+
+- apagar um plano nao faz o codigo recriar automaticamente depois
+- apagar um segmento nao faz o codigo recriar automaticamente depois
+- editar modulos/precos/limites deve ser feito pelo Master
+- migracao continua segura para banco novo, mas nao sobrescreve a administracao real do banco existente
+
+Para o servidor: depois do pull, rodar a migracao normalmente. Se as tabelas ja tiverem dados, o seed nao vai recriar receitas de fabrica apagadas manualmente.

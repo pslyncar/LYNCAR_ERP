@@ -277,6 +277,9 @@ def filter_modules_by_plan(modules: list[str], plan_code: str | None) -> list[st
 
 
 def seed_business_segments(db) -> None:
+    has_any_segment = db.query(BusinessSegment.id).first()
+    if has_any_segment is not None:
+        return
     for code, default in SEGMENT_DEFAULTS.items():
         segment = db.query(BusinessSegment).filter(BusinessSegment.code == code).first()
         if segment is None:

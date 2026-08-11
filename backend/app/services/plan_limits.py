@@ -202,6 +202,9 @@ def plan_defaults(plan_code: str | None) -> PlanLimits:
 
 
 def seed_subscription_plans(db: Session) -> None:
+    has_any_plan = db.scalar(select(SubscriptionPlan.id).limit(1))
+    if has_any_plan is not None:
+        return
     for index, default in enumerate(PLAN_LIMITS.values(), start=1):
         plan = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.code == default.code))
         if plan is None:
