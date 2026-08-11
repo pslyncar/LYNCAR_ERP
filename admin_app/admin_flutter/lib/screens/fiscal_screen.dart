@@ -1513,7 +1513,6 @@ class _FiscalOutputRulesCard extends StatelessWidget {
                           const SizedBox(height: 3),
                           Text(
                             [
-                              'Prioridade ${rule.priority}',
                               _operationLabel(rule.operationType),
                               rule.documentModel == null
                                   ? 'NF-e/NFC-e'
@@ -1716,8 +1715,6 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
               const SizedBox(height: 8),
               Row(
                 children: [
-                  Expanded(child: _field(_priority, 'Prioridade')),
-                  const SizedBox(width: 10),
                   Expanded(
                     child: DropdownButtonFormField<String>(
                       initialValue: _operation,
@@ -1808,24 +1805,42 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
               const SizedBox(height: 10),
               Row(
                 children: [
-                  Expanded(child: _field(_ufOrigin, 'UF origem')),
-                  const SizedBox(width: 10),
                   Expanded(child: _field(_ufDestination, 'UF destino')),
                   const SizedBox(width: 10),
-                  Expanded(child: _field(_productId, 'ID produto especifico')),
+                  Expanded(child: _field(_ufOrigin, 'UF origem')),
                 ],
               ),
               const SizedBox(height: 10),
-              Row(
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text(
+                  'Aplicar somente para produto ou classificacao',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: const Text(
+                  'Preencha apenas quando a regra nao for geral.',
+                ),
+                childrenPadding: const EdgeInsets.only(top: 8, bottom: 4),
                 children: [
-                  Expanded(child: _field(_ncm, 'NCM exato')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(_ncmPrefix, 'Prefixo NCM')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(_cest, 'CEST')),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _field(_productId, 'ID produto especifico'),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_ncm, 'NCM exato')),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(child: _field(_ncmPrefix, 'Prefixo NCM')),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_cest, 'CEST')),
+                    ],
+                  ),
                 ],
               ),
-              const SizedBox(height: 10),
               const SizedBox(height: 10),
               const Align(
                 alignment: Alignment.centerLeft,
@@ -1855,21 +1870,36 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
                 ],
               ),
               const SizedBox(height: 10),
-              Row(
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                title: const Text(
+                  'Reforma tributaria IBS/CBS',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                subtitle: const Text(
+                  'Use quando o contador orientar ou quando o cronograma exigir.',
+                ),
+                childrenPadding: const EdgeInsets.only(top: 8, bottom: 4),
                 children: [
-                  Expanded(child: _field(_ibsCbsCst, 'IBS/CBS CST')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(_ibsCbsClass, 'cClassTrib IBS/CBS')),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: _field(_cbsRate, 'CBS %')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(_ibsUfRate, 'IBS UF %')),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(_ibsMunRate, 'IBS Mun %')),
+                  Row(
+                    children: [
+                      Expanded(child: _field(_ibsCbsCst, 'IBS/CBS CST')),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: _field(_ibsCbsClass, 'cClassTrib IBS/CBS'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(child: _field(_cbsRate, 'CBS %')),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_ibsUfRate, 'IBS UF %')),
+                      const SizedBox(width: 10),
+                      Expanded(child: _field(_ibsMunRate, 'IBS Mun %')),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 10),
