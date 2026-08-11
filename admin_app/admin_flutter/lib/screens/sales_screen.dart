@@ -580,7 +580,7 @@ class _SalesScreenState extends State<SalesScreen> {
     (sum, item) => sum + _moneyCents(item.quantity * item.unitPrice),
   );
   int get _discountCents => _moneyCents(parseBrazilianNumber(_discount.text));
-  int get _totalCents => (_subtotalCents - _discountCents).clamp(0, 1 << 62);
+  int get _totalCents => _nonNegativeCents(_subtotalCents - _discountCents);
   int get _paidCents => _moneyCents(parseBrazilianNumber(_paymentAmount.text));
   bool get _usesFinancialPayment =>
       _paymentMethod == 'boleto' || _paymentMethod == 'crediario';
@@ -1936,13 +1936,11 @@ class _CartPanel extends StatelessWidget {
     final currentPaidCents = _moneyCents(
       parseBrazilianNumber(paymentAmount.text),
     );
-    final currentTotalCents = (subtotalCents - currentDiscountCents).clamp(
-      0,
-      1 << 62,
+    final currentTotalCents = _nonNegativeCents(
+      subtotalCents - currentDiscountCents,
     );
-    final currentChangeCents = (currentPaidCents - currentTotalCents).clamp(
-      0,
-      1 << 62,
+    final currentChangeCents = _nonNegativeCents(
+      currentPaidCents - currentTotalCents,
     );
     return AppCard(
       padding: EdgeInsets.all(pdvMode ? 24 : 18),
@@ -2526,6 +2524,8 @@ class _CashMovement {
 String _money(double value) => 'R\$ ${formatBrazilianMoneyInput(value)}';
 
 int _moneyCents(double value) => (value * 100).round();
+
+int _nonNegativeCents(int value) => value < 0 ? 0 : value;
 
 String _dateTime(DateTime value) {
   final local = value.toLocal();

@@ -1953,12 +1953,10 @@ class _PdvScreenState extends State<PdvScreen> {
                   _moneyToCents(previousPaid) + amountCents;
               final totalCents = _moneyToCents(total);
               final change = method == 'dinheiro'
-                  ? ((selectedPaidCents - totalCents).clamp(0, 1 << 62) / 100)
-                        .toDouble()
+                  ? _nonNegativeCents(selectedPaidCents - totalCents) / 100
                   : 0.0;
               final nextRemaining =
-                  ((totalCents - selectedPaidCents).clamp(0, 1 << 62) / 100)
-                      .toDouble();
+                  _nonNegativeCents(totalCents - selectedPaidCents) / 100;
               final crediarioReason = method == 'crediario'
                   ? _crediarioBlockReason()
                   : null;
@@ -2717,7 +2715,7 @@ class _PdvScreenState extends State<PdvScreen> {
     (sum, item) => sum + _moneyToCents(item.quantity * item.unitPrice),
   );
   int get _discountCents => _moneyToCents(parseBrazilianNumber(_discount.text));
-  int get _totalCents => (_subtotalCents - _discountCents).clamp(0, 1 << 62);
+  int get _totalCents => _nonNegativeCents(_subtotalCents - _discountCents);
   double get _subtotal => _subtotalCents / 100;
   double get _discountValue => parseBrazilianNumber(_discount.text);
   double get _total => _totalCents / 100;
@@ -6950,7 +6948,7 @@ Sale _buildLocalOfflineSale({
   );
   final totalCents = _moneyToCents(total);
   final paid = paidCents / 100;
-  final change = ((paidCents - totalCents).clamp(0, 1 << 62) / 100).toDouble();
+  final change = _nonNegativeCents(paidCents - totalCents) / 100;
   return Sale(
     id: -DateTime.now().millisecondsSinceEpoch,
     number: localNumber,
@@ -7133,6 +7131,8 @@ ButtonStyle _pdvOutlineButtonStyle() {
 String _money(double value) => 'R\$ ${formatBrazilianMoneyInput(value)}';
 
 int _moneyToCents(double value) => (value * 100).round();
+
+int _nonNegativeCents(int value) => value < 0 ? 0 : value;
 
 String _dateTime(DateTime value) {
   final local = value.toLocal();

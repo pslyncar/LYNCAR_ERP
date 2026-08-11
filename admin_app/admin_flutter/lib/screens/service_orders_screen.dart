@@ -692,7 +692,7 @@ class _ServiceOrderSaleDialogState extends State<_ServiceOrderSaleDialog> {
   }
 
   int get _discountCents => _moneyCents(widget.order.discountAmount);
-  int get _totalCents => (_subtotalCents - _discountCents).clamp(0, 1 << 62);
+  int get _totalCents => _nonNegativeCents(_subtotalCents - _discountCents);
   int get _paidCents => _moneyCents(parseBrazilianNumber(_paymentAmount.text));
   bool get _usesFinancialPayment =>
       _paymentMethod == 'boleto' || _paymentMethod == 'crediario';
@@ -835,7 +835,7 @@ class _ServiceOrderSaleDialogState extends State<_ServiceOrderSaleDialog> {
     final label = widget.order.number?.isNotEmpty == true
         ? widget.order.number!
         : _serviceOrderCode(widget.order);
-    final changeCents = (_paidCents - _totalCents).clamp(0, 1 << 62);
+    final changeCents = _nonNegativeCents(_paidCents - _totalCents);
     return AlertDialog(
       title: Text('Gerar venda da OS $label'),
       content: SizedBox(
@@ -2192,6 +2192,8 @@ String _moneyInput(double value) => formatBrazilianMoneyInput(value);
 String _money(double value) => 'R\$ ${formatBrazilianMoneyInput(value)}';
 
 int _moneyCents(double value) => (value * 100).round();
+
+int _nonNegativeCents(int value) => value < 0 ? 0 : value;
 
 String _serviceOrderCode(ServiceOrder order) => 'M${order.id}';
 
