@@ -96,3 +96,18 @@ Exclusao profissional:
 - ao migrar segmento, apenas o tipo de segmento do cliente muda; os modulos especificos do cliente permanecem como estao
 
 Para o servidor: apos pull, rodar `python -m app.migrate_master`. Nao ha seed de plano/segmento para recriar cadastros apagados.
+
+## Ajuste 2026-08-11 - Perfis respeitam modulos contratados
+
+A tela de Configuracoes > Perfis de acesso deve mostrar apenas permissoes dos modulos realmente liberados para a empresa no Master, considerando plano e excecoes do cliente.
+
+Regra:
+
+- permissao de modulo nao contratado nao aparece para criar/editar perfil
+- backend tambem bloqueia salvar perfil com permissao fora dos modulos liberados
+- roles antigos sao serializados filtrando permissoes fora do plano
+- Baixas de estoque usa o modulo `stock_withdrawals`, nao apenas `stock`
+- modelos rapidos de perfil so aparecem quando todas as permissoes daquele modelo estao disponiveis
+- menu lateral do cliente deve seguir a mesma divisao: Vendas usa `sales`; Caixa usa `cash_closings`
+
+Para o servidor: rodar `python -m app.migrate_local` depois do pull, porque essa migracao chama `seed_default_access_control` em cada tenant e atualiza o modulo salvo das permissoes existentes.

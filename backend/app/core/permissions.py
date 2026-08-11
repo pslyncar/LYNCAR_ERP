@@ -60,7 +60,7 @@ PERMISSIONS = [
     PermissionDefinition(
         "stock:withdraw",
         "Realizar baixas de estoque",
-        "stock",
+        "stock_withdrawals",
         "Dar baixa por perda, consumo, vencimento e outros motivos.",
     ),
     PermissionDefinition("stock:entries:view", "Ver entradas", "stock_entries", "Visualizar entradas e conferências de mercadoria."),

@@ -200,7 +200,7 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.assignment,
             screen: ServiceOrdersScreen(session: widget.session),
           ),
-        if (widget.session.hasModule('cash_closings') &&
+        if (widget.session.hasModule('sales') &&
             widget.session.can('sales:view'))
           _Destination(
             label: 'Vendas',
@@ -222,7 +222,8 @@ class _AppShellState extends State<AppShell> {
               },
             ),
           ),
-        if (widget.session.can('sales:view'))
+        if (widget.session.hasModule('cash_closings') &&
+            widget.session.can('sales:view'))
           _Destination(
             label: 'Caixa',
             icon: Icons.account_balance_wallet_outlined,

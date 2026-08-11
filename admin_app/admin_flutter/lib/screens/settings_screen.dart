@@ -18,17 +18,23 @@ const _moduleLabels = {
   'tickets': 'Chamados',
   'products': 'Produtos',
   'stock': 'Estoque',
+  'stock_entries': 'Entradas',
+  'stock_withdrawals': 'Baixas',
   'suppliers': 'Fornecedores',
   'production': 'Produção',
   'service_contracts': 'Contratos variáveis',
   'sales': 'Vendas',
+  'cash_closings': 'Caixa',
   'pdv': 'Vendas de PDV',
+  'pdv_windows': 'PDV Windows',
   'service_orders': 'Ordens de serviço',
   'monitoring': 'Monitoramento',
   'dashboard': 'Início',
   'reports': 'Relatórios',
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
+  'support': 'Suporte',
+  'settings': 'Configuracoes',
   'users': 'Usuários',
   'permissions': 'Permissões',
 };
@@ -36,7 +42,9 @@ const _moduleLabels = {
 const _moduleDescriptions = {
   'clients': 'Cadastro de clientes, dados de contato e crediário.',
   'products': 'Produtos, preços, estoque e códigos de barras.',
-  'stock': 'Estoque, entradas, conferência e lotes/validade.',
+  'stock': 'Estoque, produtos e lotes/validade.',
+  'stock_entries': 'Entradas, XML de compra e conferência de mercadoria.',
+  'stock_withdrawals': 'Baixas de estoque por perda, consumo e vencimento.',
   'suppliers': 'Cadastro de fornecedores usados nas compras.',
   'service_contracts':
       'Contratos recorrentes por apontamento, baixa de produtos e fechamento quinzenal.',
@@ -44,6 +52,8 @@ const _moduleDescriptions = {
   'pdv': 'Abrir PDV, vender no caixa, operadores, fiscais e autorizações.',
   'finance': 'Contas a pagar, contas a receber e baixas.',
   'fiscal': 'Certificado, NFC-e/NF-e e documentos fiscais.',
+  'support': 'Abertura e acompanhamento de chamados com o suporte.',
+  'settings': 'Configuracoes',
   'dashboard': 'Tela inicial, avisos e indicadores.',
   'reports': 'Relatórios e exportações.',
   'users': 'Cadastro de usuários do sistema.',
@@ -1083,7 +1093,7 @@ class _PresetPicker extends StatelessWidget {
   Widget build(BuildContext context) {
     final presets = _profilePresets
         .where(
-          (preset) => preset.permissions.any(
+          (preset) => preset.permissions.every(
             (permission) => availableCodes.contains(permission),
           ),
         )
