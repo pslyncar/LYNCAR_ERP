@@ -257,11 +257,14 @@ def plan_default_modules(plan_code: str | None) -> list[str]:
     try:
         with MasterSessionLocal() as db:
             plan = db.query(SubscriptionPlan).filter(SubscriptionPlan.code == normalized).first()
-            if plan is not None and plan.default_modules:
-                return sorted(set(plan.default_modules))
+            if plan is not None:
+                return sorted(set(plan.default_modules or []))
+            has_any_plan = db.query(SubscriptionPlan.id).first()
+            if has_any_plan is None:
+                return sorted(set(PLAN_DEFAULT_MODULES.get(normalized, PLAN_DEFAULT_MODULES["start"])))
     except Exception:
         pass
-    return sorted(set(PLAN_DEFAULT_MODULES.get(normalized, PLAN_DEFAULT_MODULES["start"])))
+    return []
 
 
 def plan_allows_module(plan_code: str | None, module: str) -> bool:

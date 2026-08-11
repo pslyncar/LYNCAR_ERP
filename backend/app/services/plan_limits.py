@@ -177,7 +177,7 @@ PLAN_LIMITS: dict[str, PlanLimits] = {
 def normalize_plan_code(value: str | None) -> str:
     code = (value or "start").strip().lower()
     aliases = {"starter": "start", "erp": "start", "premium": "business"}
-    return aliases.get(code, code if code in PLAN_LIMITS else "start")
+    return aliases.get(code, code)
 
 
 def plan_defaults(plan_code: str | None) -> PlanLimits:
@@ -198,7 +198,13 @@ def plan_defaults(plan_code: str | None) -> PlanLimits:
                 priority_support=plan.priority_support,
                 default_modules=list(plan.default_modules or []),
             )
-    return PLAN_LIMITS[code]
+        has_any_plan = db.scalar(select(SubscriptionPlan.id).limit(1))
+    if has_any_plan is None and code in PLAN_LIMITS:
+        return PLAN_LIMITS[code]
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail=f"Plano '{code}' nao encontrado no banco master.",
+    )
 
 
 def seed_subscription_plans(db: Session) -> None:
