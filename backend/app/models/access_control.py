@@ -13,6 +13,8 @@ class Role(Base):
     name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
     label: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
+    is_seller_profile: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_technician_profile: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

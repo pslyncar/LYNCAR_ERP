@@ -346,6 +346,7 @@ class _UserDialogState extends State<_UserDialog> {
   late final TextEditingController _name;
   late final TextEditingController _email;
   late final TextEditingController _sellerCode;
+  late final TextEditingController _technicianCode;
   late final TextEditingController _password;
   late String _role;
   late bool _active;
@@ -362,6 +363,7 @@ class _UserDialogState extends State<_UserDialog> {
     _name = TextEditingController(text: user?.name ?? '');
     _email = TextEditingController(text: user?.email ?? '');
     _sellerCode = TextEditingController(text: user?.sellerCode ?? '');
+    _technicianCode = TextEditingController(text: user?.technicianCode ?? '');
     _password = TextEditingController();
     final userRole = user?.role;
     final roleExists = widget.roles.any((role) => role.name == userRole);
@@ -375,6 +377,7 @@ class _UserDialogState extends State<_UserDialog> {
     _name.dispose();
     _email.dispose();
     _sellerCode.dispose();
+    _technicianCode.dispose();
     _password.dispose();
     super.dispose();
   }
@@ -388,7 +391,12 @@ class _UserDialogState extends State<_UserDialog> {
     final payload = SystemUserPayload(
       name: _name.text,
       email: _email.text,
-      sellerCode: _sellerCode.text,
+      sellerCode: _selectedRole?.isSellerProfile == true
+          ? _sellerCode.text
+          : null,
+      technicianCode: _selectedRole?.isTechnicianProfile == true
+          ? _technicianCode.text
+          : null,
       password: _password.text.trim().isEmpty ? null : _password.text,
       role: _role,
       active: _active,
@@ -450,6 +458,13 @@ class _UserDialogState extends State<_UserDialog> {
     return true;
   }
 
+  SystemRole? get _selectedRole {
+    for (final role in widget.roles) {
+      if (role.name == _role) return role;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -489,6 +504,7 @@ class _UserDialogState extends State<_UserDialog> {
                       : null,
                 ),
                 const SizedBox(height: 12),
+                if (_selectedRole?.isSellerProfile == true) ...[
                 TextFormField(
                   controller: _sellerCode,
                   textCapitalization: TextCapitalization.characters,
@@ -498,8 +514,28 @@ class _UserDialogState extends State<_UserDialog> {
                         'Opcional. Use quando esse usuário também vender no sistema.',
                     border: OutlineInputBorder(),
                   ),
+                  validator: (value) =>
+                      value == null || value.trim().isEmpty
+                      ? 'Informe o codigo de vendedor.'
+                      : null,
                 ),
                 const SizedBox(height: 12),
+                ],
+                if (_selectedRole?.isTechnicianProfile == true) ...[
+                  TextFormField(
+                    controller: _technicianCode,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Codigo tecnico',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) =>
+                        value == null || value.trim().isEmpty
+                        ? 'Informe o codigo de tecnico.'
+                        : null,
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextFormField(
                   controller: _password,
                   obscureText: true,

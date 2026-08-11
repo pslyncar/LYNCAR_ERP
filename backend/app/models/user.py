@@ -13,6 +13,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(150), nullable=False)
     email: Mapped[str] = mapped_column(String(180), nullable=False, unique=True)
     seller_code: Mapped[str | None] = mapped_column(String(40), unique=True, index=True)
+    technician_code: Mapped[str | None] = mapped_column(String(40), unique=True, index=True)
     password_hash: Mapped[str] = mapped_column(Text, nullable=False)
     must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     password_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

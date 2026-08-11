@@ -31,7 +31,7 @@ from app.schemas.auth import (
 )
 from app.schemas.pdv_terminal import PdvTerminalActivationRequest
 from app.services.access_control import get_user_permission_codes
-from app.services.company_modules import modules_for_business_type
+from app.services.company_modules import modules_for_business_type, segment_operational_roles
 from app.services.company_presence import touch_company_presence
 from app.services.master_permissions import get_master_user_permission_codes
 from app.services.master_user_index import find_user_companies, redirect_detail_for_email
@@ -103,6 +103,9 @@ def _token_response_for_tenant_user(
         company.enabled_modules if company else None,
         plan_code,
     )
+    operational_roles = segment_operational_roles(
+        company.business_type if company else "custom"
+    )
     if _is_pdv_client_type(client_type) and "pdv_windows" not in enabled_modules:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -137,6 +140,8 @@ def _token_response_for_tenant_user(
             business_type=company.business_type if company else "custom",
             plan_code=plan_code,
             enabled_modules=enabled_modules,
+            seller_role_enabled=operational_roles["seller"],
+            technician_role_enabled=operational_roles["technician"],
             permissions=permissions,
             must_change_password=bool(current.must_change_password),
         )
@@ -170,6 +175,8 @@ def _token_response_for_master_user(user: MasterUser) -> TokenResponse:
         business_type="master",
         plan_code="enterprise",
         enabled_modules=["master"],
+        seller_role_enabled=True,
+        technician_role_enabled=True,
         permissions=permissions,
         must_change_password=bool(user.must_change_password),
     )
@@ -324,6 +331,9 @@ def login(login_in: LoginRequest) -> TokenResponse:
         company.enabled_modules if company else None,
         plan_code,
     )
+    operational_roles = segment_operational_roles(
+        company.business_type if company else "custom"
+    )
     with session_for_company(company_code) as db:
         user = db.scalar(select(User).where(User.email == login_in.email.lower()))
         if user is None or not user.active:
@@ -359,6 +369,8 @@ def login(login_in: LoginRequest) -> TokenResponse:
         business_type=company.business_type if company else "custom",
         plan_code=plan_code,
         enabled_modules=enabled_modules,
+        seller_role_enabled=operational_roles["seller"],
+        technician_role_enabled=operational_roles["technician"],
         permissions=permissions,
         must_change_password=must_change_password,
     )

@@ -12,5 +12,7 @@ class BusinessSegment(MasterBase):
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str | None] = mapped_column(String(220))
     default_modules: Mapped[list[str]] = mapped_column(JSON, default=list)
+    seller_role_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    technician_role_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)

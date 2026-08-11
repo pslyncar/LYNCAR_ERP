@@ -21,6 +21,8 @@ class TokenResponse(BaseModel):
     business_type: str = "custom"
     plan_code: str = "start"
     enabled_modules: list[str] = []
+    seller_role_enabled: bool = False
+    technician_role_enabled: bool = False
     permissions: list[str]
     must_change_password: bool = False
 
@@ -35,6 +37,8 @@ class CurrentUserRead(BaseModel):
     business_type: str = "custom"
     plan_code: str = "start"
     enabled_modules: list[str] = []
+    seller_role_enabled: bool = False
+    technician_role_enabled: bool = False
     permissions: list[str]
 
 

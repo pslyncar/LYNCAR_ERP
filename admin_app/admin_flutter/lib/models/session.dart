@@ -12,6 +12,8 @@ class Session {
     required this.planCode,
     required this.enabledModules,
     required this.permissions,
+    this.sellerRoleEnabled = false,
+    this.technicianRoleEnabled = false,
     this.mustChangePassword = false,
   });
 
@@ -24,6 +26,8 @@ class Session {
   final String businessType;
   final String planCode;
   final List<String> enabledModules;
+  final bool sellerRoleEnabled;
+  final bool technicianRoleEnabled;
   final List<String> permissions;
   final bool mustChangePassword;
 
@@ -47,6 +51,8 @@ class Session {
       enabledModules: (json['enabled_modules'] as List<dynamic>? ?? const [])
           .map((module) => module.toString())
           .toList(),
+      sellerRoleEnabled: json['seller_role_enabled'] as bool? ?? false,
+      technicianRoleEnabled: json['technician_role_enabled'] as bool? ?? false,
       permissions: (json['permissions'] as List<dynamic>)
           .map((permission) => permission.toString())
           .toList(),
@@ -71,6 +77,8 @@ class Session {
       enabledModules: (json['enabledModules'] as List<dynamic>? ?? const [])
           .map((module) => module.toString())
           .toList(),
+      sellerRoleEnabled: json['sellerRoleEnabled'] as bool? ?? false,
+      technicianRoleEnabled: json['technicianRoleEnabled'] as bool? ?? false,
       permissions: (json['permissions'] as List<dynamic>)
           .map((permission) => permission.toString())
           .toList(),
@@ -89,6 +97,8 @@ class Session {
       'businessType': businessType,
       'planCode': planCode,
       'enabledModules': enabledModules,
+      'sellerRoleEnabled': sellerRoleEnabled,
+      'technicianRoleEnabled': technicianRoleEnabled,
       'permissions': permissions,
       'mustChangePassword': mustChangePassword,
     };

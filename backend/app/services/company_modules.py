@@ -294,6 +294,21 @@ def segment_default_modules(business_type: str | None) -> list[str]:
     return []
 
 
+def segment_operational_roles(business_type: str | None) -> dict[str, bool]:
+    code = _normalize_business_type(business_type)
+    try:
+        with MasterSessionLocal() as db:
+            segment = db.query(BusinessSegment).filter(BusinessSegment.code == code).first()
+            if segment is not None:
+                return {
+                    "seller": bool(segment.seller_role_enabled),
+                    "technician": bool(segment.technician_role_enabled),
+                }
+    except Exception:
+        pass
+    return {"seller": False, "technician": False}
+
+
 def modules_for_business_type(
     business_type: str,
     modules: list[str] | None,

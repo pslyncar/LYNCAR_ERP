@@ -108,6 +108,11 @@ SUBSCRIPTION_PLAN_COLUMNS = [
     ("default_modules", "JSON NOT NULL DEFAULT '[]'"),
 ]
 
+BUSINESS_SEGMENT_COLUMNS = [
+    ("seller_role_enabled", "BOOLEAN NOT NULL DEFAULT false"),
+    ("technician_role_enabled", "BOOLEAN NOT NULL DEFAULT false"),
+]
+
 
 def column_exists(table_name: str, column_name: str) -> bool:
     with master_engine.connect() as connection:
@@ -176,6 +181,11 @@ def main() -> None:
             if not column_exists("subscription_plans", column_name):
                 connection.execute(
                     text(f"ALTER TABLE subscription_plans ADD COLUMN {column_name} {column_type}")
+                )
+        for column_name, column_type in BUSINESS_SEGMENT_COLUMNS:
+            if not column_exists("business_segments", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE business_segments ADD COLUMN {column_name} {column_type}")
                 )
         connection.execute(
             text(

@@ -727,6 +727,9 @@ class _SegmentDialogState extends State<_SegmentDialog> {
     text: widget.segment?.sortOrder.toString() ?? '0',
   );
   late bool _active = widget.segment?.active ?? true;
+  late bool _sellerRoleEnabled = widget.segment?.sellerRoleEnabled ?? false;
+  late bool _technicianRoleEnabled =
+      widget.segment?.technicianRoleEnabled ?? false;
   late final Set<String> _modules =
       widget.segment?.defaultModules.toSet() ?? <String>{};
 
@@ -799,6 +802,36 @@ class _SegmentDialogState extends State<_SegmentDialog> {
               ),
               const SizedBox(height: 8),
               _ModuleChips(modules: _modules),
+              const Divider(height: 28),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Funcoes operacionais',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              SwitchListTile(
+                value: _sellerRoleEnabled,
+                onChanged: (value) =>
+                    setState(() => _sellerRoleEnabled = value),
+                title: const Text('Permitir perfis de vendedor'),
+                subtitle: const Text(
+                  'Usuarios com esse perfil terao codigo de vendedor obrigatorio.',
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
+              SwitchListTile(
+                value: _technicianRoleEnabled,
+                onChanged: (value) =>
+                    setState(() => _technicianRoleEnabled = value),
+                title: const Text('Permitir perfis de tecnico'),
+                subtitle: const Text(
+                  'Usuarios com esse perfil terao codigo de tecnico obrigatorio.',
+                ),
+                contentPadding: EdgeInsets.zero,
+              ),
             ],
           ),
         ),
@@ -822,6 +855,8 @@ class _SegmentDialogState extends State<_SegmentDialog> {
                 name: name,
                 description: _emptyToNull(_description),
                 defaultModules: _modules.toList()..sort(),
+                sellerRoleEnabled: _sellerRoleEnabled,
+                technicianRoleEnabled: _technicianRoleEnabled,
                 active: _active,
                 sortOrder:
                     int.tryParse(_sortOrder.text.trim()) ??

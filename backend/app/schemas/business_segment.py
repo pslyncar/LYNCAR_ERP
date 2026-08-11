@@ -7,6 +7,8 @@ class BusinessSegmentRead(BaseModel):
     name: str
     description: str | None
     default_modules: list[str] = []
+    seller_role_enabled: bool = False
+    technician_role_enabled: bool = False
     active: bool
     sort_order: int
 
@@ -18,6 +20,8 @@ class BusinessSegmentCreate(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     description: str | None = Field(default=None, max_length=220)
     default_modules: list[str] = []
+    seller_role_enabled: bool = False
+    technician_role_enabled: bool = False
     active: bool = True
     sort_order: int = 0
 
@@ -26,5 +30,7 @@ class BusinessSegmentUpdate(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     description: str | None = Field(default=None, max_length=220)
     default_modules: list[str] = []
+    seller_role_enabled: bool = False
+    technician_role_enabled: bool = False
     active: bool = True
     sort_order: int = 0

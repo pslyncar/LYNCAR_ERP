@@ -4,6 +4,7 @@ class SystemUser {
     required this.name,
     required this.email,
     this.sellerCode,
+    this.technicianCode,
     required this.role,
     required this.active,
     required this.createdAt,
@@ -14,6 +15,7 @@ class SystemUser {
   final String name;
   final String email;
   final String? sellerCode;
+  final String? technicianCode;
   final String role;
   final bool active;
   final DateTime createdAt;
@@ -25,6 +27,7 @@ class SystemUser {
       name: json['name'] as String,
       email: json['email'] as String,
       sellerCode: json['seller_code'] as String?,
+      technicianCode: json['technician_code'] as String?,
       role: json['role'] as String,
       active: json['active'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
@@ -42,6 +45,8 @@ class SystemRole {
     required this.label,
     required this.active,
     this.description,
+    this.isSellerProfile = false,
+    this.isTechnicianProfile = false,
     this.permissions = const [],
   });
 
@@ -49,6 +54,8 @@ class SystemRole {
   final String name;
   final String label;
   final String? description;
+  final bool isSellerProfile;
+  final bool isTechnicianProfile;
   final bool active;
   final List<String> permissions;
 
@@ -58,6 +65,8 @@ class SystemRole {
       name: json['name'] as String,
       label: json['label'] as String,
       description: json['description'] as String?,
+      isSellerProfile: json['is_seller_profile'] as bool? ?? false,
+      isTechnicianProfile: json['is_technician_profile'] as bool? ?? false,
       active: json['active'] as bool? ?? true,
       permissions: ((json['permissions'] as List<dynamic>?) ?? [])
           .map((permission) => permission.toString())
@@ -71,12 +80,16 @@ class SystemRolePayload {
     required this.label,
     required this.permissions,
     this.description,
+    this.isSellerProfile = false,
+    this.isTechnicianProfile = false,
     this.active = true,
   });
 
   final String label;
   final String? description;
   final List<String> permissions;
+  final bool isSellerProfile;
+  final bool isTechnicianProfile;
   final bool active;
 
   Map<String, dynamic> toJson() {
@@ -84,6 +97,8 @@ class SystemRolePayload {
       'label': label.trim(),
       'description': _emptyToNull(description),
       'permissions': permissions,
+      'is_seller_profile': isSellerProfile,
+      'is_technician_profile': isTechnicianProfile,
       'active': active,
     };
   }
@@ -153,6 +168,7 @@ class SystemUserPayload {
     required this.role,
     required this.active,
     this.sellerCode,
+    this.technicianCode,
     this.allowCrossCompanyDuplicate = false,
     this.appAccess,
     this.password,
@@ -161,6 +177,7 @@ class SystemUserPayload {
   final String name;
   final String email;
   final String? sellerCode;
+  final String? technicianCode;
   final String role;
   final bool active;
   final bool allowCrossCompanyDuplicate;
@@ -172,6 +189,7 @@ class SystemUserPayload {
       'name': name.trim(),
       'email': email.trim(),
       'seller_code': _emptyToNull(sellerCode),
+      'technician_code': _emptyToNull(technicianCode),
       'password': password,
       'role': role,
       'active': active,
@@ -185,6 +203,7 @@ class SystemUserPayload {
       'name': name.trim(),
       'email': email.trim(),
       'seller_code': _emptyToNull(sellerCode),
+      'technician_code': _emptyToNull(technicianCode),
       if (password != null && password!.isNotEmpty) 'password': password,
       'role': role,
       'active': active,

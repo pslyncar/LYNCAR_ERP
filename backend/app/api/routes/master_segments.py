@@ -52,6 +52,8 @@ def create_segment(
             name=segment_in.name.strip(),
             description=segment_in.description,
             default_modules=normalize_modules(segment_in.default_modules),
+            seller_role_enabled=segment_in.seller_role_enabled,
+            technician_role_enabled=segment_in.technician_role_enabled,
             active=segment_in.active,
             sort_order=segment_in.sort_order,
         )
@@ -77,6 +79,8 @@ def update_segment(
         segment.name = segment_in.name.strip()
         segment.description = segment_in.description
         segment.default_modules = normalize_modules(segment_in.default_modules)
+        segment.seller_role_enabled = segment_in.seller_role_enabled
+        segment.technician_role_enabled = segment_in.technician_role_enabled
         segment.active = segment_in.active
         segment.sort_order = segment_in.sort_order
         db.commit()

@@ -111,3 +111,29 @@ Regra:
 - menu lateral do cliente deve seguir a mesma divisao: Vendas usa `sales`; Caixa usa `cash_closings`
 
 Para o servidor: rodar `python -m app.migrate_local` depois do pull, porque essa migracao chama `seed_default_access_control` em cada tenant e atualiza o modulo salvo das permissoes existentes.
+
+## Ajuste 2026-08-11 - Funcoes operacionais por segmento
+
+O Master passa a controlar no cadastro de cada segmento se aquele tipo de negocio pode criar perfis operacionais de:
+
+- vendedor
+- tecnico
+
+Regra:
+
+- a configuracao fica no segmento, nao fixa no codigo
+- ao criar/editar perfil no cliente, os marcadores de vendedor/tecnico so aparecem se o segmento permitir
+- perfil marcado como vendedor exige codigo de vendedor ao cadastrar usuario
+- perfil marcado como tecnico exige codigo de tecnico ao cadastrar usuario
+- perfil comum nao mostra nem exige esses codigos
+- backend tambem valida a regra, para impedir gravacao por API fora do segmento liberado
+
+Migracao:
+
+- master: `business_segments.seller_role_enabled`
+- master: `business_segments.technician_role_enabled`
+- tenant: `roles.is_seller_profile`
+- tenant: `roles.is_technician_profile`
+- tenant: `users.technician_code`
+
+Para o servidor: depois do pull, rodar `python -m app.migrate_master` e `python -m app.migrate_local`.

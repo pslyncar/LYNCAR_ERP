@@ -648,6 +648,7 @@ class _AccessProfilesPanelState extends State<AccessProfilesPanel> {
       context: context,
       builder: (context) => _AccessProfileDialog(
         api: _api,
+        session: widget.session,
         token: widget.session.token,
         permissions: _permissions,
         role: role,
@@ -804,12 +805,14 @@ class _AccessProfilesPanelState extends State<AccessProfilesPanel> {
 class _AccessProfileDialog extends StatefulWidget {
   const _AccessProfileDialog({
     required this.api,
+    required this.session,
     required this.token,
     required this.permissions,
     this.role,
   });
 
   final ApiClient api;
+  final Session session;
   final String token;
   final List<SystemPermission> permissions;
   final SystemRole? role;
@@ -823,6 +826,8 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
   late final TextEditingController _label;
   late final TextEditingController _description;
   late Set<String> _selected;
+  late bool _isSellerProfile;
+  late bool _isTechnicianProfile;
   bool _saving = false;
   String? _error;
 
@@ -837,6 +842,12 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
     _selected = (widget.role?.permissions ?? const <String>[])
         .where(available.contains)
         .toSet();
+    _isSellerProfile =
+        widget.session.sellerRoleEnabled &&
+        (widget.role?.isSellerProfile ?? false);
+    _isTechnicianProfile =
+        widget.session.technicianRoleEnabled &&
+        (widget.role?.isTechnicianProfile ?? false);
   }
 
   @override
@@ -891,6 +902,8 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
       label: _label.text,
       description: _description.text,
       permissions: _selected.toList()..sort(),
+      isSellerProfile: _isSellerProfile,
+      isTechnicianProfile: _isTechnicianProfile,
     );
     try {
       if (_editing) {
@@ -958,6 +971,21 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
                       border: OutlineInputBorder(),
                     ),
                   ),
+                  const Gap(14),
+                  if (widget.session.sellerRoleEnabled ||
+                      widget.session.technicianRoleEnabled) ...[
+                    _OperationalRoleBox(
+                      sellerAvailable: widget.session.sellerRoleEnabled,
+                      technicianAvailable: widget.session.technicianRoleEnabled,
+                      isSellerProfile: _isSellerProfile,
+                      isTechnicianProfile: _isTechnicianProfile,
+                      onSellerChanged: (value) =>
+                          setState(() => _isSellerProfile = value),
+                      onTechnicianChanged: (value) =>
+                          setState(() => _isTechnicianProfile = value),
+                    ),
+                    const Gap(14),
+                  ],
                   const Gap(14),
                   const _PermissionHelpBox(),
                   const Gap(14),
@@ -1035,6 +1063,62 @@ class _ProfilePreset {
   final String label;
   final String description;
   final Set<String> permissions;
+}
+
+class _OperationalRoleBox extends StatelessWidget {
+  const _OperationalRoleBox({
+    required this.sellerAvailable,
+    required this.technicianAvailable,
+    required this.isSellerProfile,
+    required this.isTechnicianProfile,
+    required this.onSellerChanged,
+    required this.onTechnicianChanged,
+  });
+
+  final bool sellerAvailable;
+  final bool technicianAvailable;
+  final bool isSellerProfile;
+  final bool isTechnicianProfile;
+  final ValueChanged<bool> onSellerChanged;
+  final ValueChanged<bool> onTechnicianChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFD5E1F0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Funcao do perfil',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+            ),
+            if (sellerAvailable)
+              SwitchListTile(
+                value: isSellerProfile,
+                onChanged: onSellerChanged,
+                title: const Text('Vendedor'),
+                subtitle: const Text('Exige codigo de vendedor no usuario.'),
+                contentPadding: EdgeInsets.zero,
+              ),
+            if (technicianAvailable)
+              SwitchListTile(
+                value: isTechnicianProfile,
+                onChanged: onTechnicianChanged,
+                title: const Text('Tecnico'),
+                subtitle: const Text('Exige codigo de tecnico no usuario.'),
+                contentPadding: EdgeInsets.zero,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _PermissionHelpBox extends StatelessWidget {

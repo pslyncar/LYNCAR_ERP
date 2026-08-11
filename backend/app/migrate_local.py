@@ -186,8 +186,14 @@ PDV_TERMINAL_COLUMNS = [
 
 USER_COLUMNS = [
     ("seller_code", "VARCHAR(40)"),
+    ("technician_code", "VARCHAR(40)"),
     ("must_change_password", "BOOLEAN NOT NULL DEFAULT false"),
     ("password_changed_at", "TIMESTAMP WITH TIME ZONE"),
+]
+
+ROLE_COLUMNS = [
+    ("is_seller_profile", "BOOLEAN NOT NULL DEFAULT false"),
+    ("is_technician_profile", "BOOLEAN NOT NULL DEFAULT false"),
 ]
 
 FISCAL_SETTING_COLUMNS = [
@@ -525,6 +531,9 @@ def add_pdv_terminal_columns(bind_engine=engine) -> None:
 
 def add_user_seller_columns(bind_engine=engine) -> None:
     with bind_engine.begin() as connection:
+        for column_name, column_type in ROLE_COLUMNS:
+            if not column_exists_in_connection(connection, "roles", column_name):
+                connection.execute(text(f"ALTER TABLE roles ADD COLUMN {column_name} {column_type}"))
         for column_name, column_type in USER_COLUMNS:
             if not column_exists_in_connection(connection, "users", column_name):
                 connection.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}"))
@@ -543,6 +552,15 @@ def add_user_seller_columns(bind_engine=engine) -> None:
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_seller_code
                 ON users(seller_code)
                 WHERE seller_code IS NOT NULL
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_users_technician_code
+                ON users(technician_code)
+                WHERE technician_code IS NOT NULL
                 """
             )
         )

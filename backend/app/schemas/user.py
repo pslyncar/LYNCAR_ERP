@@ -6,6 +6,7 @@ class UserCreate(BaseModel):
     name: str = Field(min_length=2, max_length=150)
     email: EmailStr
     seller_code: str | None = Field(default=None, max_length=40)
+    technician_code: str | None = Field(default=None, max_length=40)
     password: str = Field(min_length=8, max_length=128)
     role: str = Field(min_length=2, max_length=50)
     active: bool = True
@@ -17,6 +18,7 @@ class UserUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=2, max_length=150)
     email: EmailStr | None = None
     seller_code: str | None = Field(default=None, max_length=40)
+    technician_code: str | None = Field(default=None, max_length=40)
     password: str | None = Field(default=None, min_length=8, max_length=128)
     role: str | None = Field(default=None, min_length=2, max_length=50)
     active: bool | None = None
@@ -29,6 +31,7 @@ class UserRead(BaseModel):
     name: str
     email: EmailStr
     seller_code: str | None
+    technician_code: str | None
     role: str
     active: bool
     created_at: datetime
@@ -42,6 +45,8 @@ class RoleRead(BaseModel):
     name: str
     label: str
     description: str | None
+    is_seller_profile: bool = False
+    is_technician_profile: bool = False
     active: bool
     permissions: list[str] = []
 
@@ -52,6 +57,8 @@ class RoleCreate(BaseModel):
     label: str = Field(min_length=2, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     permissions: list[str] = []
+    is_seller_profile: bool = False
+    is_technician_profile: bool = False
     active: bool = True
 
 
@@ -59,6 +66,8 @@ class RoleUpdate(BaseModel):
     label: str | None = Field(default=None, min_length=2, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     permissions: list[str] | None = None
+    is_seller_profile: bool | None = None
+    is_technician_profile: bool | None = None
     active: bool | None = None
 
 

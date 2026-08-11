@@ -22,7 +22,7 @@ from app.schemas.user import (
     UserUpdate,
 )
 from app.services.access_control import get_user_permission_codes
-from app.services.company_modules import permission_allowed_by_modules
+from app.services.company_modules import permission_allowed_by_modules, segment_operational_roles
 from app.services.master_user_index import (
     company_name_for_code,
     remove_user_index,
@@ -30,7 +30,7 @@ from app.services.master_user_index import (
     upsert_user_index,
 )
 from app.services.plan_limits import enforce_user_limit
-from app.services.tenancy import get_enabled_modules_for_company
+from app.services.tenancy import get_company_by_code, get_enabled_modules_for_company
 
 router = APIRouter()
 
@@ -79,6 +79,7 @@ def serialize_user(
         name=user.name,
         email=user.email,
         seller_code=user.seller_code,
+        technician_code=user.technician_code,
         role=user.role,
         active=user.active,
         created_at=user.created_at,
@@ -133,6 +134,8 @@ def serialize_role(db: Session, role: Role, enabled_modules: list[str]) -> RoleR
         name=role.name,
         label=role.label,
         description=role.description,
+        is_seller_profile=role.is_seller_profile,
+        is_technician_profile=role.is_technician_profile,
         active=role.active,
         permissions=_role_permission_codes(db, role, enabled_modules),
     )
@@ -225,21 +228,25 @@ def create_user(
 
     enforce_user_limit(db, company_code, activating_new_user=user_in.active)
 
-    if db.scalar(select(Role).where(Role.name == user_in.role, Role.active.is_(True))) is None:
-        raise HTTPException(status_code=400, detail="Perfil invalido.")
+    role = _role_or_400(db, user_in.role)
     seller_code = normalize_seller_code(user_in.seller_code)
     if seller_code is not None and db.scalar(select(User).where(User.seller_code == seller_code)) is not None:
         raise HTTPException(status_code=409, detail="Codigo de vendedor ja cadastrado.")
+    technician_code = normalize_seller_code(user_in.technician_code)
+    if technician_code is not None and db.scalar(select(User).where(User.technician_code == technician_code)) is not None:
+        raise HTTPException(status_code=409, detail="Codigo de tecnico ja cadastrado.")
 
     user = User(
         name=user_in.name,
         email=email,
         seller_code=seller_code,
+        technician_code=technician_code,
         password_hash=hash_password(user_in.password),
         must_change_password=True,
         role=user_in.role,
         active=user_in.active,
     )
+    _ensure_required_operational_codes(user, role)
     db.add(user)
     db.flush()
     _set_user_app_access(db, user, user_in.app_access)
@@ -302,9 +309,7 @@ def update_user(
         user.email = email
         update_data.pop("email")
 
-    if "role" in update_data:
-        if db.scalar(select(Role).where(Role.name == update_data["role"], Role.active.is_(True))) is None:
-            raise HTTPException(status_code=400, detail="Perfil invalido.")
+    target_role = _role_or_400(db, update_data.get("role", user.role))
     if update_data.get("active") is True and not user.active:
         enforce_user_limit(db, company_code, activating_new_user=True)
     if "seller_code" in update_data:
@@ -316,6 +321,15 @@ def update_user(
             if existing_code is not None:
                 raise HTTPException(status_code=409, detail="Codigo de vendedor ja cadastrado.")
         user.seller_code = seller_code
+    if "technician_code" in update_data:
+        technician_code = normalize_seller_code(update_data.pop("technician_code"))
+        if technician_code is not None:
+            existing_code = db.scalar(
+                select(User).where(User.technician_code == technician_code, User.id != user_id)
+            )
+            if existing_code is not None:
+                raise HTTPException(status_code=409, detail="Codigo de tecnico ja cadastrado.")
+        user.technician_code = technician_code
 
     if "password" in update_data:
         user.password_hash = hash_password(update_data.pop("password"))
@@ -324,6 +338,7 @@ def update_user(
 
     for field, value in update_data.items():
         setattr(user, field, value)
+    _ensure_required_operational_codes(user, target_role)
 
     _set_user_app_access(db, user, app_access)
     db.commit()
@@ -385,6 +400,47 @@ def normalize_seller_code(value: str | None) -> str | None:
     return code or None
 
 
+def _operational_roles_from_credentials(
+    credentials: HTTPAuthorizationCredentials | None,
+) -> dict[str, bool]:
+    company_code = _company_code_from_credentials(credentials)
+    company = get_company_by_code(company_code)
+    return segment_operational_roles(company.business_type if company else "custom")
+
+
+def _ensure_role_flags_allowed(
+    *,
+    is_seller_profile: bool,
+    is_technician_profile: bool,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> None:
+    allowed = _operational_roles_from_credentials(credentials)
+    if is_seller_profile and not allowed["seller"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Perfil de vendedor nao liberado para o segmento desta empresa.",
+        )
+    if is_technician_profile and not allowed["technician"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Perfil de tecnico nao liberado para o segmento desta empresa.",
+        )
+
+
+def _role_or_400(db: Session, role_name: str) -> Role:
+    role = db.scalar(select(Role).where(Role.name == role_name, Role.active.is_(True)))
+    if role is None:
+        raise HTTPException(status_code=400, detail="Perfil invalido.")
+    return role
+
+
+def _ensure_required_operational_codes(user: User, role: Role) -> None:
+    if role.is_seller_profile and not user.seller_code:
+        raise HTTPException(status_code=400, detail="Codigo de vendedor obrigatorio para este perfil.")
+    if role.is_technician_profile and not user.technician_code:
+        raise HTTPException(status_code=400, detail="Codigo de tecnico obrigatorio para este perfil.")
+
+
 @router.get("/roles", response_model=list[RoleRead])
 def list_roles(
     db: Session = Depends(get_db),
@@ -408,10 +464,17 @@ def create_role(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> RoleRead:
     enabled_modules = _enabled_modules_from_credentials(credentials)
+    _ensure_role_flags_allowed(
+        is_seller_profile=role_in.is_seller_profile,
+        is_technician_profile=role_in.is_technician_profile,
+        credentials=credentials,
+    )
     role = Role(
         name=_unique_role_name(db, role_in.label),
         label=role_in.label.strip(),
         description=(role_in.description or "").strip() or None,
+        is_seller_profile=role_in.is_seller_profile,
+        is_technician_profile=role_in.is_technician_profile,
         active=role_in.active,
     )
     db.add(role)
@@ -441,6 +504,23 @@ def update_role(
         role.label = update_data["label"].strip()
     if "description" in update_data:
         role.description = (update_data["description"] or "").strip() or None
+    next_is_seller_profile = (
+        update_data["is_seller_profile"]
+        if update_data.get("is_seller_profile") is not None
+        else role.is_seller_profile
+    )
+    next_is_technician_profile = (
+        update_data["is_technician_profile"]
+        if update_data.get("is_technician_profile") is not None
+        else role.is_technician_profile
+    )
+    _ensure_role_flags_allowed(
+        is_seller_profile=next_is_seller_profile,
+        is_technician_profile=next_is_technician_profile,
+        credentials=credentials,
+    )
+    role.is_seller_profile = next_is_seller_profile
+    role.is_technician_profile = next_is_technician_profile
     if "active" in update_data and update_data["active"] is not None:
         role.active = update_data["active"]
     if role_in.permissions is not None:
