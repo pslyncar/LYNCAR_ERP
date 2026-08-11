@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../models/client.dart';
 import '../models/equipment.dart';
 import '../models/product.dart';
+import '../models/sale.dart';
 import '../models/service_order.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
@@ -22,6 +23,17 @@ const _statuses = {
 };
 
 const _priorities = {'baixa': 'Baixa', 'media': 'Media', 'alta': 'Alta'};
+
+const _paymentMethods = {
+  'dinheiro': 'Dinheiro',
+  'pix': 'Pix',
+  'debito': 'Debito',
+  'credito': 'Credito',
+  'boleto': 'Boleto',
+  'transferencia': 'Transferencia',
+  'crediario': 'Crediario',
+  'outro': 'Outro',
+};
 
 const _workflowTabs = [
   _WorkflowTab('abertas', 'Aberto', ['aberta'], Icons.assignment_outlined),
@@ -53,6 +65,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
   List<Client> _clients = [];
   List<Equipment> _equipments = [];
   List<Product> _products = [];
+  List<SaleSeller> _sellers = [];
   int _selectedStageIndex = 0;
   bool _loading = true;
   String? _error;
@@ -74,12 +87,17 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
         _api.listClients(widget.session.token),
         _api.listEquipments(widget.session.token),
         _api.listProducts(widget.session.token),
+        if (widget.session.can('sales:create'))
+          _api.listSaleSellers(widget.session.token)
+        else
+          Future.value(<SaleSeller>[]),
       ]);
       setState(() {
         _orders = results[0] as List<ServiceOrder>;
         _clients = results[1] as List<Client>;
         _equipments = results[2] as List<Equipment>;
         _products = results[3] as List<Product>;
+        _sellers = results[4] as List<SaleSeller>;
       });
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -131,6 +149,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
     await _load();
   }
 
+  // ignore: unused_element
   void _sendToSales(ServiceOrder order) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -138,6 +157,24 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
           'A OS ${order.number?.isNotEmpty == true ? order.number : _serviceOrderCode(order)} já está pronta para virar venda. A tela de Vendas será criada no próximo modulo.',
         ),
       ),
+    );
+  }
+
+  Future<void> _openServiceOrderSale(ServiceOrder order) async {
+    final sale = await showDialog<Sale>(
+      context: context,
+      builder: (context) => _ServiceOrderSaleDialog(
+        api: _api,
+        token: widget.session.token,
+        order: order,
+        client: _findClient(_clients, order.clientId),
+        products: _products,
+        sellers: _sellers,
+      ),
+    );
+    if (sale == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Venda ${sale.number ?? sale.id} gerada da OS.')),
     );
   }
 
@@ -194,7 +231,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
                         canSendToSales: widget.session.can('sales:create'),
                         onOpen: _openForm,
                         onDelete: _deleteOrder,
-                        onSendToSales: _sendToSales,
+                        onSendToSales: _openServiceOrderSale,
                       ),
               ),
           ],
@@ -601,6 +638,374 @@ class _ServiceOrdersTable extends StatelessWidget {
             ),
           ),
       ],
+    );
+  }
+}
+
+class _ServiceOrderSaleDialog extends StatefulWidget {
+  const _ServiceOrderSaleDialog({
+    required this.api,
+    required this.token,
+    required this.order,
+    required this.products,
+    required this.sellers,
+    this.client,
+  });
+
+  final ApiClient api;
+  final String token;
+  final ServiceOrder order;
+  final Client? client;
+  final List<Product> products;
+  final List<SaleSeller> sellers;
+
+  @override
+  State<_ServiceOrderSaleDialog> createState() =>
+      _ServiceOrderSaleDialogState();
+}
+
+class _ServiceOrderSaleDialogState extends State<_ServiceOrderSaleDialog> {
+  final _sellerCode = TextEditingController();
+  final _paymentAmount = TextEditingController();
+  String _paymentMethod = 'dinheiro';
+  int? _sellerUserId;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _paymentAmount.text = formatBrazilianMoneyInput(_totalCents / 100);
+  }
+
+  @override
+  void dispose() {
+    _sellerCode.dispose();
+    _paymentAmount.dispose();
+    super.dispose();
+  }
+
+  int get _subtotalCents {
+    final items = _moneyCents(widget.order.itemsAmount);
+    final labor = _moneyCents(widget.order.laborAmount);
+    return items + labor;
+  }
+
+  int get _discountCents => _moneyCents(widget.order.discountAmount);
+  int get _totalCents => (_subtotalCents - _discountCents).clamp(0, 1 << 62);
+  int get _paidCents => _moneyCents(parseBrazilianNumber(_paymentAmount.text));
+  bool get _usesFinancialPayment =>
+      _paymentMethod == 'boleto' || _paymentMethod == 'crediario';
+  bool get _paymentCoversTotal => _paidCents + 1 >= _totalCents;
+
+  SaleSeller? get _selectedSeller {
+    if (_sellerUserId == null) return null;
+    for (final seller in widget.sellers) {
+      if (seller.id == _sellerUserId) return seller;
+    }
+    return null;
+  }
+
+  void _selectSellerByCode(String value) {
+    final code = value.trim().toLowerCase();
+    if (code.isEmpty) return;
+    final matches = widget.sellers.where((seller) {
+      final sellerCode = (seller.sellerCode ?? '').trim().toLowerCase();
+      return sellerCode.isNotEmpty && sellerCode == code;
+    }).toList();
+    if (matches.isEmpty) {
+      setState(
+        () => _error = 'Vendedor com codigo ${value.trim()} nao encontrado.',
+      );
+      return;
+    }
+    setState(() {
+      _sellerUserId = matches.first.id;
+      _sellerCode.text = matches.first.sellerCode ?? '';
+      _error = null;
+    });
+  }
+
+  Future<void> _openSellerPicker() async {
+    final codedSellers = widget.sellers
+        .where((seller) => (seller.sellerCode ?? '').trim().isNotEmpty)
+        .toList();
+    final selected = await showDialog<SaleSeller>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Selecionar vendedor'),
+        children: [
+          if (codedSellers.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(18),
+              child: Text('Nenhum vendedor com codigo cadastrado.'),
+            )
+          else
+            for (final seller in codedSellers)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(seller),
+                child: Text('${seller.sellerCode} - ${seller.name}'),
+              ),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    setState(() {
+      _sellerUserId = selected.id;
+      _sellerCode.text = selected.sellerCode ?? '';
+      _error = null;
+    });
+  }
+
+  Future<void> _createSale() async {
+    if ((_selectedSeller?.sellerCode ?? '').trim().isEmpty) {
+      setState(() => _error = 'Informe um vendedor com codigo cadastrado.');
+      return;
+    }
+    if (_totalCents <= 0) {
+      setState(() => _error = 'A OS precisa ter valor maior que zero.');
+      return;
+    }
+    if (!_paymentCoversTotal) {
+      setState(() => _error = 'Pagamento menor que o total.');
+      return;
+    }
+    if (_usesFinancialPayment && widget.client == null) {
+      setState(() => _error = 'Boleto e crediario exigem cliente cadastrado.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final label = widget.order.number?.isNotEmpty == true
+          ? widget.order.number!
+          : _serviceOrderCode(widget.order);
+      final sale = await widget.api.createSale(
+        widget.token,
+        SalePayload(
+          clientId: widget.order.clientId,
+          sellerUserId: _sellerUserId,
+          source: 'os',
+          status: 'finalizada',
+          discountAmount: _discountCents / 100,
+          offlineClientId: 'os:${widget.order.id}',
+          notes: 'Venda gerada pela OS $label.',
+          items: [
+            for (final item in widget.order.items)
+              SaleItemPayload(
+                productId: item.productId,
+                barcode: _findProduct(widget.products, item.productId)?.barcode,
+                description: item.description,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                discountAmount: 0,
+              ),
+            if (widget.order.laborAmount > 0)
+              SaleItemPayload(
+                productId: null,
+                barcode: null,
+                description: 'Mao de obra - OS $label',
+                quantity: 1,
+                unitPrice: widget.order.laborAmount,
+                discountAmount: 0,
+              ),
+          ],
+          payments: [
+            SalePaymentPayload(
+              method: _paymentMethod,
+              amount: _paidCents / 100,
+            ),
+          ],
+        ),
+      );
+      if (mounted) Navigator.of(context).pop(sale);
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } catch (_) {
+      setState(() => _error = 'Nao foi possivel gerar a venda da OS.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final label = widget.order.number?.isNotEmpty == true
+        ? widget.order.number!
+        : _serviceOrderCode(widget.order);
+    final changeCents = (_paidCents - _totalCents).clamp(0, 1 << 62);
+    return AlertDialog(
+      title: Text('Gerar venda da OS $label'),
+      content: SizedBox(
+        width: 680,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SalePreviewLine(
+                'Cliente',
+                widget.client?.name ?? 'Cliente #${widget.order.clientId}',
+              ),
+              _SalePreviewLine('OS', widget.order.title),
+              const Divider(height: 24),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: 210,
+                    child: TextField(
+                      controller: _sellerCode,
+                      textInputAction: TextInputAction.search,
+                      onSubmitted: _selectSellerByCode,
+                      decoration: InputDecoration(
+                        labelText: 'Codigo vendedor',
+                        prefixIcon: const Icon(Icons.badge_outlined),
+                        suffixIcon: IconButton(
+                          tooltip: 'Pesquisar vendedor',
+                          onPressed: _openSellerPicker,
+                          icon: const Icon(Icons.search),
+                        ),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Vendedor selecionado',
+                        border: OutlineInputBorder(),
+                      ),
+                      child: Text(
+                        _selectedSeller?.name ?? 'Nenhum vendedor selecionado',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _paymentMethod,
+                decoration: const InputDecoration(
+                  labelText: 'Forma de pagamento',
+                  border: OutlineInputBorder(),
+                ),
+                items: [
+                  for (final entry in _paymentMethods.entries)
+                    DropdownMenuItem(
+                      value: entry.key,
+                      child: Text(entry.value),
+                    ),
+                ],
+                onChanged: (value) => setState(() {
+                  _paymentMethod = value ?? 'dinheiro';
+                  _paymentAmount.text = formatBrazilianMoneyInput(
+                    _totalCents / 100,
+                  );
+                }),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _paymentAmount,
+                keyboardType: TextInputType.text,
+                inputFormatters: const [BrazilianMoneyInputFormatter()],
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Valor recebido',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const Divider(height: 24),
+              _MoneySummaryLine('Itens', _subtotalCents / 100),
+              _MoneySummaryLine('Desconto da OS', _discountCents / 100),
+              _MoneySummaryLine('Total', _totalCents / 100, strong: true),
+              _MoneySummaryLine('Recebido', _paidCents / 100),
+              _MoneySummaryLine('Troco', changeCents / 100),
+              if (_error != null) ...[
+                const SizedBox(height: 12),
+                Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _createSale,
+          icon: const Icon(Icons.point_of_sale_outlined),
+          label: Text(_saving ? 'Gerando...' : 'Gerar venda'),
+        ),
+      ],
+    );
+  }
+}
+
+class _SalePreviewLine extends StatelessWidget {
+  const _SalePreviewLine(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 90,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoneySummaryLine extends StatelessWidget {
+  const _MoneySummaryLine(this.label, this.value, {this.strong = false});
+
+  final String label;
+  final double value;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(
+            _money(value),
+            style: TextStyle(
+              fontSize: strong ? 20 : 15,
+              fontWeight: strong ? FontWeight.w900 : FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1785,6 +2190,8 @@ String _numberText(double value) {
 String _moneyInput(double value) => formatBrazilianMoneyInput(value);
 
 String _money(double value) => 'R\$ ${formatBrazilianMoneyInput(value)}';
+
+int _moneyCents(double value) => (value * 100).round();
 
 String _serviceOrderCode(ServiceOrder order) => 'M${order.id}';
 
