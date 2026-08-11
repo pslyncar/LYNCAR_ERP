@@ -608,6 +608,28 @@ def add_fiscal_setting_columns(bind_engine=engine) -> None:
                 """
             )
         )
+        duplicate_number = connection.execute(
+            text(
+                """
+                SELECT 1
+                FROM fiscal_documents
+                WHERE number IS NOT NULL
+                GROUP BY environment, document_type, series, number
+                HAVING COUNT(*) > 1
+                LIMIT 1
+                """
+            )
+        ).first()
+        if duplicate_number is None:
+            connection.execute(
+                text(
+                    """
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_fiscal_document_number
+                    ON fiscal_documents (environment, document_type, series, number)
+                    WHERE number IS NOT NULL
+                    """
+                )
+            )
 
 
 def add_production_order_columns(bind_engine=engine) -> None:

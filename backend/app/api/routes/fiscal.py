@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.dependencies import require_any_permission, require_permission
@@ -72,6 +73,17 @@ from app.services.product_costs import apply_stock_in, apply_stock_out
 
 router = APIRouter()
 
+FISCAL_PROCESSING_TIMEOUT = timedelta(minutes=15)
+
+
+def _is_recent_processing(document: FiscalDocument) -> bool:
+    if document.status != "processing":
+        return False
+    updated_at = document.updated_at
+    if updated_at is None:
+        return True
+    return datetime.utcnow() - updated_at.replace(tzinfo=None) < FISCAL_PROCESSING_TIMEOUT
+
 
 def _get_or_create_settings(db: Session) -> CompanyFiscalSetting:
     setting = db.scalar(select(CompanyFiscalSetting).order_by(CompanyFiscalSetting.id.asc()))
@@ -82,6 +94,95 @@ def _get_or_create_settings(db: Session) -> CompanyFiscalSetting:
     db.commit()
     db.refresh(setting)
     return setting
+
+
+def _locked_fiscal_setting(db: Session) -> CompanyFiscalSetting:
+    setting = db.scalar(
+        select(CompanyFiscalSetting)
+        .order_by(CompanyFiscalSetting.id.asc())
+        .with_for_update()
+    )
+    if setting is not None:
+        return setting
+    setting = CompanyFiscalSetting()
+    db.add(setting)
+    db.flush()
+    return setting
+
+
+def _next_available_fiscal_number(
+    db: Session,
+    *,
+    environment: str,
+    document_type: str,
+    series: int,
+    configured_next_number: int,
+) -> int:
+    highest_used_number = db.scalar(
+        select(func.max(FiscalDocument.number)).where(
+            FiscalDocument.environment == environment,
+            FiscalDocument.document_type == document_type,
+            FiscalDocument.series == series,
+            FiscalDocument.number.is_not(None),
+        )
+    )
+    next_number = max(int(configured_next_number or 1), int(highest_used_number or 0) + 1)
+    while db.scalar(
+        select(FiscalDocument.id).where(
+            FiscalDocument.environment == environment,
+            FiscalDocument.document_type == document_type,
+            FiscalDocument.series == series,
+            FiscalDocument.number == next_number,
+        )
+    ):
+        next_number += 1
+    return next_number
+
+
+def _reserve_fiscal_number(
+    db: Session,
+    document_id: int,
+) -> tuple[FiscalDocument, CompanyFiscalSetting]:
+    document = db.scalar(
+        select(FiscalDocument)
+        .where(FiscalDocument.id == document_id)
+        .with_for_update()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    if document.status == "authorized":
+        return document, _locked_fiscal_setting(db)
+    if _is_recent_processing(document):
+        raise HTTPException(
+            status_code=409,
+            detail="Documento fiscal ja esta em processamento. Aguarde o retorno da SEFAZ.",
+        )
+    setting = _locked_fiscal_setting(db)
+    if document.document_type == "nfce":
+        document.series = document.series or int(setting.nfce_series or 1)
+        document.number = document.number or _next_available_fiscal_number(
+            db,
+            environment=document.environment,
+            document_type="nfce",
+            series=int(document.series),
+            configured_next_number=int(setting.nfce_next_number or 1),
+        )
+        setting.nfce_next_number = max(int(setting.nfce_next_number or 1), int(document.number) + 1)
+    else:
+        document.series = document.series or int(setting.nfe_series or 1)
+        document.number = document.number or _next_available_fiscal_number(
+            db,
+            environment=document.environment,
+            document_type="nfe",
+            series=int(document.series),
+            configured_next_number=int(setting.nfe_next_number or 1),
+        )
+        setting.nfe_next_number = max(int(setting.nfe_next_number or 1), int(document.number) + 1)
+    document.status = "processing"
+    document.sefaz_status_code = "PROCESSING"
+    document.sefaz_message = "Documento reservado e em envio para a SEFAZ."
+    db.commit()
+    return document, setting
 
 
 def _rule_read(rule: FiscalOutputRule) -> FiscalOutputRuleRead:
@@ -1430,6 +1531,11 @@ def authorize_fiscal_document(
         raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
     if document.status == "authorized":
         return document
+    if _is_recent_processing(document):
+        raise HTTPException(
+            status_code=409,
+            detail="Documento fiscal ja esta em processamento. Aguarde o retorno da SEFAZ.",
+        )
     if document.sale is None and not any(item.included for item in document.fiscal_items):
         raise HTTPException(status_code=400, detail="Nota manual precisa ter pelo menos um item fiscal incluido.")
     setting = _attach_output_rules(_get_or_create_settings(db), db)
@@ -1448,6 +1554,34 @@ def authorize_fiscal_document(
             fiscal_sale,
             model="65" if document.document_type == "nfce" else "55",
             issue_date=datetime.now().date(),
+        )
+        try:
+            document, setting = _reserve_fiscal_number(db, document_id)
+            setting = _attach_output_rules(setting, db)
+        except IntegrityError as exc:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Nao foi possivel reservar a numeracao fiscal. Tente novamente.",
+            ) from exc
+        document = db.scalar(
+            select(FiscalDocument)
+            .options(
+                selectinload(FiscalDocument.sale).selectinload(Sale.items).selectinload(SaleItem.product),
+                selectinload(FiscalDocument.sale).selectinload(Sale.payments),
+                selectinload(FiscalDocument.sale).selectinload(Sale.client),
+                selectinload(FiscalDocument.fiscal_client),
+                selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
+                selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.original_product),
+            )
+            .where(FiscalDocument.id == document_id)
+        )
+        if document is None:
+            raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+        fiscal_sale = (
+            _fiscal_sale_view(document, document.sale)
+            if document.sale is not None
+            else _manual_fiscal_sale_view(document)
         )
         result = (
             authorize_nfce(setting, document, fiscal_sale)

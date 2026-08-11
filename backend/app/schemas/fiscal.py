@@ -12,6 +12,7 @@ FiscalDocumentStatus = Literal[
     "xml_generated",
     "signed",
     "sent",
+    "processing",
     "authorized",
     "rejected",
     "cancelled",
