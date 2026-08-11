@@ -1603,7 +1603,7 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
             .toSet() ??
         _businessTypeModules[businessType ?? _businessType]?.toSet() ??
         <String>{};
-    final suggested = segmentModules.intersection(planModules);
+    final suggested = {...segmentModules, ...planModules};
     if (suggested.contains('stock')) {
       suggested.add('suppliers');
     }

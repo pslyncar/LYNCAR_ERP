@@ -318,7 +318,7 @@ def modules_for_business_type(
     if modules is not None:
         return normalize_modules(modules)
     enabled = set(segment_default_modules(business_type))
-    return filter_modules_by_plan(sorted(enabled & plan_modules), plan_code)
+    return filter_modules_by_plan(sorted(enabled | plan_modules), plan_code)
 
 
 def permission_allowed_by_modules(permission_code: str, enabled_modules: list[str]) -> bool:

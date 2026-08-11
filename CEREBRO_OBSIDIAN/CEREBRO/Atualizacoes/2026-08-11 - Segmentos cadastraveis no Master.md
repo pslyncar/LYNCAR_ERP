@@ -10,6 +10,7 @@ Segmentos comerciais deixam de ser uma lista fixa apenas no codigo e passam a ex
 - Cada segmento possui modulos sugeridos.
 - O plano continua sendo a base comercial do contrato.
 - Ao cadastrar ou trocar segmento no cliente, o sistema sugere os modulos do segmento combinados com os modulos do plano.
+- A combinacao e uma soma: tudo que o plano libera deve entrar, e o segmento pode acrescentar sugestoes do tipo de negocio.
 - O Master pode alterar manualmente os modulos do cliente depois da sugestao.
 - Alterar manualmente os modulos do cliente nao muda o segmento para Personalizado.
 - Segmentos em uso por clientes nao podem ser excluidos; devem ser desativados ou os clientes devem ser alterados antes.
