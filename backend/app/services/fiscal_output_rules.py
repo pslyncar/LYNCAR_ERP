@@ -236,6 +236,28 @@ def _output_rule_for_model(
     return sorted(candidates, key=lambda rule: _specificity(rule, product), reverse=True)[0]
 
 
+def resolve_output_rule(
+    setting: CompanyFiscalSetting,
+    product: Any,
+    *,
+    model: str,
+    operation_type: str = "sale",
+    uf_destination: str | None = None,
+) -> Any | None:
+    """Retorna a regra de saida que seria aplicada ao produto/documento."""
+
+    rule = _output_rule_for_model(
+        setting,
+        product,
+        model=model,
+        operation_type=operation_type,
+        uf_destination=uf_destination,
+    )
+    if rule is None and product is not None:
+        rule = _product_rule_for_model(product, model=model)
+    return rule
+
+
 def effective_csosn(setting: CompanyFiscalSetting, product: Any, *, model: str) -> str | None:
     csosn = (digits(getattr(product, "csosn", None)) or None) if product is not None else None
     crt = effective_crt(setting)
@@ -262,7 +284,7 @@ def resolve_output_tax_profile(
     2. Cadastro fiscal do produto.
     3. Padrao automatico por CRT/regime/modelo/operação.
     """
-    rule = _output_rule_for_model(
+    rule = resolve_output_rule(
         setting,
         product,
         model=model,

@@ -1899,6 +1899,18 @@ class ApiClient {
     }
   }
 
+  Future<FiscalOutputRulePreview> previewFiscalOutputRule(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/fiscal/output-rules/preview'),
+      headers: _authHeaders(token),
+      body: jsonEncode(payload),
+    );
+    return FiscalOutputRulePreview.fromJson(_decodeResponse(response));
+  }
+
   Future<Map<String, dynamic>> uploadFiscalCertificate(
     String token, {
     required Uint8List bytes,

@@ -37,6 +37,8 @@ from app.schemas.fiscal import (
     FiscalDocumentCancel,
     FiscalDocumentRead,
     FiscalOutputRuleCreate,
+    FiscalOutputRulePreviewRead,
+    FiscalOutputRulePreviewRequest,
     FiscalOutputRuleRead,
     FiscalOutputRuleUpdate,
     FiscalDocumentsRecoveryRead,
@@ -55,7 +57,7 @@ from app.services.nfce_sp import (
 from app.services.nfce_listagem_chaves_sp import sync_nfce_next_number_from_sefaz
 from app.services.fiscal_recovery import RecoveredFiscalDocument, recover_fiscal_documents
 from app.services.nfe_sp import authorize_nfe
-from app.services.fiscal_output_rules import effective_crt
+from app.services.fiscal_output_rules import effective_crt, resolve_output_rule, resolve_output_tax_profile
 from app.services.rtc_compliance import (
     RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
     RTC_PRODUCTION_CRT3_MANDATORY_FROM,
@@ -207,6 +209,47 @@ def _clean_rule_payload(data: dict) -> dict:
     if cleaned.get("operation_type") in {None, ""}:
         cleaned["operation_type"] = "sale"
     return cleaned
+
+
+def _only_digits(value: str | None) -> str:
+    return "".join(char for char in str(value or "") if char.isdigit())
+
+
+def _validate_output_rule_payload(data: dict) -> None:
+    document_model = str(data.get("document_model") or "").strip()
+    if document_model and document_model not in {"55", "65"}:
+        raise HTTPException(status_code=400, detail="Modelo da regra fiscal deve ser 55, 65 ou vazio.")
+    operation_type = str(data.get("operation_type") or "sale").strip().lower()
+    allowed_operations = {"sale", "venda", "return", "devolucao", "transfer", "transferencia", "bonus", "bonificacao", "remittance", "remessa"}
+    if operation_type not in allowed_operations:
+        raise HTTPException(status_code=400, detail="Tipo de operacao fiscal nao reconhecido.")
+    for field_name, label in [("uf_origin", "UF origem"), ("uf_destination", "UF destino")]:
+        value = str(data.get(field_name) or "").strip()
+        if value and (len(value) != 2 or not value.isalpha()):
+            raise HTTPException(status_code=400, detail=f"{label} deve ter 2 letras.")
+        if value:
+            data[field_name] = value.upper()
+    ncm = _only_digits(data.get("ncm"))
+    if data.get("ncm") and len(ncm) != 8:
+        raise HTTPException(status_code=400, detail="NCM exato deve ter 8 digitos.")
+    if ncm:
+        data["ncm"] = ncm
+    ncm_prefix = _only_digits(data.get("ncm_prefix"))
+    if data.get("ncm_prefix") and not (1 <= len(ncm_prefix) <= 8):
+        raise HTTPException(status_code=400, detail="Prefixo NCM deve ter de 1 a 8 digitos.")
+    if ncm_prefix:
+        data["ncm_prefix"] = ncm_prefix
+    cfop = _only_digits(data.get("cfop"))
+    if data.get("cfop") and len(cfop) != 4:
+        raise HTTPException(status_code=400, detail="CFOP deve ter 4 digitos.")
+    if cfop:
+        data["cfop"] = cfop
+    if data.get("csosn") and data.get("cst"):
+        raise HTTPException(status_code=400, detail="Informe CSOSN ou CST ICMS, nao os dois na mesma regra.")
+    if data.get("ibs_cbs_cst") and len(_only_digits(data.get("ibs_cbs_cst"))) != 3:
+        raise HTTPException(status_code=400, detail="CST IBS/CBS deve ter 3 digitos.")
+    if data.get("ibs_cbs_classification") and len(_only_digits(data.get("ibs_cbs_classification"))) != 6:
+        raise HTTPException(status_code=400, detail="cClassTrib IBS/CBS deve ter 6 digitos.")
 
 
 def _load_active_output_rules(db: Session) -> list[FiscalOutputRule]:
@@ -1064,6 +1107,7 @@ def create_fiscal_output_rule(
     current_user: User = Depends(require_permission("fiscal:settings")),
 ) -> FiscalOutputRuleRead:
     data = _clean_rule_payload(payload.model_dump())
+    _validate_output_rule_payload(data)
     product_id = data.get("product_id")
     if product_id is not None and db.get(Product, product_id) is None:
         raise HTTPException(status_code=404, detail="Produto da regra fiscal nao encontrado.")
@@ -1092,6 +1136,7 @@ def update_fiscal_output_rule(
     if rule is None:
         raise HTTPException(status_code=404, detail="Regra fiscal nao encontrada.")
     data = _clean_rule_payload(payload.model_dump(exclude_unset=True))
+    _validate_output_rule_payload(data)
     product_id = data.get("product_id")
     if product_id is not None and db.get(Product, product_id) is None:
         raise HTTPException(status_code=404, detail="Produto da regra fiscal nao encontrado.")
@@ -1123,6 +1168,78 @@ def delete_fiscal_output_rule(
     db.delete(rule)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/output-rules/preview", response_model=FiscalOutputRulePreviewRead)
+def preview_fiscal_output_rule(
+    payload: FiscalOutputRulePreviewRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:view")),
+) -> FiscalOutputRulePreviewRead:
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
+    product = db.get(Product, payload.product_id) if payload.product_id is not None else None
+    if payload.product_id is not None and product is None:
+        raise HTTPException(status_code=404, detail="Produto nao encontrado para simular regra fiscal.")
+    origin_uf = str(setting.uf or "").upper() or None
+    destination_uf = str(payload.uf_destination or origin_uf or "").upper() or None
+    interstate = bool(origin_uf and destination_uf and destination_uf != origin_uf)
+    warnings = []
+    document_allowed = True
+    document_warning = None
+    if payload.document_model == "65" and interstate:
+        document_allowed = False
+        document_warning = "NFC-e nao deve ser usada em venda interestadual. Use NF-e modelo 55."
+        warnings.append(document_warning)
+    if payload.document_model == "55" and not product and payload.operation_type in {"sale", "venda"}:
+        warnings.append("Simulacao sem produto usa apenas o padrao geral do motor.")
+    rule = resolve_output_rule(
+        setting,
+        product,
+        model=payload.document_model,
+        operation_type=payload.operation_type,
+        uf_destination=destination_uf,
+    )
+    profile = resolve_output_tax_profile(
+        setting,
+        product,
+        model=payload.document_model,
+        operation_type=payload.operation_type,
+        uf_destination=destination_uf,
+    )
+    if profile.cfop is None:
+        warnings.append("Nenhum CFOP resolvido. Cadastre CFOP no produto ou em uma regra fiscal.")
+    elif interstate and str(profile.cfop).startswith("5"):
+        warnings.append("CFOP iniciado por 5 nao combina com operacao interestadual.")
+    elif not interstate and str(profile.cfop).startswith("6"):
+        warnings.append("CFOP iniciado por 6 nao combina com operacao interna.")
+    if product is not None and not getattr(product, "ncm", None):
+        warnings.append("Produto sem NCM cadastrado.")
+    return FiscalOutputRulePreviewRead(
+        product_id=getattr(product, "id", None),
+        product_name=getattr(product, "name", None),
+        document_model=payload.document_model,
+        operation_type=payload.operation_type,
+        origin_uf=origin_uf,
+        destination_uf=destination_uf,
+        interstate=interstate,
+        document_allowed=document_allowed,
+        document_warning=document_warning,
+        rule_source=profile.source,
+        rule_id=getattr(rule, "id", None),
+        rule_name=getattr(rule, "name", None),
+        cfop=profile.cfop,
+        origin=profile.origin,
+        cst=profile.cst,
+        csosn=profile.csosn,
+        pis_cst=profile.pis_cst,
+        cofins_cst=profile.cofins_cst,
+        ibs_cbs_cst=profile.ibs_cbs_cst,
+        ibs_cbs_classification=profile.ibs_cbs_classification,
+        cbs_rate=profile.cbs_rate,
+        ibs_state_rate=profile.ibs_state_rate,
+        ibs_city_rate=profile.ibs_city_rate,
+        warnings=list(dict.fromkeys(warnings)),
+    )
 
 
 @router.post("/certificate", response_model=FiscalCertificateUploadRead)

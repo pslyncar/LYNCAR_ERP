@@ -143,6 +143,7 @@ class _FiscalScreenState extends State<FiscalScreen> {
               onCreate: () => _editOutputRule(),
               onEdit: _editOutputRule,
               onDelete: _deleteOutputRule,
+              onPreview: _previewOutputRule,
             ),
           ],
         ),
@@ -179,7 +180,9 @@ class _FiscalScreenState extends State<FiscalScreen> {
 
   Future<void> _refreshChecklist() async {
     try {
-      final checklist = await _api.getFiscalSetupChecklist(widget.session.token);
+      final checklist = await _api.getFiscalSetupChecklist(
+        widget.session.token,
+      );
       if (mounted) setState(() => _checklist = checklist);
     } on ApiException {
       // Mantem o ultimo checklist visivel se a consulta complementar falhar.
@@ -353,8 +356,7 @@ class _FiscalScreenState extends State<FiscalScreen> {
                           controller: crt,
                           decoration: const InputDecoration(
                             labelText: 'CRT',
-                            helperText:
-                                '1 Simples, 2 excesso, 3 normal, 4 MEI',
+                            helperText: '1 Simples, 2 excesso, 3 normal, 4 MEI',
                             border: OutlineInputBorder(),
                           ),
                         ),
@@ -777,6 +779,17 @@ class _FiscalScreenState extends State<FiscalScreen> {
       if (mounted) setState(() => _saving = false);
     }
   }
+
+  Future<void> _previewOutputRule() async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => _FiscalOutputRulePreviewDialog(
+        api: _api,
+        token: widget.session.token,
+        settings: _settings,
+      ),
+    );
+  }
 }
 
 class _FiscalSetupChecklistCard extends StatelessWidget {
@@ -795,7 +808,9 @@ class _FiscalSetupChecklistCard extends StatelessWidget {
         ),
       );
     }
-    final pendingCount = item.items.where((entry) => entry.status != 'ok').length;
+    final pendingCount = item.items
+        .where((entry) => entry.status != 'ok')
+        .length;
     return AppCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -903,13 +918,13 @@ class _ChecklistTile extends StatelessWidget {
     final color = ok
         ? const Color(0xFF047857)
         : attention
-            ? const Color(0xFFB45309)
-            : const Color(0xFFB91C1C);
+        ? const Color(0xFFB45309)
+        : const Color(0xFFB91C1C);
     final icon = ok
         ? Icons.check_circle_outline
         : attention
-            ? Icons.warning_amber_outlined
-            : Icons.error_outline;
+        ? Icons.warning_amber_outlined
+        : Icons.error_outline;
     return Container(
       width: 330,
       constraints: const BoxConstraints(minHeight: 96),
@@ -1395,6 +1410,7 @@ class _FiscalOutputRulesCard extends StatelessWidget {
     required this.onCreate,
     required this.onEdit,
     required this.onDelete,
+    required this.onPreview,
   });
 
   final List<FiscalOutputRule> rules;
@@ -1403,6 +1419,7 @@ class _FiscalOutputRulesCard extends StatelessWidget {
   final VoidCallback onCreate;
   final ValueChanged<FiscalOutputRule> onEdit;
   final ValueChanged<FiscalOutputRule> onDelete;
+  final VoidCallback onPreview;
 
   @override
   Widget build(BuildContext context) {
@@ -1417,7 +1434,7 @@ class _FiscalOutputRulesCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Regras fiscais de saída',
+                      'Regras fiscais de saida avancadas',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -1425,12 +1442,18 @@ class _FiscalOutputRulesCard extends StatelessWidget {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Define como NFC-e/NF-e devem sair por regime, modelo, NCM/CEST ou produto. Nao altera XML de entrada.',
+                      'Use para excecoes e orientacoes do contador. O motor segue o padrao automatico quando nenhuma regra bater.',
                       style: TextStyle(color: Color(0xFF64748B)),
                     ),
                   ],
                 ),
               ),
+              OutlinedButton.icon(
+                onPressed: saving ? null : onPreview,
+                icon: const Icon(Icons.fact_check_outlined),
+                label: const Text('Testar regra'),
+              ),
+              const SizedBox(width: 8),
               if (canManage)
                 FilledButton.icon(
                   onPressed: saving ? null : onCreate,
@@ -1441,7 +1464,7 @@ class _FiscalOutputRulesCard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           const Text(
-            'As regras sao sugestoes/configuracoes fiscais e devem ser conferidas pelo contador ou responsavel fiscal.',
+            'Regra geral demais pode afetar muitos produtos. Produto, NCM exato, prefixo NCM, CEST, modelo e UF deixam a regra mais segura.',
             style: TextStyle(
               color: Color(0xFFB45309),
               fontWeight: FontWeight.w700,
@@ -1465,7 +1488,7 @@ class _FiscalOutputRulesCard extends StatelessWidget {
                   color: rule.active
                       ? const Color(0xFFF8FAFC)
                       : const Color(0xFFFFF1F2),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Row(
@@ -1491,9 +1514,12 @@ class _FiscalOutputRulesCard extends StatelessWidget {
                           Text(
                             [
                               'Prioridade ${rule.priority}',
+                              _operationLabel(rule.operationType),
                               rule.documentModel == null
                                   ? 'NF-e/NFC-e'
                                   : 'Modelo ${rule.documentModel}',
+                              if (rule.ufDestination != null)
+                                'UF destino ${rule.ufDestination}',
                               if (rule.crt != null) 'CRT ${rule.crt}',
                               if (rule.ncm != null) 'NCM ${rule.ncm}',
                               if (rule.ncmPrefix != null)
@@ -1504,7 +1530,7 @@ class _FiscalOutputRulesCard extends StatelessWidget {
                               if (rule.cfop != null) 'CFOP ${rule.cfop}',
                               if (rule.csosn != null) 'CSOSN ${rule.csosn}',
                               if (rule.cst != null) 'CST ${rule.cst}',
-                            ].join(' • '),
+                            ].join(' | '),
                             style: const TextStyle(color: Color(0xFF64748B)),
                           ),
                         ],
@@ -1529,6 +1555,25 @@ class _FiscalOutputRulesCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  static String _operationLabel(String value) {
+    switch (value) {
+      case 'return':
+      case 'devolucao':
+        return 'Devolucao';
+      case 'transfer':
+      case 'transferencia':
+        return 'Transferencia';
+      case 'bonus':
+      case 'bonificacao':
+        return 'Bonificacao';
+      case 'remittance':
+      case 'remessa':
+        return 'Remessa';
+      default:
+        return 'Venda';
+    }
   }
 }
 
@@ -1565,10 +1610,16 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
     text: widget.rule?.productId?.toString() ?? '',
   );
   late final TextEditingController _cfop = TextEditingController(
-    text: widget.rule?.cfop ?? '5102',
+    text: widget.rule?.cfop ?? '',
   );
   late final TextEditingController _origin = TextEditingController(
-    text: widget.rule?.origin ?? '0',
+    text: widget.rule?.origin ?? '',
+  );
+  late final TextEditingController _ufOrigin = TextEditingController(
+    text: widget.rule?.ufOrigin ?? '',
+  );
+  late final TextEditingController _ufDestination = TextEditingController(
+    text: widget.rule?.ufDestination ?? '',
   );
   late final TextEditingController _cst = TextEditingController(
     text: widget.rule?.cst ?? '',
@@ -1603,6 +1654,7 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
   late bool _active = widget.rule?.active ?? true;
   late String? _model = widget.rule?.documentModel ?? '65';
   late String? _crt = widget.rule?.crt ?? widget.settings?.crt;
+  late String _operation = widget.rule?.operationType ?? 'sale';
 
   @override
   void dispose() {
@@ -1615,6 +1667,8 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
       _productId,
       _cfop,
       _origin,
+      _ufOrigin,
+      _ufDestination,
       _cst,
       _csosn,
       _pisCst,
@@ -1652,9 +1706,48 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
               ),
               _field(_name, 'Nome da regra'),
               const SizedBox(height: 10),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Quando aplicar',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(child: _field(_priority, 'Prioridade')),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _operation,
+                      decoration: const InputDecoration(
+                        labelText: 'Operacao',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'sale', child: Text('Venda')),
+                        DropdownMenuItem(
+                          value: 'return',
+                          child: Text('Devolucao'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'transfer',
+                          child: Text('Transferencia'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'bonus',
+                          child: Text('Bonificacao'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'remittance',
+                          child: Text('Remessa'),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _operation = value ?? 'sale'),
+                    ),
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: DropdownButtonFormField<String?>(
@@ -1715,6 +1808,16 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
               const SizedBox(height: 10),
               Row(
                 children: [
+                  Expanded(child: _field(_ufOrigin, 'UF origem')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field(_ufDestination, 'UF destino')),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field(_productId, 'ID produto especifico')),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
                   Expanded(child: _field(_ncm, 'NCM exato')),
                   const SizedBox(width: 10),
                   Expanded(child: _field(_ncmPrefix, 'Prefixo NCM')),
@@ -1723,13 +1826,18 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
                 ],
               ),
               const SizedBox(height: 10),
+              const SizedBox(height: 10),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'O que sobrescrever',
+                  style: TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              const SizedBox(height: 8),
               Row(
                 children: [
-                  Expanded(
-                    child: _field(_productId, 'ID do produto especifico'),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(child: _field(_cfop, 'CFOP saída')),
+                  Expanded(child: _field(_cfop, 'CFOP saida')),
                   const SizedBox(width: 10),
                   Expanded(child: _field(_origin, 'Origem')),
                 ],
@@ -1812,9 +1920,11 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
       'name': name,
       'active': _active,
       'priority': int.tryParse(_priority.text.trim()) ?? 100,
-      'operation_type': 'sale',
+      'operation_type': _operation,
       'document_model': _model,
       'crt': _crt,
+      'uf_origin': _text(_ufOrigin),
+      'uf_destination': _text(_ufDestination),
       'ncm': _text(_ncm),
       'ncm_prefix': _text(_ncmPrefix),
       'cest': _text(_cest),
@@ -1832,6 +1942,275 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
       'ibs_city_rate': _num(_ibsMunRate),
       'notes': _text(_notes),
     });
+  }
+}
+
+class _FiscalOutputRulePreviewDialog extends StatefulWidget {
+  const _FiscalOutputRulePreviewDialog({
+    required this.api,
+    required this.token,
+    required this.settings,
+  });
+
+  final ApiClient api;
+  final String token;
+  final CompanyFiscalSetting? settings;
+
+  @override
+  State<_FiscalOutputRulePreviewDialog> createState() =>
+      _FiscalOutputRulePreviewDialogState();
+}
+
+class _FiscalOutputRulePreviewDialogState
+    extends State<_FiscalOutputRulePreviewDialog> {
+  final TextEditingController _productId = TextEditingController();
+  late final TextEditingController _ufDestination = TextEditingController(
+    text: widget.settings?.uf ?? 'SP',
+  );
+  String _model = '65';
+  String _operation = 'sale';
+  bool _loading = false;
+  String? _error;
+  FiscalOutputRulePreview? _preview;
+
+  @override
+  void dispose() {
+    _productId.dispose();
+    _ufDestination.dispose();
+    super.dispose();
+  }
+
+  Future<void> _run() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+      _preview = null;
+    });
+    try {
+      final preview = await widget.api.previewFiscalOutputRule(widget.token, {
+        'product_id': int.tryParse(_productId.text.trim()),
+        'document_model': _model,
+        'operation_type': _operation,
+        'uf_destination': _ufDestination.text.trim().toUpperCase(),
+      });
+      if (!mounted) return;
+      setState(() => _preview = preview);
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final preview = _preview;
+    return AlertDialog(
+      title: const Text('Testar regra fiscal'),
+      content: SizedBox(
+        width: 620,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Simule uma emissao antes de salvar regra ou emitir nota.',
+                style: TextStyle(color: Color(0xFF64748B)),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _productId,
+                      decoration: const InputDecoration(
+                        labelText: 'ID do produto',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _ufDestination,
+                      decoration: const InputDecoration(
+                        labelText: 'UF destino',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _model,
+                      decoration: const InputDecoration(
+                        labelText: 'Modelo',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: '65',
+                          child: Text('NFC-e modelo 65'),
+                        ),
+                        DropdownMenuItem(
+                          value: '55',
+                          child: Text('NF-e modelo 55'),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _model = value ?? '65'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<String>(
+                      initialValue: _operation,
+                      decoration: const InputDecoration(
+                        labelText: 'Operacao',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(value: 'sale', child: Text('Venda')),
+                        DropdownMenuItem(
+                          value: 'return',
+                          child: Text('Devolucao'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'transfer',
+                          child: Text('Transferencia'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'bonus',
+                          child: Text('Bonificacao'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'remittance',
+                          child: Text('Remessa'),
+                        ),
+                      ],
+                      onChanged: (value) =>
+                          setState(() => _operation = value ?? 'sale'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              if (_loading) const LinearProgressIndicator(minHeight: 3),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    _error!,
+                    style: const TextStyle(
+                      color: Color(0xFFB91C1C),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              if (preview != null) ...[
+                const SizedBox(height: 12),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: preview.documentAllowed
+                        ? const Color(0xFFF0FDF4)
+                        : const Color(0xFFFFF1F2),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: preview.documentAllowed
+                          ? const Color(0xFFBBF7D0)
+                          : const Color(0xFFFECACA),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        preview.documentAllowed
+                            ? 'Documento permitido para este cenario'
+                            : 'Documento nao recomendado',
+                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _ChipLine('Produto', preview.productName ?? '-'),
+                          _ChipLine('Origem', preview.originUf ?? '-'),
+                          _ChipLine('Destino', preview.destinationUf ?? '-'),
+                          _ChipLine(
+                            'Operacao',
+                            preview.interstate ? 'Interestadual' : 'Interna',
+                          ),
+                          _ChipLine('Fonte', _sourceLabel(preview.ruleSource)),
+                          _ChipLine(
+                            'Regra',
+                            preview.ruleName ?? 'Padrao automatico',
+                          ),
+                          _ChipLine('CFOP', preview.cfop ?? '-'),
+                          _ChipLine('Origem merc.', preview.origin ?? '-'),
+                          _ChipLine('CSOSN', preview.csosn ?? '-'),
+                          _ChipLine('CST', preview.cst ?? '-'),
+                          _ChipLine('PIS', preview.pisCst ?? '-'),
+                          _ChipLine('COFINS', preview.cofinsCst ?? '-'),
+                          _ChipLine('IBS/CBS CST', preview.ibsCbsCst ?? '-'),
+                          _ChipLine(
+                            'cClassTrib',
+                            preview.ibsCbsClassification ?? '-',
+                          ),
+                        ],
+                      ),
+                      if (preview.warnings.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        for (final warning in preview.warnings)
+                          Text(
+                            warning,
+                            style: const TextStyle(
+                              color: Color(0xFFB45309),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Fechar'),
+        ),
+        FilledButton.icon(
+          onPressed: _loading ? null : _run,
+          icon: const Icon(Icons.play_arrow),
+          label: const Text('Simular'),
+        ),
+      ],
+    );
+  }
+
+  String _sourceLabel(String source) {
+    switch (source) {
+      case 'fiscal_output_rule':
+        return 'Regra avancada';
+      case 'product_tax_rule':
+        return 'Regra do produto';
+      case 'product_or_default':
+        return 'Produto/padrao';
+      default:
+        return source;
+    }
   }
 }
 

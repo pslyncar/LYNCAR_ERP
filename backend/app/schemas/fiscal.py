@@ -331,6 +331,40 @@ class FiscalOutputRuleRead(FiscalOutputRuleBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FiscalOutputRulePreviewRequest(BaseModel):
+    product_id: int | None = Field(default=None, gt=0)
+    document_model: Literal["55", "65"] = "65"
+    operation_type: str = Field(default="sale", max_length=30)
+    uf_destination: str | None = Field(default=None, max_length=2)
+
+
+class FiscalOutputRulePreviewRead(BaseModel):
+    product_id: int | None
+    product_name: str | None
+    document_model: str
+    operation_type: str
+    origin_uf: str | None
+    destination_uf: str | None
+    interstate: bool
+    document_allowed: bool
+    document_warning: str | None = None
+    rule_source: str
+    rule_id: int | None = None
+    rule_name: str | None = None
+    cfop: str | None = None
+    origin: str | None = None
+    cst: str | None = None
+    csosn: str | None = None
+    pis_cst: str | None = None
+    cofins_cst: str | None = None
+    ibs_cbs_cst: str | None = None
+    ibs_cbs_classification: str | None = None
+    cbs_rate: Decimal | None = None
+    ibs_state_rate: Decimal | None = None
+    ibs_city_rate: Decimal | None = None
+    warnings: list[str] = []
+
+
 class FiscalDocumentRead(BaseModel):
     id: int
     sale_id: int | None

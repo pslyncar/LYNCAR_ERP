@@ -175,9 +175,8 @@ class FiscalSetupChecklist {
       taxRegime: json['tax_regime'] as String?,
       items: (json['items'] as List<dynamic>? ?? const [])
           .map(
-            (item) => FiscalSetupChecklistItem.fromJson(
-              item as Map<String, dynamic>,
-            ),
+            (item) =>
+                FiscalSetupChecklistItem.fromJson(item as Map<String, dynamic>),
           )
           .toList(growable: false),
     );
@@ -420,6 +419,91 @@ class FiscalOutputRule {
       notes: json['notes'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
+    );
+  }
+}
+
+class FiscalOutputRulePreview {
+  const FiscalOutputRulePreview({
+    required this.documentModel,
+    required this.operationType,
+    required this.interstate,
+    required this.documentAllowed,
+    required this.ruleSource,
+    required this.warnings,
+    this.productId,
+    this.productName,
+    this.originUf,
+    this.destinationUf,
+    this.documentWarning,
+    this.ruleId,
+    this.ruleName,
+    this.cfop,
+    this.origin,
+    this.cst,
+    this.csosn,
+    this.pisCst,
+    this.cofinsCst,
+    this.ibsCbsCst,
+    this.ibsCbsClassification,
+    this.cbsRate,
+    this.ibsStateRate,
+    this.ibsCityRate,
+  });
+
+  final int? productId;
+  final String? productName;
+  final String documentModel;
+  final String operationType;
+  final String? originUf;
+  final String? destinationUf;
+  final bool interstate;
+  final bool documentAllowed;
+  final String? documentWarning;
+  final String ruleSource;
+  final int? ruleId;
+  final String? ruleName;
+  final String? cfop;
+  final String? origin;
+  final String? cst;
+  final String? csosn;
+  final String? pisCst;
+  final String? cofinsCst;
+  final String? ibsCbsCst;
+  final String? ibsCbsClassification;
+  final double? cbsRate;
+  final double? ibsStateRate;
+  final double? ibsCityRate;
+  final List<String> warnings;
+
+  factory FiscalOutputRulePreview.fromJson(Map<String, dynamic> json) {
+    return FiscalOutputRulePreview(
+      productId: json['product_id'] as int?,
+      productName: json['product_name'] as String?,
+      documentModel: json['document_model'] as String? ?? '65',
+      operationType: json['operation_type'] as String? ?? 'sale',
+      originUf: json['origin_uf'] as String?,
+      destinationUf: json['destination_uf'] as String?,
+      interstate: json['interstate'] as bool? ?? false,
+      documentAllowed: json['document_allowed'] as bool? ?? true,
+      documentWarning: json['document_warning'] as String?,
+      ruleSource: json['rule_source'] as String? ?? 'automatic',
+      ruleId: json['rule_id'] as int?,
+      ruleName: json['rule_name'] as String?,
+      cfop: json['cfop'] as String?,
+      origin: json['origin'] as String?,
+      cst: json['cst'] as String?,
+      csosn: json['csosn'] as String?,
+      pisCst: json['pis_cst'] as String?,
+      cofinsCst: json['cofins_cst'] as String?,
+      ibsCbsCst: json['ibs_cbs_cst'] as String?,
+      ibsCbsClassification: json['ibs_cbs_classification'] as String?,
+      cbsRate: _toDoubleOrNull(json['cbs_rate']),
+      ibsStateRate: _toDoubleOrNull(json['ibs_state_rate']),
+      ibsCityRate: _toDoubleOrNull(json['ibs_city_rate']),
+      warnings: (json['warnings'] as List<dynamic>? ?? [])
+          .map((item) => item.toString())
+          .toList(growable: false),
     );
   }
 }
