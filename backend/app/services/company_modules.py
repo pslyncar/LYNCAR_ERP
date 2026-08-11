@@ -279,33 +279,10 @@ def filter_modules_by_plan(modules: list[str], plan_code: str | None) -> list[st
     return sorted(module for module in modules if plan_allows_module(plan_code, module))
 
 
-def seed_business_segments(db) -> None:
-    has_any_segment = db.query(BusinessSegment.id).first()
-    if has_any_segment is not None:
-        return
-    for code, default in SEGMENT_DEFAULTS.items():
-        segment = db.query(BusinessSegment).filter(BusinessSegment.code == code).first()
-        if segment is None:
-            db.add(
-                BusinessSegment(
-                    code=code,
-                    name=default["name"],
-                    description=default["description"],
-                    default_modules=list(default["default_modules"]),
-                    active=True,
-                    sort_order=default["sort_order"],
-                )
-            )
-        elif not segment.default_modules:
-            segment.default_modules = list(default["default_modules"])
-
-
 def segment_default_modules(business_type: str | None) -> list[str]:
     code = _normalize_business_type(business_type)
     try:
         with MasterSessionLocal() as db:
-            seed_business_segments(db)
-            db.commit()
             segment = db.query(BusinessSegment).filter(BusinessSegment.code == code).first()
             if segment is not None and segment.default_modules:
                 return normalize_modules(segment.default_modules)

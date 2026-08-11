@@ -108,13 +108,23 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
   }
 
   Future<void> _deletePlan(SubscriptionPlan plan) async {
-    final confirmed = await _confirm(
+    final destination = await _confirmDeleteWithMigration(
       title: 'Excluir ${plan.name}?',
-      message: 'Planos em uso por clientes nao podem ser excluidos.',
+      message:
+          'Se existir cliente usando este plano, escolha outro plano para migrar antes de excluir.',
+      destinationLabel: 'Migrar clientes para',
+      options: [
+        for (final item in _plans)
+          if (item.code != plan.code) _DeleteDestination(item.code, item.name),
+      ],
     );
-    if (!confirmed) return;
+    if (destination == _DeleteCancelled.value) return;
     try {
-      await _api.deleteMasterPlan(widget.session.token, plan.code);
+      await _api.deleteMasterPlan(
+        widget.session.token,
+        plan.code,
+        migrateToPlan: destination,
+      );
       await _load();
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -154,42 +164,88 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
   }
 
   Future<void> _deleteSegment(BusinessSegment segment) async {
-    final confirmed = await _confirm(
+    final destination = await _confirmDeleteWithMigration(
       title: 'Excluir ${segment.name}?',
-      message: 'Segmentos em uso por clientes nao podem ser excluidos.',
+      message:
+          'Se existir cliente usando este segmento, escolha outro segmento para migrar antes de excluir.',
+      destinationLabel: 'Migrar clientes para',
+      options: [
+        for (final item in _segments)
+          if (item.code != segment.code)
+            _DeleteDestination(item.code, item.name),
+      ],
     );
-    if (!confirmed) return;
+    if (destination == _DeleteCancelled.value) return;
     try {
-      await _api.deleteMasterSegment(widget.session.token, segment.code);
+      await _api.deleteMasterSegment(
+        widget.session.token,
+        segment.code,
+        migrateToSegment: destination,
+      );
       await _load();
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     }
   }
 
-  Future<bool> _confirm({
+  Future<String?> _confirmDeleteWithMigration({
     required String title,
     required String message,
+    required String destinationLabel,
+    required List<_DeleteDestination> options,
   }) async {
-    return await showDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: Text(title),
-            content: Text(message),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: const Text('Cancelar'),
-              ),
-              FilledButton.icon(
-                onPressed: () => Navigator.of(context).pop(true),
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Excluir'),
-              ),
-            ],
+    String? destination;
+    return showDialog<String?>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: 460,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(message),
+                if (options.isNotEmpty) ...[
+                  const SizedBox(height: 16),
+                  DropdownButtonFormField<String>(
+                    initialValue: destination,
+                    decoration: InputDecoration(labelText: destinationLabel),
+                    items: [
+                      const DropdownMenuItem<String>(
+                        value: null,
+                        child: Text('Excluir apenas se nao estiver em uso'),
+                      ),
+                      for (final option in options)
+                        DropdownMenuItem(
+                          value: option.code,
+                          child: Text(option.name),
+                        ),
+                    ],
+                    onChanged: (value) =>
+                        setDialogState(() => destination = value),
+                  ),
+                ],
+              ],
+            ),
           ),
-        ) ??
-        false;
+          actions: [
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_DeleteCancelled.value),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.of(context).pop(destination),
+              icon: const Icon(Icons.delete_outline),
+              label: Text(destination == null ? 'Excluir' : 'Migrar e excluir'),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   String _storageLabel(int mb) {
@@ -389,6 +445,17 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
       ),
     );
   }
+}
+
+class _DeleteDestination {
+  const _DeleteDestination(this.code, this.name);
+
+  final String code;
+  final String name;
+}
+
+class _DeleteCancelled {
+  static const value = '__cancelled__';
 }
 
 class _PlanDialog extends StatefulWidget {

@@ -10,7 +10,7 @@ from app.schemas.business_segment import (
     BusinessSegmentRead,
     BusinessSegmentUpdate,
 )
-from app.services.company_modules import normalize_modules, seed_business_segments
+from app.services.company_modules import normalize_modules
 
 router = APIRouter()
 
@@ -20,8 +20,6 @@ def list_segments(
     _: dict = Depends(require_master_permission("master:billing")),
 ) -> list[BusinessSegment]:
     with MasterSessionLocal() as db:
-        seed_business_segments(db)
-        db.commit()
         return list(
             db.scalars(
                 select(BusinessSegment).order_by(
@@ -43,8 +41,6 @@ def create_segment(
 ) -> BusinessSegment:
     code = segment_in.code.strip().lower().replace(" ", "_")
     with MasterSessionLocal() as db:
-        seed_business_segments(db)
-        db.commit()
         existing = db.scalar(select(BusinessSegment).where(BusinessSegment.code == code))
         if existing is not None:
             raise HTTPException(
@@ -72,8 +68,6 @@ def update_segment(
     _: dict = Depends(require_master_permission("master:billing")),
 ) -> BusinessSegment:
     with MasterSessionLocal() as db:
-        seed_business_segments(db)
-        db.commit()
         segment = db.scalar(select(BusinessSegment).where(BusinessSegment.code == segment_code))
         if segment is None:
             raise HTTPException(
@@ -93,6 +87,7 @@ def update_segment(
 @router.delete("/segments/{segment_code}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_segment(
     segment_code: str,
+    migrate_to_segment: str | None = None,
     _: dict = Depends(require_master_permission("master:billing")),
 ) -> None:
     if segment_code == "custom":
@@ -107,13 +102,32 @@ def delete_segment(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Segmento nao encontrado.",
             )
-        in_use = db.scalar(
-            select(Company.id).where(Company.business_type == segment.code).limit(1)
+        companies = list(
+            db.scalars(select(Company).where(Company.business_type == segment.code)).all()
         )
-        if in_use is not None:
+        if companies and not migrate_to_segment:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="Segmento em uso por cliente. Desative ou altere os clientes antes de excluir.",
+                detail=(
+                    f"Segmento em uso por {len(companies)} cliente(s). "
+                    "Escolha outro segmento para migrar antes de excluir."
+                ),
             )
+        if companies:
+            if migrate_to_segment == segment.code:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Escolha um segmento de destino diferente do segmento excluido.",
+                )
+            destination = db.scalar(
+                select(BusinessSegment).where(BusinessSegment.code == migrate_to_segment)
+            )
+            if destination is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Segmento de destino nao encontrado.",
+                )
+            for company in companies:
+                company.business_type = destination.code
         db.delete(segment)
         db.commit()

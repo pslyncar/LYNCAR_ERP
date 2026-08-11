@@ -70,15 +70,29 @@ Tambem existe migracao de compatibilidade para os novos modulos de menu lateral:
 
 Essa compatibilidade completa planos, segmentos e clientes antigos uma vez, quando o banco ainda nao possui esses modulos nos planos. Depois disso, alteracoes nos planos devem ser feitas pelo Master, porque mudar um plano propaga para todos os clientes daquele plano.
 
-## Ajuste 2026-08-11 - Seed somente em banco vazio
+## Ajuste 2026-08-11 - Sem seed automatico de planos/segmentos
 
-Os seeds de planos e segmentos agora servem apenas para instalacao nova, quando a tabela ainda esta vazia.
+Planos e segmentos passam a ser administrados pelo banco master, sem receita de fabrica recriada automaticamente pelo codigo.
 
-Em producao madura, o Master passa a ser a fonte principal:
+Em producao madura, o Master e a fonte principal:
 
 - apagar um plano nao faz o codigo recriar automaticamente depois
 - apagar um segmento nao faz o codigo recriar automaticamente depois
 - editar modulos/precos/limites deve ser feito pelo Master
-- migracao continua segura para banco novo, mas nao sobrescreve a administracao real do banco existente
+- banco vazio fica sem planos/segmentos ate alguem cadastrar pelo Master ou importar dados
 
-Para o servidor: depois do pull, rodar a migracao normalmente. Se as tabelas ja tiverem dados, o seed nao vai recriar receitas de fabrica apagadas manualmente.
+Para o servidor: depois do pull, rodar a migracao normalmente. A migracao nao recria receitas de fabrica apagadas manualmente.
+## Ajuste 2026-08-11 - Exclusao com migracao
+
+Planos e segmentos nao possuem mais seed automatico no codigo. O banco master e a fonte real.
+
+Exclusao profissional:
+
+- se plano/segmento nao estiver em uso, pode excluir direto
+- se estiver em uso, a API bloqueia quando nao houver destino
+- a tela permite escolher um plano/segmento de destino
+- ao confirmar, os clientes sao migrados para o destino e depois o plano/segmento antigo e excluido
+- ao migrar plano, os clientes recebem os modulos padrao do plano de destino
+- ao migrar segmento, apenas o tipo de segmento do cliente muda; os modulos especificos do cliente permanecem como estao
+
+Para o servidor: apos pull, rodar `python -m app.migrate_master`. Nao ha seed de plano/segmento para recriar cadastros apagados.

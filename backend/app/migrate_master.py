@@ -30,9 +30,8 @@ from app.models.website_contact_request import WebsiteContactRequest  # noqa: F4
 from app.services.company_modules import (
     modules_for_business_type,
     plan_allows_module,
-    seed_business_segments,
 )
-from app.services.plan_limits import normalize_plan_code, seed_subscription_plans
+from app.services.plan_limits import normalize_plan_code
 from app.services.tenancy import seed_master_identity
 
 
@@ -226,8 +225,6 @@ def main() -> None:
                 company.xml_email_token = (
                     secrets.token_urlsafe(6).lower().replace("_", "").replace("-", "")
                 )
-        seed_subscription_plans(db)
-        seed_business_segments(db)
         db.commit()
     normalize_existing_company_modules()
     enforce_unique_master_user_emails()

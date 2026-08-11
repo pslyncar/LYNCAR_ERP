@@ -450,9 +450,16 @@ class ApiClient {
     return SubscriptionPlan.fromJson(_decodeResponse(response));
   }
 
-  Future<void> deleteMasterPlan(String token, String code) async {
+  Future<void> deleteMasterPlan(
+    String token,
+    String code, {
+    String? migrateToPlan,
+  }) async {
+    final uri = Uri.parse('$baseUrl/master/plans/$code');
     final response = await http.delete(
-      Uri.parse('$baseUrl/master/plans/$code'),
+      migrateToPlan == null
+          ? uri
+          : uri.replace(queryParameters: {'migrate_to_plan': migrateToPlan}),
       headers: _authHeaders(token),
     );
     if (response.statusCode >= 400) {
@@ -485,9 +492,18 @@ class ApiClient {
     return BusinessSegment.fromJson(_decodeResponse(response));
   }
 
-  Future<void> deleteMasterSegment(String token, String code) async {
+  Future<void> deleteMasterSegment(
+    String token,
+    String code, {
+    String? migrateToSegment,
+  }) async {
+    final uri = Uri.parse('$baseUrl/master/segments/$code');
     final response = await http.delete(
-      Uri.parse('$baseUrl/master/segments/$code'),
+      migrateToSegment == null
+          ? uri
+          : uri.replace(
+              queryParameters: {'migrate_to_segment': migrateToSegment},
+            ),
       headers: _authHeaders(token),
     );
     if (response.statusCode >= 400) {

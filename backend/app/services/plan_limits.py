@@ -207,36 +207,6 @@ def plan_defaults(plan_code: str | None) -> PlanLimits:
     )
 
 
-def seed_subscription_plans(db: Session) -> None:
-    has_any_plan = db.scalar(select(SubscriptionPlan.id).limit(1))
-    if has_any_plan is not None:
-        return
-    for index, default in enumerate(PLAN_LIMITS.values(), start=1):
-        plan = db.scalar(select(SubscriptionPlan).where(SubscriptionPlan.code == default.code))
-        if plan is None:
-            db.add(
-                SubscriptionPlan(
-                    code=default.code,
-                    name=default.name,
-                    monthly_price=default.monthly_price,
-                    annual_price=default.annual_price,
-                    max_users=default.max_users,
-                    database_limit_mb=default.database_limit_mb,
-                    file_limit_mb=default.file_limit_mb,
-                    multi_company_limit=default.multi_company_limit,
-                    api_enabled=default.api_enabled,
-                    priority_support=default.priority_support,
-                    default_modules=list(default.default_modules),
-                    active=True,
-                    sort_order=index * 10,
-                )
-            )
-        elif not plan.default_modules:
-            plan.default_modules = list(default.default_modules)
-        elif default.code != "start" and "pdv" in plan.default_modules and "pdv_windows" not in plan.default_modules:
-            plan.default_modules = sorted([*plan.default_modules, "pdv_windows"])
-
-
 def effective_plan_limits(company: Company | None) -> dict[str, Any]:
     base = plan_defaults(company.plan if company else "enterprise")
     result: dict[str, Any] = {

@@ -9,7 +9,6 @@ from app.schemas.website_contact_request import (
     WebsiteContactRequestCreate,
     WebsiteContactRequestRead,
 )
-from app.services.plan_limits import seed_subscription_plans
 
 
 router = APIRouter()
@@ -19,8 +18,6 @@ router = APIRouter()
 def list_public_plans(response: Response) -> list[SubscriptionPlan]:
     """Expose only active commercial plans for the institutional website."""
     with MasterSessionLocal() as db:
-        seed_subscription_plans(db)
-        db.commit()
         plans = list(
             db.scalars(
                 select(SubscriptionPlan)
