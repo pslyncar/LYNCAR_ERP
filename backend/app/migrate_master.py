@@ -309,6 +309,7 @@ def _ensure_sidebar_modules_in_existing_records(db) -> None:
         "sales": {"cash_closings"},
     }
     always_on = {"support", "settings"}
+    changed = False
     for plan in db.scalars(select(SubscriptionPlan)).all():
         modules = set(plan.default_modules or [])
         for base, additions in additions_by_base.items():
@@ -317,6 +318,7 @@ def _ensure_sidebar_modules_in_existing_records(db) -> None:
         modules.update(always_on)
         if sorted(modules) != (plan.default_modules or []):
             plan.default_modules = sorted(modules)
+            changed = True
     for segment in db.scalars(select(BusinessSegment)).all():
         modules = set(segment.default_modules or [])
         for base, additions in additions_by_base.items():
@@ -325,6 +327,7 @@ def _ensure_sidebar_modules_in_existing_records(db) -> None:
         modules.update(always_on)
         if sorted(modules) != (segment.default_modules or []):
             segment.default_modules = sorted(modules)
+            changed = True
     for company in db.scalars(select(Company)).all():
         modules = set(company.enabled_modules or [])
         for base, additions in additions_by_base.items():
@@ -333,6 +336,9 @@ def _ensure_sidebar_modules_in_existing_records(db) -> None:
         modules.update(always_on)
         if sorted(modules) != (company.enabled_modules or []):
             company.enabled_modules = sorted(modules)
+            changed = True
+    if changed:
+        db.commit()
 
 
 def seed_dashboard_contents() -> None:
