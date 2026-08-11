@@ -917,7 +917,7 @@ class _MetricGrid extends StatelessWidget {
           itemCount: metrics.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisExtent: 82,
+            mainAxisExtent: 98,
             mainAxisSpacing: 14,
             crossAxisSpacing: 14,
           ),
@@ -976,6 +976,8 @@ class _MetricTile extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   '${metric.value}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Color(0xFF0F172A),
                     fontSize: 21,

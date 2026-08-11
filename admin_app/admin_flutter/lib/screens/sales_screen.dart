@@ -1894,6 +1894,7 @@ class _SalesSearchPanel extends StatelessWidget {
           final filters = [
             DropdownButtonFormField<String>(
               initialValue: statusFilter,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Status',
                 border: OutlineInputBorder(),
@@ -1910,6 +1911,7 @@ class _SalesSearchPanel extends StatelessWidget {
             ),
             DropdownButtonFormField<String>(
               initialValue: sourceFilter,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Origem',
                 border: OutlineInputBorder(),
@@ -1923,6 +1925,7 @@ class _SalesSearchPanel extends StatelessWidget {
             ),
             DropdownButtonFormField<String>(
               initialValue: periodFilter,
+              isExpanded: true,
               decoration: const InputDecoration(
                 labelText: 'Periodo',
                 border: OutlineInputBorder(),
@@ -1964,7 +1967,7 @@ class _SalesSearchPanel extends StatelessWidget {
               Expanded(flex: 3, child: searchField),
               const SizedBox(width: 12),
               for (final filter in filters) ...[
-                SizedBox(width: 170, child: filter),
+                SizedBox(width: 190, child: filter),
                 const SizedBox(width: 10),
               ],
               IconButton.outlined(

@@ -138,7 +138,7 @@ class _CashClosingsScreenState extends State<CashClosingsScreen> {
                   itemCount: items.length,
                   gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                     crossAxisCount: columns,
-                    mainAxisExtent: 86,
+                    mainAxisExtent: 98,
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                   ),
@@ -529,7 +529,7 @@ class _CashClosingDialogState extends State<_CashClosingDialog> {
                             gridDelegate:
                                 SliverGridDelegateWithFixedCrossAxisCount(
                                   crossAxisCount: columns,
-                                  mainAxisExtent: 86,
+                                  mainAxisExtent: 98,
                                   crossAxisSpacing: 12,
                                   mainAxisSpacing: 12,
                                 ),
@@ -843,12 +843,16 @@ class _SummaryTile extends StatelessWidget {
                 children: [
                   Text(
                     summary.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Color(0xFF64748B)),
                   ),
                   Text(
                     summary.money
                         ? _money(summary.value as double)
                         : '${summary.value}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w900,

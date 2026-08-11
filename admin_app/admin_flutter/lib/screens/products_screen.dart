@@ -3356,7 +3356,7 @@ class _SummaryGrid extends StatelessWidget {
           itemCount: items.length,
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: columns,
-            mainAxisExtent: 86,
+            mainAxisExtent: 98,
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
           ),
@@ -3392,10 +3392,14 @@ class _SummaryTile extends StatelessWidget {
                 children: [
                   Text(
                     item.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: Color(0xFF64748B)),
                   ),
                   Text(
                     item.money ? _money(item.value as double) : '${item.value}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.w900,

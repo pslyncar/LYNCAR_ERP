@@ -464,95 +464,106 @@ class _SideMenu extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Column(
-        children: [
-          Padding(
-            padding: EdgeInsets.fromLTRB(16, 14, 16, extended ? 14 : 10),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: onLogoTap,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.025),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final showExtended = extended && constraints.maxWidth >= 180;
+
+        return SafeArea(
+          child: Column(
+            children: [
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  16,
+                  14,
+                  16,
+                  showExtended ? 14 : 10,
+                ),
+                child: InkWell(
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.035),
-                  ),
-                ),
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: extended ? 12 : 8,
-                    vertical: extended ? 12 : 8,
-                  ),
-                  child: Image.asset(
-                    'assets/brand/lyncar_logo_clean.png',
-                    width: extended ? 112 : 42,
-                    height: extended ? 58 : 42,
-                    fit: BoxFit.contain,
+                  onTap: onLogoTap,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.025),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.035),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(
+                        horizontal: showExtended ? 12 : 8,
+                        vertical: showExtended ? 12 : 8,
+                      ),
+                      child: Image.asset(
+                        'assets/brand/lyncar_logo_clean.png',
+                        width: showExtended ? 112 : 42,
+                        height: showExtended ? 58 : 42,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ),
-          Expanded(
-            child: Scrollbar(
-              thumbVisibility: true,
-              thickness: extended ? 5 : 3,
-              radius: const Radius.circular(999),
-              child: ListView.separated(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
-                itemCount: destinations.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 6),
-                itemBuilder: (context, index) {
-                  final destination = destinations[index];
-                  final selected = index == selectedIndex;
-                  return _SideMenuItem(
-                    extended: extended,
-                    selected: selected,
-                    icon: selected
-                        ? destination.selectedIcon
-                        : destination.icon,
-                    label: destination.label,
-                    onTap: () => onSelect(index),
-                  );
-                },
+              Expanded(
+                child: Scrollbar(
+                  thumbVisibility: true,
+                  thickness: showExtended ? 5 : 3,
+                  radius: const Radius.circular(999),
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(12, 4, 12, 10),
+                    itemCount: destinations.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 6),
+                    itemBuilder: (context, index) {
+                      final destination = destinations[index];
+                      final selected = index == selectedIndex;
+                      return _SideMenuItem(
+                        extended: showExtended,
+                        selected: selected,
+                        icon: selected
+                            ? destination.selectedIcon
+                            : destination.icon,
+                        label: destination.label,
+                        onTap: () => onSelect(index),
+                      );
+                    },
+                  ),
+                ),
               ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-            child: extended
-                ? SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: onLogout,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: const Color(0xFFB6C2D2),
-                        side: const BorderSide(color: Color(0xFF3A4A62)),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                child: showExtended
+                    ? SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: onLogout,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFB6C2D2),
+                            side: const BorderSide(color: Color(0xFF3A4A62)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          icon: const Icon(Icons.logout, size: 18),
+                          label: const Text(
+                            'Sair',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
                         ),
+                      )
+                    : IconButton.outlined(
+                        tooltip: 'Sair',
+                        onPressed: onLogout,
+                        style: IconButton.styleFrom(
+                          foregroundColor: const Color(0xFFB6C2D2),
+                          side: const BorderSide(color: Color(0xFF3A4A62)),
+                        ),
+                        icon: const Icon(Icons.logout),
                       ),
-                      icon: const Icon(Icons.logout, size: 18),
-                      label: const Text(
-                        'Sair',
-                        style: TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                    ),
-                  )
-                : IconButton.outlined(
-                    tooltip: 'Sair',
-                    onPressed: onLogout,
-                    style: IconButton.styleFrom(
-                      foregroundColor: const Color(0xFFB6C2D2),
-                      side: const BorderSide(color: Color(0xFF3A4A62)),
-                    ),
-                    icon: const Icon(Icons.logout),
-                  ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
