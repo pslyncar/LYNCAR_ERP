@@ -284,11 +284,14 @@ def segment_default_modules(business_type: str | None) -> list[str]:
     try:
         with MasterSessionLocal() as db:
             segment = db.query(BusinessSegment).filter(BusinessSegment.code == code).first()
-            if segment is not None and segment.default_modules:
-                return normalize_modules(segment.default_modules)
+            if segment is not None:
+                return normalize_modules(segment.default_modules or [])
+            has_any_segment = db.query(BusinessSegment.id).first()
+            if has_any_segment is None:
+                return normalize_modules(BUSINESS_TYPE_MODULES.get(code, BUSINESS_TYPE_MODULES["custom"]))
     except Exception:
         pass
-    return normalize_modules(BUSINESS_TYPE_MODULES.get(code, BUSINESS_TYPE_MODULES["custom"]))
+    return []
 
 
 def modules_for_business_type(
