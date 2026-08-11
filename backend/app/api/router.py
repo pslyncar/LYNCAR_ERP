@@ -20,6 +20,7 @@ from app.api.routes import (
     master_payment_settings,
     master_pdv_terminals,
     master_pdv_updates,
+    master_segments,
     master_staff,
     master_support,
     payables,
@@ -50,6 +51,7 @@ api_router.include_router(master_billing.router, prefix="/master", tags=["master
 api_router.include_router(master_contact_requests.router, prefix="/master", tags=["master"])
 api_router.include_router(master_access.router, prefix="/master", tags=["master"])
 api_router.include_router(master_plans.router, prefix="/master", tags=["master"])
+api_router.include_router(master_segments.router, prefix="/master", tags=["master"])
 api_router.include_router(master_payment_settings.router, prefix="/master", tags=["master"])
 api_router.include_router(master_pdv_terminals.router, prefix="/master", tags=["master"])
 api_router.include_router(master_pdv_updates.router, prefix="/master", tags=["master"])

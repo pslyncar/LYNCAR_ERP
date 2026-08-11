@@ -4,6 +4,7 @@ from sqlalchemy import func, select, text
 
 from app.core.master_database import MasterBase, MasterSessionLocal, master_engine
 from app.models.company import Company  # noqa: F401
+from app.models.business_segment import BusinessSegment  # noqa: F401
 from app.models.company_billing import CompanyBilling  # noqa: F401
 from app.models.dashboard_content import DashboardContent  # noqa: F401
 from app.models.company_presence import CompanyPresence  # noqa: F401
@@ -26,7 +27,11 @@ from app.models.pdv_update import (  # noqa: F401
 )
 from app.models.subscription_plan import SubscriptionPlan  # noqa: F401
 from app.models.website_contact_request import WebsiteContactRequest  # noqa: F401
-from app.services.company_modules import modules_for_business_type, plan_allows_module
+from app.services.company_modules import (
+    modules_for_business_type,
+    plan_allows_module,
+    seed_business_segments,
+)
 from app.services.plan_limits import normalize_plan_code, seed_subscription_plans
 from app.services.tenancy import seed_master_identity
 
@@ -222,6 +227,7 @@ def main() -> None:
                     secrets.token_urlsafe(6).lower().replace("_", "").replace("-", "")
                 )
         seed_subscription_plans(db)
+        seed_business_segments(db)
         db.commit()
     normalize_existing_company_modules()
     enforce_unique_master_user_emails()
@@ -261,6 +267,7 @@ def enforce_unique_master_user_emails() -> None:
 
 def normalize_existing_company_modules() -> None:
     with MasterSessionLocal() as db:
+        _ensure_sidebar_modules_in_existing_records(db)
         companies = list(db.scalars(select(Company)).all())
         changed = False
         for company in companies:
@@ -282,6 +289,50 @@ def normalize_existing_company_modules() -> None:
                 changed = True
         if changed:
             db.commit()
+
+
+def _ensure_sidebar_modules_in_existing_records(db) -> None:
+    new_modules = {
+        "stock_entries",
+        "stock_withdrawals",
+        "cash_closings",
+        "support",
+        "settings",
+    }
+    current_plan_modules = set()
+    for plan in db.scalars(select(SubscriptionPlan)).all():
+        current_plan_modules.update(plan.default_modules or [])
+    if current_plan_modules & new_modules:
+        return
+    additions_by_base = {
+        "stock": {"stock_entries", "stock_withdrawals"},
+        "sales": {"cash_closings"},
+    }
+    always_on = {"support", "settings"}
+    for plan in db.scalars(select(SubscriptionPlan)).all():
+        modules = set(plan.default_modules or [])
+        for base, additions in additions_by_base.items():
+            if base in modules:
+                modules.update(additions)
+        modules.update(always_on)
+        if sorted(modules) != (plan.default_modules or []):
+            plan.default_modules = sorted(modules)
+    for segment in db.scalars(select(BusinessSegment)).all():
+        modules = set(segment.default_modules or [])
+        for base, additions in additions_by_base.items():
+            if base in modules:
+                modules.update(additions)
+        modules.update(always_on)
+        if sorted(modules) != (segment.default_modules or []):
+            segment.default_modules = sorted(modules)
+    for company in db.scalars(select(Company)).all():
+        modules = set(company.enabled_modules or [])
+        for base, additions in additions_by_base.items():
+            if base in modules:
+                modules.update(additions)
+        modules.update(always_on)
+        if sorted(modules) != (company.enabled_modules or []):
+            company.enabled_modules = sorted(modules)
 
 
 def seed_dashboard_contents() -> None:

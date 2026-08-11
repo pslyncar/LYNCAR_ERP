@@ -98,7 +98,7 @@ class _AppShellState extends State<AppShell> {
         ),
       if (isMasterPanel && widget.session.canMaster('master:billing'))
         _Destination(
-          label: 'Planos',
+          label: 'Planos e Segmentos',
           icon: Icons.sell_outlined,
           selectedIcon: Icons.sell,
           screen: MasterPlansScreen(session: widget.session),
@@ -200,7 +200,8 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.assignment,
             screen: ServiceOrdersScreen(session: widget.session),
           ),
-        if (widget.session.can('sales:view'))
+        if (widget.session.hasModule('cash_closings') &&
+            widget.session.can('sales:view'))
           _Destination(
             label: 'Vendas',
             icon: Icons.receipt_long_outlined,
@@ -245,16 +246,18 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.inventory_2,
             screen: ProductsScreen(session: widget.session),
           ),
-        if (widget.session.can('stock:withdraw'))
+        if (widget.session.hasModule('stock_withdrawals') &&
+            widget.session.can('stock:withdraw'))
           _Destination(
             label: 'Baixas',
             icon: Icons.remove_shopping_cart_outlined,
             selectedIcon: Icons.remove_shopping_cart_outlined,
             screen: StockWithdrawalsScreen(session: widget.session),
           ),
-        if (widget.session.can('stock:entries:view') ||
-            widget.session.can('stock:entries:create') ||
-            widget.session.can('stock:entries:confirm'))
+        if (widget.session.hasModule('stock_entries') &&
+            (widget.session.can('stock:entries:view') ||
+                widget.session.can('stock:entries:create') ||
+                widget.session.can('stock:entries:confirm')))
           _Destination(
             label: 'Entradas',
             icon: Icons.input_outlined,
@@ -333,18 +336,20 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.manage_accounts,
             screen: UsersScreen(session: widget.session),
           ),
-        _Destination(
-          label: 'Suporte',
-          icon: Icons.headset_mic_outlined,
-          selectedIcon: Icons.headset_mic,
-          screen: SupportScreen(session: widget.session),
-        ),
-        _Destination(
-          label: 'Configurações',
-          icon: Icons.settings_outlined,
-          selectedIcon: Icons.settings,
-          screen: SettingsScreen(session: widget.session),
-        ),
+        if (widget.session.hasModule('support'))
+          _Destination(
+            label: 'Suporte',
+            icon: Icons.headset_mic_outlined,
+            selectedIcon: Icons.headset_mic,
+            screen: SupportScreen(session: widget.session),
+          ),
+        if (widget.session.hasModule('settings'))
+          _Destination(
+            label: 'Configurações',
+            icon: Icons.settings_outlined,
+            selectedIcon: Icons.settings,
+            screen: SettingsScreen(session: widget.session),
+          ),
       ],
     ];
 

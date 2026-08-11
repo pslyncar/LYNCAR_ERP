@@ -33,3 +33,7 @@ class SubscriptionPlanUpdate(BaseModel):
     default_modules: list[str] = []
     active: bool = True
     sort_order: int = 0
+
+
+class SubscriptionPlanCreate(SubscriptionPlanUpdate):
+    code: str = Field(min_length=2, max_length=40)

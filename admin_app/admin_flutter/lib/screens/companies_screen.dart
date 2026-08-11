@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../models/company.dart';
+import '../models/business_segment.dart';
 import '../models/session.dart';
 import '../models/subscription_plan.dart';
 import '../services/api_client.dart';
@@ -26,10 +27,13 @@ const _moduleLabels = {
   'clients': 'Clientes',
   'products': 'Produtos',
   'stock': 'Estoque',
+  'stock_entries': 'Entradas',
+  'stock_withdrawals': 'Baixas',
   'suppliers': 'Fornecedores',
   'production': 'Produção',
   'service_contracts': 'Contratos variáveis',
   'sales': 'Histórico de vendas',
+  'cash_closings': 'Caixa',
   'pdv': 'PDV Web',
   'pdv_windows': 'PDV Windows',
   'service_orders': 'OS',
@@ -39,6 +43,8 @@ const _moduleLabels = {
   'reports': 'Relatórios',
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
+  'support': 'Suporte',
+  'settings': 'Configurações',
   'users': 'Usuários',
   'permissions': 'Permissões',
 };
@@ -66,10 +72,13 @@ const _businessTypeModules = {
     'clients',
     'products',
     'stock',
+    'stock_entries',
+    'stock_withdrawals',
     'suppliers',
     'production',
     'service_contracts',
     'sales',
+    'cash_closings',
     'pdv',
     'service_orders',
     'equipments',
@@ -78,6 +87,8 @@ const _businessTypeModules = {
     'reports',
     'finance',
     'fiscal',
+    'support',
+    'settings',
     'users',
     'permissions',
   ],
@@ -86,15 +97,20 @@ const _businessTypeModules = {
     'clients',
     'products',
     'stock',
+    'stock_entries',
+    'stock_withdrawals',
     'suppliers',
     'service_contracts',
     'sales',
+    'cash_closings',
     'pdv',
     'service_orders',
     'tickets',
     'reports',
     'finance',
     'fiscal',
+    'support',
+    'settings',
     'users',
     'permissions',
   ],
@@ -103,13 +119,18 @@ const _businessTypeModules = {
     'clients',
     'products',
     'stock',
+    'stock_entries',
+    'stock_withdrawals',
     'suppliers',
     'service_contracts',
     'sales',
+    'cash_closings',
     'pdv',
     'reports',
     'finance',
     'fiscal',
+    'support',
+    'settings',
     'users',
     'permissions',
   ],
@@ -118,14 +139,19 @@ const _businessTypeModules = {
     'clients',
     'products',
     'stock',
+    'stock_entries',
+    'stock_withdrawals',
     'suppliers',
     'production',
     'service_contracts',
     'sales',
+    'cash_closings',
     'pdv',
     'reports',
     'finance',
     'fiscal',
+    'support',
+    'settings',
     'users',
     'permissions',
   ],
@@ -193,6 +219,18 @@ class _PlanInfo {
   final bool api;
   final bool prioritySupport;
   final List<String> defaultModules;
+}
+
+class _SegmentInfo {
+  const _SegmentInfo({
+    required this.name,
+    required this.defaultModules,
+    required this.active,
+  });
+
+  final String name;
+  final List<String> defaultModules;
+  final bool active;
 }
 
 const _plans = {
@@ -358,6 +396,14 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
   final _search = TextEditingController();
   List<Company> _companies = [];
   Map<String, _PlanInfo> _availablePlans = _plans;
+  Map<String, _SegmentInfo> _availableSegments = {
+    for (final entry in _businessTypeLabels.entries)
+      entry.key: _SegmentInfo(
+        name: entry.value,
+        defaultModules: _businessTypeModules[entry.key] ?? const [],
+        active: true,
+      ),
+  };
   String _planFilter = 'all';
   String _statusFilter = 'all';
   bool _onlyUsageAlert = false;
@@ -385,9 +431,11 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
       final results = await Future.wait([
         _api.listCompanies(widget.session.token),
         _api.listMasterPlans(widget.session.token),
+        _api.listMasterSegments(widget.session.token),
       ]);
       final companies = results[0] as List<Company>;
       final plans = results[1] as List<SubscriptionPlan>;
+      final segments = results[2] as List<BusinessSegment>;
       setState(() {
         _companies = companies;
         _availablePlans = {
@@ -409,6 +457,14 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
               defaultModules: plan.defaultModules,
             ),
         };
+        _availableSegments = {
+          for (final segment in segments)
+            segment.code: _SegmentInfo(
+              name: segment.name,
+              defaultModules: segment.defaultModules,
+              active: segment.active,
+            ),
+        };
       });
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -426,6 +482,7 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
         api: _api,
         token: widget.session.token,
         plans: _availablePlans,
+        segments: _availableSegments,
         company: company,
         onSave: (input) async {
           if (company == null) {
@@ -854,6 +911,7 @@ class _CompanyFormDialog extends StatefulWidget {
     required this.token,
     required this.onSave,
     required this.plans,
+    required this.segments,
     this.company,
   });
 
@@ -861,6 +919,7 @@ class _CompanyFormDialog extends StatefulWidget {
   final String token;
   final Company? company;
   final Map<String, _PlanInfo> plans;
+  final Map<String, _SegmentInfo> segments;
   final Future<void> Function(CompanyInput input) onSave;
 
   @override
@@ -1029,12 +1088,8 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
   late final _name = TextEditingController(text: widget.company?.name ?? '');
   late String _plan = _normalizePlanCode(widget.company?.plan);
   late String _businessType =
-      widget.company?.businessType ?? 'assistencia_técnica';
-  late Set<String> _enabledModules = {
-    ...(widget.company?.enabledModules.isNotEmpty == true
-        ? widget.company!.enabledModules
-        : _businessTypeModules['assistencia_técnica']!),
-  };
+      widget.company?.businessType ?? 'assistencia_tecnica';
+  late Set<String> _enabledModules;
   late final _document = TextEditingController(
     text: widget.company?.documentNumber ?? '',
   );
@@ -1123,6 +1178,11 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
   @override
   void initState() {
     super.initState();
+    _enabledModules = {
+      ...(widget.company?.enabledModules.isNotEmpty == true
+          ? widget.company!.enabledModules
+          : _suggestedModulesFor(_plan, widget.company?.businessType)),
+    };
     _applyBrazilianMasks();
     _document.addListener(_scheduleCnpjLookup);
   }
@@ -1461,7 +1521,10 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
   void _applyBrazilianMasks() {
     _formatController(_document, const BrazilianCpfCnpjInputFormatter());
     _formatController(_responsibleCpf, const BrazilianCpfCnpjInputFormatter());
-    _formatController(_responsibleBirthDate, const BrazilianDateInputFormatter());
+    _formatController(
+      _responsibleBirthDate,
+      const BrazilianDateInputFormatter(),
+    );
     _formatController(_phone, const BrazilianPhoneInputFormatter());
     _formatController(_zipCode, const BrazilianCepInputFormatter());
     _formatController(_monthlyPrice, const BrazilianMoneyInputFormatter());
@@ -1532,6 +1595,39 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
     return data.isEmpty ? null : data;
   }
 
+  Set<String> _suggestedModulesFor(String plan, String? businessType) {
+    final planModules =
+        widget.plans[plan]?.defaultModules.toSet() ?? <String>{};
+    final segmentModules =
+        widget.segments[businessType ?? _businessType]?.defaultModules
+            .toSet() ??
+        _businessTypeModules[businessType ?? _businessType]?.toSet() ??
+        <String>{};
+    final suggested = segmentModules.intersection(planModules);
+    if (suggested.contains('stock')) {
+      suggested.add('suppliers');
+    }
+    return suggested;
+  }
+
+  List<DropdownMenuItem<String>> _segmentMenuItems() {
+    final entries =
+        widget.segments.entries
+            .where((entry) => entry.value.active || entry.key == _businessType)
+            .toList()
+          ..sort((a, b) => a.value.name.compareTo(b.value.name));
+    final hasCurrent = entries.any((entry) => entry.key == _businessType);
+    return [
+      if (!hasCurrent)
+        DropdownMenuItem(
+          value: _businessType,
+          child: Text(_businessTypeLabels[_businessType] ?? _businessType),
+        ),
+      for (final entry in entries)
+        DropdownMenuItem(value: entry.key, child: Text(entry.value.name)),
+    ];
+  }
+
   void _applyPlan(String plan) {
     final oldInfo = widget.plans[_plan];
     final info = widget.plans[plan]!;
@@ -1541,7 +1637,7 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
         currentMonthly == (oldInfo?.monthlyPrice ?? '');
     setState(() {
       _plan = plan;
-      _enabledModules = info.defaultModules.toSet();
+      _enabledModules = _suggestedModulesFor(plan, _businessType);
       if (shouldUsePlanPrice) {
         _monthlyPrice.text = info.monthlyPrice ?? '';
       }
@@ -1654,25 +1750,12 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
               DropdownButtonFormField<String>(
                 initialValue: _businessType,
                 decoration: const InputDecoration(labelText: 'Segmento'),
-                items: [
-                  for (final entry in _businessTypeLabels.entries)
-                    DropdownMenuItem(
-                      value: entry.key,
-                      child: Text(entry.value),
-                    ),
-                ],
+                items: _segmentMenuItems(),
                 onChanged: (value) {
                   if (value == null) return;
                   setState(() {
                     _businessType = value;
-                    _enabledModules = {
-                      ..._businessTypeModules[value]!.where(
-                        (module) => _moduleAllowedByPlanInfo(
-                          module,
-                          widget.plans[_plan],
-                        ),
-                      ),
-                    };
+                    _enabledModules = _suggestedModulesFor(_plan, value);
                   });
                 },
               ),
@@ -1935,9 +2018,7 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
                       child: TextField(
                         controller: _responsibleBirthDate,
                         keyboardType: TextInputType.datetime,
-                        inputFormatters: const [
-                          BrazilianDateInputFormatter(),
-                        ],
+                        inputFormatters: const [BrazilianDateInputFormatter()],
                         decoration: const InputDecoration(
                           labelText: 'Data de nascimento do responsável',
                           hintText: 'dd/mm/aaaa',
@@ -2078,10 +2159,12 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
                   for (final entry in _moduleLabels.entries)
                     Builder(
                       builder: (context) {
-                        final allowed = _moduleAllowedByPlanInfo(
-                          entry.key,
-                          widget.plans[_plan],
-                        ) || widget.company != null;
+                        final allowed =
+                            _moduleAllowedByPlanInfo(
+                              entry.key,
+                              widget.plans[_plan],
+                            ) ||
+                            widget.company != null;
                         return FilterChip(
                           tooltip: allowed
                               ? null
@@ -2096,7 +2179,6 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
                                     } else {
                                       _enabledModules.remove(entry.key);
                                     }
-                                    _businessType = 'custom';
                                   });
                                 }
                               : null,

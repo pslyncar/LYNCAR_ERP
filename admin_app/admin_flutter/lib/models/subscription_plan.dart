@@ -68,4 +68,8 @@ class SubscriptionPlan {
       'sort_order': sortOrder,
     };
   }
+
+  Map<String, dynamic> toCreateJson() {
+    return {'code': code, ...toUpdateJson()};
+  }
 }

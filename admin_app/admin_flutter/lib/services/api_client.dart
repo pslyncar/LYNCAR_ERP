@@ -7,6 +7,7 @@ import 'package:http_parser/http_parser.dart';
 import '../models/client.dart';
 import '../models/cash_closing.dart';
 import '../models/company.dart';
+import '../models/business_segment.dart';
 import '../models/company_billing.dart';
 import '../models/dashboard_summary.dart';
 import '../models/equipment.dart';
@@ -379,6 +380,17 @@ class ApiClient {
         .toList();
   }
 
+  Future<List<BusinessSegment>> listMasterSegments(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/master/segments'),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeListResponse(response);
+    return data
+        .map((item) => BusinessSegment.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<List<WebsiteContactRequest>> listMasterContactRequests(
     String token, {
     String? status,
@@ -424,6 +436,63 @@ class ApiClient {
       body: jsonEncode(plan.toUpdateJson()),
     );
     return SubscriptionPlan.fromJson(_decodeResponse(response));
+  }
+
+  Future<SubscriptionPlan> createMasterPlan(
+    String token,
+    SubscriptionPlan plan,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/master/plans'),
+      headers: _authHeaders(token),
+      body: jsonEncode(plan.toCreateJson()),
+    );
+    return SubscriptionPlan.fromJson(_decodeResponse(response));
+  }
+
+  Future<void> deleteMasterPlan(String token, String code) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/master/plans/$code'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode >= 400) {
+      _decodeResponse(response);
+    }
+  }
+
+  Future<BusinessSegment> createMasterSegment(
+    String token,
+    BusinessSegment segment,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/master/segments'),
+      headers: _authHeaders(token),
+      body: jsonEncode(segment.toCreateJson()),
+    );
+    return BusinessSegment.fromJson(_decodeResponse(response));
+  }
+
+  Future<BusinessSegment> updateMasterSegment(
+    String token,
+    String code,
+    BusinessSegment segment,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/master/segments/$code'),
+      headers: _authHeaders(token),
+      body: jsonEncode(segment.toUpdateJson()),
+    );
+    return BusinessSegment.fromJson(_decodeResponse(response));
+  }
+
+  Future<void> deleteMasterSegment(String token, String code) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/master/segments/$code'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode >= 400) {
+      _decodeResponse(response);
+    }
   }
 
   Future<List<CompanyBilling>> listMasterBillings(String token) async {
@@ -1758,7 +1827,9 @@ class ApiClient {
     return NfceNumberingSyncResult.fromJson(_decodeResponse(response));
   }
 
-  Future<Map<String, dynamic>> recoverFiscalDocumentsFromSefaz(String token) async {
+  Future<Map<String, dynamic>> recoverFiscalDocumentsFromSefaz(
+    String token,
+  ) async {
     final response = await http.post(
       Uri.parse('$baseUrl/fiscal/documents/recover-from-sefaz'),
       headers: _authHeaders(token),
