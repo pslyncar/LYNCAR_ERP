@@ -69,6 +69,7 @@ class _SalesScreenState extends State<SalesScreen> {
   final _withdrawAmount = TextEditingController(text: '0,00');
   final _withdrawReason = TextEditingController();
   final _salesSearch = TextEditingController();
+  final _sellerCode = TextEditingController();
   final _barcodeFocus = FocusNode();
   List<Client> _clients = [];
   List<Product> _products = [];
@@ -88,6 +89,7 @@ class _SalesScreenState extends State<SalesScreen> {
   String _salesStatusFilter = 'todos';
   String _salesSourceFilter = 'todos';
   String _salesPeriodFilter = 'todos';
+  int _selectedSalesTab = 1;
   bool _cashOpen = false;
   DateTime? _cashOpenedAt;
   double _cashOpeningAmount = 0;
@@ -117,6 +119,7 @@ class _SalesScreenState extends State<SalesScreen> {
     _withdrawAmount.dispose();
     _withdrawReason.dispose();
     _salesSearch.dispose();
+    _sellerCode.dispose();
     _barcodeFocus.dispose();
     super.dispose();
   }
@@ -141,10 +144,17 @@ class _SalesScreenState extends State<SalesScreen> {
         _sales = sales;
         _operators = operators;
         _sellers = sellers;
-        _sellerUserId ??= widget.session.userId;
-        if (!_sellers.any((seller) => seller.id == _sellerUserId)) {
-          _sellerUserId = _sellers.isNotEmpty ? _sellers.first.id : null;
+        _sellerUserId = _sellerUserId == null
+            ? null
+            : _sellers.any((seller) => seller.id == _sellerUserId)
+            ? _sellerUserId
+            : null;
+        final selectedSeller = _sellerById(_sellerUserId);
+        if (selectedSeller == null ||
+            (selectedSeller.sellerCode ?? '').trim().isEmpty) {
+          _sellerUserId = null;
         }
+        _syncSellerCode();
       });
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -398,15 +408,183 @@ class _SalesScreenState extends State<SalesScreen> {
   }
 
   void _syncPaymentWithTotal() {
-    _paymentAmount.text = formatBrazilianMoneyInput(_total);
+    _paymentAmount.text = formatBrazilianMoneyInput(_totalCents / 100);
   }
 
-  double get _subtotal =>
-      _cart.fold(0, (sum, item) => sum + (item.quantity * item.unitPrice));
-  double get _discountValue => parseBrazilianNumber(_discount.text);
-  double get _total => (_subtotal - _discountValue).clamp(0, double.infinity);
-  double get _paid => parseBrazilianNumber(_paymentAmount.text);
-  double get _change => (_paid - _total).clamp(0, double.infinity);
+  void _syncSellerCode() {
+    final seller = _sellerById(_sellerUserId);
+    _sellerCode.text = seller?.sellerCode ?? '';
+  }
+
+  SaleSeller? _sellerById(int? id) {
+    if (id == null) return null;
+    for (final seller in _sellers) {
+      if (seller.id == id) return seller;
+    }
+    return null;
+  }
+
+  void _selectSellerByCode(String value) {
+    final code = value.trim().toLowerCase();
+    if (code.isEmpty) return;
+    final matches = _sellers.where((seller) {
+      final sellerCode = (seller.sellerCode ?? '').trim().toLowerCase();
+      return sellerCode.isNotEmpty && sellerCode == code;
+    }).toList();
+    if (matches.isEmpty) {
+      setState(
+        () => _error = 'Vendedor com codigo ${value.trim()} nao encontrado.',
+      );
+      return;
+    }
+    setState(() {
+      _sellerUserId = matches.first.id;
+      _error = null;
+    });
+    _syncSellerCode();
+  }
+
+  Future<void> _openSellerPicker() async {
+    final codedSellers = _sellers
+        .where((seller) => (seller.sellerCode ?? '').trim().isNotEmpty)
+        .toList();
+    final selected = await showDialog<SaleSeller>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Selecionar vendedor'),
+        children: [
+          if (codedSellers.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(18),
+              child: Text('Nenhum vendedor com codigo cadastrado.'),
+            )
+          else
+            for (final seller in codedSellers)
+              SimpleDialogOption(
+                onPressed: () => Navigator.of(context).pop(seller),
+                child: Text('${seller.sellerCode} - ${seller.name}'),
+              ),
+        ],
+      ),
+    );
+    if (selected == null) return;
+    setState(() {
+      _sellerUserId = selected.id;
+      _error = null;
+    });
+    _syncSellerCode();
+  }
+
+  Future<void> _openProductPicker() async {
+    final search = TextEditingController(text: _manualSearch.text);
+    try {
+      final selected = await showDialog<Product>(
+        context: context,
+        builder: (context) {
+          var term = search.text.trim().toLowerCase();
+          List<Product> filtered() {
+            if (term.isEmpty) return _products.take(80).toList();
+            return _products
+                .where(
+                  (product) =>
+                      product.name.toLowerCase().contains(term) ||
+                      (product.internalCode ?? '').toLowerCase().contains(
+                        term,
+                      ) ||
+                      (product.barcode ?? '').toLowerCase().contains(term),
+                )
+                .take(80)
+                .toList();
+          }
+
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              final products = filtered();
+              return AlertDialog(
+                title: const Text('Pesquisar produto'),
+                content: SizedBox(
+                  width: 820,
+                  height: 560,
+                  child: Column(
+                    children: [
+                      TextField(
+                        controller: search,
+                        autofocus: true,
+                        textInputAction: TextInputAction.search,
+                        onChanged: (value) => setDialogState(
+                          () => term = value.trim().toLowerCase(),
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Codigo, codigo de barras ou descricao',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: products.isEmpty
+                            ? const Center(
+                                child: Text('Nenhum produto encontrado.'),
+                              )
+                            : ListView.separated(
+                                itemCount: products.length,
+                                separatorBuilder: (_, _) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final product = products[index];
+                                  return ListTile(
+                                    title: Text(product.name),
+                                    subtitle: Text(
+                                      'Codigo ${product.internalCode ?? '-'} | Barras ${product.barcode ?? '-'} | Estoque ${formatBrazilianDecimal(product.stockQuantity)} ${product.unit}',
+                                    ),
+                                    trailing: FilledButton.icon(
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(product),
+                                      icon: const Icon(Icons.add),
+                                      label: const Text('Adicionar'),
+                                    ),
+                                    onTap: () =>
+                                        Navigator.of(context).pop(product),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Fechar'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+      if (selected == null) return;
+      _manualSearch.text = search.text;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _addProduct(selected);
+        _barcodeFocus.requestFocus();
+      });
+    } finally {
+      WidgetsBinding.instance.addPostFrameCallback((_) => search.dispose());
+    }
+  }
+
+  int get _subtotalCents => _cart.fold(
+    0,
+    (sum, item) => sum + _moneyCents(item.quantity * item.unitPrice),
+  );
+  int get _discountCents => _moneyCents(parseBrazilianNumber(_discount.text));
+  int get _totalCents => (_subtotalCents - _discountCents).clamp(0, 1 << 62);
+  int get _paidCents => _moneyCents(parseBrazilianNumber(_paymentAmount.text));
+  bool get _usesFinancialPayment =>
+      _paymentMethod == 'boleto' || _paymentMethod == 'crediario';
+  bool get _paymentCoversTotal => _paidCents + 1 >= _totalCents;
   double get _withdrawTotal => _cashMovements
       .where((movement) => movement.type == 'sangria')
       .fold(0, (sum, movement) => sum + movement.amount);
@@ -630,8 +808,17 @@ class _SalesScreenState extends State<SalesScreen> {
       setState(() => _error = 'Adicione pelo menos um item.');
       return;
     }
-    if (_paid < _total) {
+    if (!widget.pdvMode &&
+        (_sellerById(_sellerUserId)?.sellerCode ?? '').trim().isEmpty) {
+      setState(() => _error = 'Informe um vendedor com codigo cadastrado.');
+      return;
+    }
+    if (!_paymentCoversTotal) {
       setState(() => _error = 'Pagamento menor que o total.');
+      return;
+    }
+    if (_usesFinancialPayment && _clientId == null) {
+      setState(() => _error = 'Boleto e crediario exigem cliente cadastrado.');
       return;
     }
     setState(() {
@@ -647,7 +834,7 @@ class _SalesScreenState extends State<SalesScreen> {
           source: widget.pdvMode ? 'pdv' : 'venda',
           cashRegisterNumber: widget.pdvMode ? _cashRegisterNumber : null,
           status: 'finalizada',
-          discountAmount: _discountValue,
+          discountAmount: _discountCents / 100,
           notes: _notes.text,
           items: [
             for (final item in _cart)
@@ -660,7 +847,12 @@ class _SalesScreenState extends State<SalesScreen> {
                 discountAmount: 0,
               ),
           ],
-          payments: [SalePaymentPayload(method: _paymentMethod, amount: _paid)],
+          payments: [
+            SalePaymentPayload(
+              method: _paymentMethod,
+              amount: _paidCents / 100,
+            ),
+          ],
         ),
       );
       if (!mounted) return;
@@ -848,22 +1040,33 @@ class _SalesScreenState extends State<SalesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final canViewSales = widget.session.can('sales:view');
     final canCreateSale = widget.session.can('sales:create');
     final canCancelSale = widget.session.can('sales:cancel');
+    final tabs = [
+      if (canCreateSale)
+        const ButtonSegment<int>(
+          value: 1,
+          icon: Icon(Icons.add_shopping_cart),
+          label: Text('Nova venda'),
+        ),
+      if (canViewSales)
+        const ButtonSegment<int>(
+          value: 0,
+          icon: Icon(Icons.history),
+          label: Text('Historico'),
+        ),
+    ];
+    final availableTabs = tabs.map((tab) => tab.value).toSet();
+    if (availableTabs.isNotEmpty &&
+        !availableTabs.contains(_selectedSalesTab)) {
+      _selectedSalesTab = availableTabs.first;
+    }
+    final showHistory = _selectedSalesTab == 0 && canViewSales;
+    final showManualSale = _selectedSalesTab == 1 && canCreateSale;
     final filteredSales = _filteredSales();
-    final filteredProducts = _products
-        .where((product) {
-          final query = _manualSearch.text.trim().toLowerCase();
-          if (query.isEmpty) return true;
-          return product.name.toLowerCase().contains(query) ||
-              (product.barcode ?? '').toLowerCase().contains(query) ||
-              (product.internalCode ?? '').toLowerCase().contains(query);
-        })
-        .take(8)
-        .toList();
-
     if (widget.pdvMode) {
-      return _buildPdvView(filteredProducts);
+      return _buildPdvView();
     }
 
     return SafeArea(
@@ -901,96 +1104,108 @@ class _SalesScreenState extends State<SalesScreen> {
               ],
             ),
             const SizedBox(height: 18),
-            _SalesSearchPanel(
-              search: _salesSearch,
-              statusFilter: _salesStatusFilter,
-              sourceFilter: _salesSourceFilter,
-              periodFilter: _salesPeriodFilter,
-              onChanged: () => setState(() {}),
-              onStatusChanged: (value) =>
-                  setState(() => _salesStatusFilter = value ?? 'todos'),
-              onSourceChanged: (value) =>
-                  setState(() => _salesSourceFilter = value ?? 'todos'),
-              onPeriodChanged: (value) =>
-                  setState(() => _salesPeriodFilter = value ?? 'todos'),
-              onClear: () => setState(() {
-                _salesSearch.clear();
-                _salesStatusFilter = 'todos';
-                _salesSourceFilter = 'todos';
-                _salesPeriodFilter = 'todos';
-              }),
-            ),
+            if (tabs.length > 1) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SegmentedButton<int>(
+                  selected: {_selectedSalesTab},
+                  segments: tabs,
+                  onSelectionChanged: (value) =>
+                      setState(() => _selectedSalesTab = value.first),
+                ),
+              ),
+              const SizedBox(height: 18),
+            ],
+            if (showHistory)
+              _SalesSearchPanel(
+                search: _salesSearch,
+                statusFilter: _salesStatusFilter,
+                sourceFilter: _salesSourceFilter,
+                periodFilter: _salesPeriodFilter,
+                onChanged: () => setState(() {}),
+                onStatusChanged: (value) =>
+                    setState(() => _salesStatusFilter = value ?? 'todos'),
+                onSourceChanged: (value) =>
+                    setState(() => _salesSourceFilter = value ?? 'todos'),
+                onPeriodChanged: (value) =>
+                    setState(() => _salesPeriodFilter = value ?? 'todos'),
+                onClear: () => setState(() {
+                  _salesSearch.clear();
+                  _salesStatusFilter = 'todos';
+                  _salesSourceFilter = 'todos';
+                  _salesPeriodFilter = 'todos';
+                }),
+              ),
             const SizedBox(height: 18),
             if (_loading)
               const LinearProgressIndicator()
             else if (_error != null)
               ErrorPanel(message: _error!, onRetry: _load),
             const SizedBox(height: 12),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 1020;
-                final pdv = _PdvPanel(
-                  compact: true,
-                  barcode: _barcode,
-                  barcodeFocus: _barcodeFocus,
-                  onScan: _scanCode,
-                  manualSearch: _manualSearch,
-                  onManualChanged: (_) => setState(() {}),
-                  products: filteredProducts,
-                  onAddProduct: _addProduct,
-                  clients: _clients,
-                  clientId: _clientId,
-                  onClientChanged: (value) => setState(() => _clientId = value),
-                  sellers: _sellers,
-                  sellerUserId: _sellerUserId,
-                  onSellerChanged: (value) =>
-                      setState(() => _sellerUserId = value),
-                  notes: _notes,
-                );
-                final cart = _CartPanel(
-                  pdvMode: false,
-                  items: _cart,
-                  discount: _discount,
-                  paymentAmount: _paymentAmount,
-                  paymentMethod: _paymentMethod,
-                  onPaymentMethodChanged: (value) =>
-                      setState(() => _paymentMethod = value),
-                  subtotal: _subtotal,
-                  total: _total,
-                  paid: _paid,
-                  change: _change,
-                  saving: _saving,
-                  onChanged: () {
-                    setState(() {});
-                    _syncPaymentWithTotal();
-                  },
-                  onRemove: _removeItem,
-                  onFinish: canCreateSale ? _finishSale : null,
-                );
-                if (!wide) {
-                  return Column(
-                    children: [pdv, const SizedBox(height: 14), cart],
+            if (showManualSale)
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final wide = constraints.maxWidth >= 1020;
+                  final pdv = _PdvPanel(
+                    compact: true,
+                    barcode: _barcode,
+                    barcodeFocus: _barcodeFocus,
+                    onScan: _scanCode,
+                    sellerCode: _sellerCode,
+                    selectedSeller: _sellerById(_sellerUserId),
+                    onSellerCodeSubmitted: _selectSellerByCode,
+                    onOpenSellerPicker: _openSellerPicker,
+                    onOpenProductPicker: _openProductPicker,
+                    clients: _clients,
+                    clientId: _clientId,
+                    onClientChanged: (value) =>
+                        setState(() => _clientId = value),
+                    notes: _notes,
                   );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 5, child: pdv),
-                    const SizedBox(width: 14),
-                    Expanded(flex: 4, child: cart),
-                  ],
-                );
-              },
-            ),
-            const SizedBox(height: 18),
-            _SalesHistory(
-              sales: filteredSales,
-              clients: _clients,
-              canCancel: canCancelSale,
-              onCancel: _cancelSale,
-              onEditPayments: _editSalePayments,
-              onReprintNonFiscalReceipt: _reprintNonFiscalReceipt,
-            ),
+                  final cart = _CartPanel(
+                    pdvMode: false,
+                    items: _cart,
+                    discount: _discount,
+                    paymentAmount: _paymentAmount,
+                    paymentMethod: _paymentMethod,
+                    onPaymentMethodChanged: (value) =>
+                        setState(() => _paymentMethod = value),
+                    subtotalCents: _subtotalCents,
+                    saving: _saving,
+                    onCartChanged: () {
+                      setState(() {});
+                      _syncPaymentWithTotal();
+                    },
+                    onAmountChanged: () => setState(() {}),
+                    onRemove: _removeItem,
+                    onFinish: _finishSale,
+                  );
+                  if (!wide) {
+                    return Column(
+                      children: [pdv, const SizedBox(height: 14), cart],
+                    );
+                  }
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(flex: 5, child: pdv),
+                      const SizedBox(width: 14),
+                      Expanded(flex: 4, child: cart),
+                    ],
+                  );
+                },
+              ),
+            if (showHistory) ...[
+              const SizedBox(height: 18),
+              _SalesHistory(
+                sales: filteredSales,
+                clients: _clients,
+                canCancel: canCancelSale,
+                onCancel: _cancelSale,
+                onEditPayments: _editSalePayments,
+                onReprintNonFiscalReceipt: _reprintNonFiscalReceipt,
+              ),
+            ],
           ],
         ),
       ),
@@ -1047,7 +1262,7 @@ class _SalesScreenState extends State<SalesScreen> {
     return null;
   }
 
-  Widget _buildPdvView(List<Product> filteredProducts) {
+  Widget _buildPdvView() {
     if (!_cashOpen) {
       return _PdvOpenCashScreen(
         openingCash: _openingCash,
@@ -1090,17 +1305,14 @@ class _SalesScreenState extends State<SalesScreen> {
                   barcode: _barcode,
                   barcodeFocus: _barcodeFocus,
                   onScan: _scanCode,
-                  manualSearch: _manualSearch,
-                  onManualChanged: (_) => setState(() {}),
-                  products: filteredProducts,
-                  onAddProduct: _addProduct,
+                  sellerCode: _sellerCode,
+                  selectedSeller: _sellerById(_sellerUserId),
+                  onSellerCodeSubmitted: _selectSellerByCode,
+                  onOpenSellerPicker: _openSellerPicker,
+                  onOpenProductPicker: _openProductPicker,
                   clients: _clients,
                   clientId: _clientId,
                   onClientChanged: (value) => setState(() => _clientId = value),
-                  sellers: _sellers,
-                  sellerUserId: _sellerUserId,
-                  onSellerChanged: (value) =>
-                      setState(() => _sellerUserId = value),
                   notes: _notes,
                 );
                 final cart = _CartPanel(
@@ -1111,15 +1323,13 @@ class _SalesScreenState extends State<SalesScreen> {
                   paymentMethod: _paymentMethod,
                   onPaymentMethodChanged: (value) =>
                       setState(() => _paymentMethod = value),
-                  subtotal: _subtotal,
-                  total: _total,
-                  paid: _paid,
-                  change: _change,
+                  subtotalCents: _subtotalCents,
                   saving: _saving,
-                  onChanged: () {
+                  onCartChanged: () {
                     setState(() {});
                     _syncPaymentWithTotal();
                   },
+                  onAmountChanged: () => setState(() {}),
                   onRemove: _removeItem,
                   onFinish: widget.session.can('sales:create')
                       ? _finishSale
@@ -1544,16 +1754,14 @@ class _PdvPanel extends StatelessWidget {
     required this.barcode,
     required this.barcodeFocus,
     required this.onScan,
-    required this.manualSearch,
-    required this.onManualChanged,
-    required this.products,
-    required this.onAddProduct,
+    required this.sellerCode,
+    required this.selectedSeller,
+    required this.onSellerCodeSubmitted,
+    required this.onOpenSellerPicker,
+    required this.onOpenProductPicker,
     required this.clients,
     required this.clientId,
     required this.onClientChanged,
-    required this.sellers,
-    required this.sellerUserId,
-    required this.onSellerChanged,
     required this.notes,
   });
 
@@ -1561,16 +1769,14 @@ class _PdvPanel extends StatelessWidget {
   final TextEditingController barcode;
   final FocusNode barcodeFocus;
   final VoidCallback onScan;
-  final TextEditingController manualSearch;
-  final ValueChanged<String> onManualChanged;
-  final List<Product> products;
-  final ValueChanged<Product> onAddProduct;
+  final TextEditingController sellerCode;
+  final SaleSeller? selectedSeller;
+  final ValueChanged<String> onSellerCodeSubmitted;
+  final VoidCallback onOpenSellerPicker;
+  final VoidCallback onOpenProductPicker;
   final List<Client> clients;
   final int? clientId;
   final ValueChanged<int?> onClientChanged;
-  final List<SaleSeller> sellers;
-  final int? sellerUserId;
-  final ValueChanged<int?> onSellerChanged;
   final TextEditingController notes;
 
   @override
@@ -1585,22 +1791,68 @@ class _PdvPanel extends StatelessWidget {
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
           ),
           const SizedBox(height: 12),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: compact ? 180 : 220,
+                child: TextField(
+                  controller: sellerCode,
+                  textInputAction: TextInputAction.search,
+                  onSubmitted: onSellerCodeSubmitted,
+                  decoration: InputDecoration(
+                    labelText: 'Codigo vendedor',
+                    hintText: 'Ex.: V001',
+                    prefixIcon: const Icon(Icons.badge_outlined),
+                    suffixIcon: IconButton(
+                      tooltip: 'Pesquisar vendedor',
+                      onPressed: onOpenSellerPicker,
+                      icon: const Icon(Icons.search),
+                    ),
+                    border: const OutlineInputBorder(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Vendedor selecionado',
+                    border: OutlineInputBorder(),
+                  ),
+                  child: Text(
+                    selectedSeller == null
+                        ? 'Nenhum vendedor selecionado'
+                        : selectedSeller!.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: selectedSeller == null
+                          ? const Color(0xFF64748B)
+                          : const Color(0xFF0F172A),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           DropdownButtonFormField<int?>(
-            initialValue: sellerUserId,
+            initialValue: clientId,
             decoration: const InputDecoration(
-              labelText: 'Vendedor',
+              labelText: 'Cliente',
               border: OutlineInputBorder(),
             ),
             items: [
-              for (final seller in sellers)
-                DropdownMenuItem(
-                  value: seller.id,
-                  child: Text(
-                    '${seller.sellerCode ?? 'V${seller.id}'} - ${seller.name}',
-                  ),
-                ),
+              const DropdownMenuItem(
+                value: null,
+                child: Text('Consumidor final'),
+              ),
+              for (final client in clients)
+                DropdownMenuItem(value: client.id, child: Text(client.name)),
             ],
-            onChanged: sellers.isEmpty ? null : onSellerChanged,
+            onChanged: onClientChanged,
           ),
           const SizedBox(height: 12),
           TextField(
@@ -1626,46 +1878,11 @@ class _PdvPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<int?>(
-            initialValue: clientId,
-            decoration: const InputDecoration(
-              labelText: 'Cliente',
-              border: OutlineInputBorder(),
-            ),
-            items: [
-              const DropdownMenuItem(
-                value: null,
-                child: Text('Consumidor final'),
-              ),
-              for (final client in clients)
-                DropdownMenuItem(value: client.id, child: Text(client.name)),
-            ],
-            onChanged: onClientChanged,
+          OutlinedButton.icon(
+            onPressed: onOpenProductPicker,
+            icon: const Icon(Icons.search),
+            label: const Text('Pesquisar produto'),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: manualSearch,
-            onChanged: onManualChanged,
-            decoration: const InputDecoration(
-              labelText: 'Buscar produto manualmente',
-              prefixIcon: Icon(Icons.search),
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 10),
-          for (final product in products)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(product.name),
-              subtitle: Text(
-                '${product.internalCode ?? '-'} | ${product.barcode ?? '-'} | Estoque ${formatBrazilianDecimal(product.stockQuantity)} ${product.unit}',
-              ),
-              trailing: FilledButton.icon(
-                onPressed: () => onAddProduct(product),
-                icon: const Icon(Icons.add),
-                label: const Text('Adicionar'),
-              ),
-            ),
           const SizedBox(height: 12),
           TextField(
             controller: notes,
@@ -1690,12 +1907,10 @@ class _CartPanel extends StatelessWidget {
     required this.paymentAmount,
     required this.paymentMethod,
     required this.onPaymentMethodChanged,
-    required this.subtotal,
-    required this.total,
-    required this.paid,
-    required this.change,
+    required this.subtotalCents,
     required this.saving,
-    required this.onChanged,
+    required this.onCartChanged,
+    required this.onAmountChanged,
     required this.onRemove,
     required this.onFinish,
   });
@@ -1706,17 +1921,29 @@ class _CartPanel extends StatelessWidget {
   final TextEditingController paymentAmount;
   final String paymentMethod;
   final ValueChanged<String> onPaymentMethodChanged;
-  final double subtotal;
-  final double total;
-  final double paid;
-  final double change;
+  final int subtotalCents;
   final bool saving;
-  final VoidCallback onChanged;
+  final VoidCallback onCartChanged;
+  final VoidCallback onAmountChanged;
   final ValueChanged<_CartItem> onRemove;
   final VoidCallback? onFinish;
 
   @override
   Widget build(BuildContext context) {
+    final currentDiscountCents = _moneyCents(
+      parseBrazilianNumber(discount.text),
+    );
+    final currentPaidCents = _moneyCents(
+      parseBrazilianNumber(paymentAmount.text),
+    );
+    final currentTotalCents = (subtotalCents - currentDiscountCents).clamp(
+      0,
+      1 << 62,
+    );
+    final currentChangeCents = (currentPaidCents - currentTotalCents).clamp(
+      0,
+      1 << 62,
+    );
     return AppCard(
       padding: EdgeInsets.all(pdvMode ? 24 : 18),
       child: Column(
@@ -1736,17 +1963,17 @@ class _CartPanel extends StatelessWidget {
             for (final item in items)
               _CartItemTile(
                 item: item,
-                onChanged: onChanged,
+                onChanged: onCartChanged,
                 onRemove: onRemove,
               ),
           const Divider(height: 26),
-          _MoneyRow('Subtotal', subtotal),
+          _MoneyRow('Subtotal', subtotalCents / 100),
           const SizedBox(height: 10),
           TextField(
             controller: discount,
             keyboardType: TextInputType.text,
             inputFormatters: const [BrazilianMoneyInputFormatter()],
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => onAmountChanged(),
             decoration: const InputDecoration(
               labelText: 'Desconto',
               border: OutlineInputBorder(),
@@ -1770,16 +1997,21 @@ class _CartPanel extends StatelessWidget {
             controller: paymentAmount,
             keyboardType: TextInputType.text,
             inputFormatters: const [BrazilianMoneyInputFormatter()],
-            onChanged: (_) => onChanged(),
+            onChanged: (_) => onAmountChanged(),
             decoration: const InputDecoration(
               labelText: 'Valor recebido',
               border: OutlineInputBorder(),
             ),
           ),
           const SizedBox(height: 14),
-          _MoneyRow('Total', total, large: true, pdvMode: pdvMode),
-          _MoneyRow('Recebido', paid),
-          _MoneyRow('Troco', change),
+          _MoneyRow(
+            'Total',
+            currentTotalCents / 100,
+            large: true,
+            pdvMode: pdvMode,
+          ),
+          _MoneyRow('Recebido', currentPaidCents / 100),
+          _MoneyRow('Troco', currentChangeCents / 100),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: saving || onFinish == null ? null : onFinish,
@@ -2016,7 +2248,7 @@ class _SalesHistory extends StatelessWidget {
               border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
             ),
             child: const Text(
-              'Ultimas vendas',
+              'Historico de vendas',
               style: TextStyle(fontWeight: FontWeight.w900),
             ),
           ),
@@ -2028,8 +2260,20 @@ class _SalesHistory extends StatelessWidget {
           else
             for (final sale in sales)
               ListTile(
-                title: Text(
-                  '${sale.number ?? 'V${sale.id}'} - ${_money(sale.totalAmount)}',
+                title: Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '${sale.number ?? 'V${sale.id}'} - ${_money(sale.totalAmount)}',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    Chip(
+                      label: Text(_saleSourceLabel(sale.source)),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
                 ),
                 subtitle: Text(
                   '${clientById[sale.clientId]?.name ?? 'Consumidor final'} | ${_dateTime(sale.soldAt)} | ${sale.status}',
@@ -2078,6 +2322,16 @@ class _SalesHistory extends StatelessWidget {
       ),
     );
   }
+}
+
+String _saleSourceLabel(String source) {
+  return switch (source) {
+    'pdv' => 'PDV',
+    'venda' => 'Venda manual',
+    'os' => 'OS',
+    'teste' => 'Teste',
+    _ => source,
+  };
 }
 
 class _SalePaymentsDialog extends StatefulWidget {
@@ -2270,6 +2524,8 @@ class _CashMovement {
 }
 
 String _money(double value) => 'R\$ ${formatBrazilianMoneyInput(value)}';
+
+int _moneyCents(double value) => (value * 100).round();
 
 String _dateTime(DateTime value) {
   final local = value.toLocal();

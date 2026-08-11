@@ -201,7 +201,8 @@ class _AppShellState extends State<AppShell> {
             screen: ServiceOrdersScreen(session: widget.session),
           ),
         if (widget.session.hasModule('sales') &&
-            widget.session.can('sales:view'))
+            (widget.session.can('sales:view') ||
+                widget.session.can('sales:create')))
           _Destination(
             label: 'Vendas',
             icon: Icons.receipt_long_outlined,

@@ -22,6 +22,8 @@ from app.services.product_costs import apply_stock_in, apply_stock_out
 router = APIRouter()
 
 MONEY_QUANT = Decimal("0.01")
+MONEY_TOLERANCE = Decimal("0.01")
+FINANCIAL_PAYMENT_METHODS = {"boleto", "crediario"}
 
 
 def money(value: Decimal) -> Decimal:
@@ -34,6 +36,19 @@ def sale_number(sale_id: int) -> str:
 
 def receivable_number(receivable_id: int) -> str:
     return f"CR{receivable_id}"
+
+
+def is_financial_payment(method: str) -> bool:
+    return method in FINANCIAL_PAYMENT_METHODS
+
+
+def financial_description(methods: set[str], sale_number_value: str | None) -> str:
+    number = sale_number_value or "sem numero"
+    if methods == {"boleto"}:
+        return f"Boleto da venda {number}"
+    if methods == {"crediario"}:
+        return f"Crediario da venda {number}"
+    return f"Financeiro da venda {number}"
 
 
 def cash_closing_number(closing_id: int) -> str:
@@ -79,17 +94,21 @@ def cancel_sale_receivables(
         )
 
 
-def sync_sale_crediario_receivable(
+def sync_sale_financial_receivable(
     db: Session,
     sale: Sale,
     current_user: User,
 ) -> None:
-    crediario_amount = money(
+    financial_payments = [
+        payment for payment in sale.payments if is_financial_payment(payment.method)
+    ]
+    financial_amount = money(
         sum(
-            (payment.amount for payment in sale.payments if payment.method == "crediario"),
+            (payment.amount for payment in financial_payments),
             Decimal("0"),
         )
     )
+    financial_methods = {payment.method for payment in financial_payments}
     receivables = list(
         db.scalars(select(Receivable).where(Receivable.sale_id == sale.id)).all()
     )
@@ -97,32 +116,34 @@ def sync_sale_crediario_receivable(
         (item for item in receivables if item.status != "canceled"),
         None,
     )
-    if crediario_amount <= 0:
+    if financial_amount <= 0:
         cancel_sale_receivables(
             db,
             sale,
             current_user,
-            "Crediario cancelado automaticamente por alteracao da forma de pagamento da venda.",
+            "Financeiro cancelado automaticamente por alteracao da forma de pagamento da venda.",
         )
         return
     if sale.client_id is None:
         raise HTTPException(
             status_code=400,
-            detail="Pagamento crediario precisa ter cliente selecionado na venda.",
+            detail="Pagamento boleto/crediario precisa ter cliente selecionado na venda.",
         )
     client = db.get(Client, sale.client_id)
     if client is None or not client.active:
-        raise HTTPException(status_code=400, detail="Cliente do crediário não encontrado ou inativo.")
-    if not client.allow_credit or client.credit_status != "liberado":
+        raise HTTPException(status_code=400, detail="Cliente do financeiro nao encontrado ou inativo.")
+    if "crediario" in financial_methods and (
+        not client.allow_credit or client.credit_status != "liberado"
+    ):
         raise HTTPException(status_code=400, detail="Cliente não está liberado para crediário.")
     if active is None:
         receivable = Receivable(
             sale_id=sale.id,
             client_id=sale.client_id,
-            description=f"Crediario da venda {sale.number}",
-            original_amount=crediario_amount,
+            description=financial_description(financial_methods, sale.number),
+            original_amount=financial_amount,
             paid_amount=Decimal("0"),
-            balance_amount=crediario_amount,
+            balance_amount=financial_amount,
             status="open",
             notes="Gerado automaticamente por alteracao da forma de pagamento da venda.",
         )
@@ -131,8 +152,9 @@ def sync_sale_crediario_receivable(
         receivable.number = receivable_number(receivable.id)
         return
     paid_amount = active.paid_amount or Decimal("0")
-    active.original_amount = crediario_amount
-    active.balance_amount = max(Decimal("0"), crediario_amount - paid_amount)
+    active.description = financial_description(financial_methods, sale.number)
+    active.original_amount = financial_amount
+    active.balance_amount = max(Decimal("0"), financial_amount - paid_amount)
     if active.balance_amount <= 0:
         active.balance_amount = Decimal("0")
         active.status = "paid"
@@ -158,7 +180,7 @@ def create_administrative_cash_control(
     if sale.source != "venda" or sale.status != "finalizada":
         return
     received_payments = [
-        payment for payment in sale.payments if payment.method != "crediario"
+        payment for payment in sale.payments if not is_financial_payment(payment.method)
     ]
     if not received_payments:
         return
@@ -255,7 +277,7 @@ def mark_administrative_cash_control_canceled(
     if closing is None:
         return
     received_payments = [
-        payment for payment in sale.payments if payment.method != "crediario"
+        payment for payment in sale.payments if not is_financial_payment(payment.method)
     ]
     if not received_payments:
         return
@@ -431,38 +453,42 @@ def create_sale(
         raise HTTPException(status_code=400, detail="Desconto maior que o total da venda.")
 
     amount_paid = Decimal("0.00")
-    crediario_amount = Decimal("0.00")
+    financial_amount = Decimal("0.00")
+    financial_methods: set[str] = set()
     for payment_in in sale_in.payments:
         payment_amount = money(payment_in.amount)
         amount_paid += payment_amount
-        if payment_in.method == "crediario":
-            crediario_amount += payment_amount
+        if is_financial_payment(payment_in.method):
+            financial_amount += payment_amount
+            financial_methods.add(payment_in.method)
         payment_payload = payment_in.model_dump()
         payment_payload["amount"] = payment_amount
         sale.payments.append(SalePayment(**payment_payload))
 
     amount_paid = money(amount_paid)
-    crediario_amount = money(crediario_amount)
+    financial_amount = money(financial_amount)
 
-    if sale_in.status == "finalizada" and amount_paid < total:
+    if sale_in.status == "finalizada" and amount_paid + MONEY_TOLERANCE < total:
         raise HTTPException(status_code=400, detail="Pagamento menor que o total da venda.")
-    if sale_in.status == "finalizada" and crediario_amount > 0:
+    if sale_in.status == "finalizada" and abs(amount_paid - total) <= MONEY_TOLERANCE:
+        amount_paid = total
+    if sale_in.status == "finalizada" and financial_amount > 0:
         if client is None:
             raise HTTPException(
                 status_code=400,
-                detail="Venda crediario precisa ter cliente selecionado.",
+                detail="Venda boleto/crediario precisa ter cliente selecionado.",
             )
         if not client.active:
             raise HTTPException(
                 status_code=400,
                 detail="Cliente inativo não pode comprar no crediário.",
             )
-        if not client.allow_credit:
+        if "crediario" in financial_methods and not client.allow_credit:
             raise HTTPException(
                 status_code=400,
                 detail="Crediario desativado para este cliente.",
             )
-        if client.credit_status != "liberado":
+        if "crediario" in financial_methods and client.credit_status != "liberado":
             raise HTTPException(
                 status_code=400,
                 detail="Cliente bloqueado para crediario.",
@@ -476,16 +502,16 @@ def create_sale(
     db.add(sale)
     db.flush()
     sale.number = sale_number(sale.id)
-    if crediario_amount > 0:
+    if financial_amount > 0:
         receivable = Receivable(
             sale_id=sale.id,
             client_id=sale.client_id,
-            description=f"Crediario da venda {sale.number}",
-            original_amount=crediario_amount,
+            description=financial_description(financial_methods, sale.number),
+            original_amount=financial_amount,
             paid_amount=Decimal("0"),
-            balance_amount=crediario_amount,
+            balance_amount=financial_amount,
             status="open",
-            notes="Gerado automaticamente por venda crediario.",
+            notes="Gerado automaticamente por venda boleto/crediario.",
         )
         db.add(receivable)
         db.flush()
@@ -650,7 +676,7 @@ def update_sale_payments(
     new_amount = money(
         sum((money(payment.amount) for payment in payload.payments), Decimal("0"))
     )
-    if new_amount != expected_amount:
+    if abs(new_amount - expected_amount) > MONEY_TOLERANCE:
         raise HTTPException(
             status_code=400,
             detail="Total das formas de pagamento precisa bater com o valor recebido da venda.",
@@ -661,6 +687,6 @@ def update_sale_payments(
         payment_payload = payment_in.model_dump()
         payment_payload["amount"] = money(payment_in.amount)
         sale.payments.append(SalePayment(**payment_payload))
-    sync_sale_crediario_receivable(db, sale, current_user)
+    sync_sale_financial_receivable(db, sale, current_user)
     db.commit()
     return get_sale_or_404(db, sale_id)
