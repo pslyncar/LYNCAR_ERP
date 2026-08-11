@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -22,6 +23,10 @@ router = APIRouter()
 
 def payable_number(payable_id: int) -> str:
     return f"CP{payable_id}"
+
+
+def _money(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def get_payable_or_404(db: Session, payable_id: int) -> Payable:
@@ -150,20 +155,22 @@ def pay_payable(
     payable = get_payable_or_404(db, payable_id)
     if payable.status == "paid" or payable.balance_amount <= 0:
         raise HTTPException(status_code=400, detail="Conta a pagar ja quitada.")
-    if payment_in.amount > payable.balance_amount:
+    payment_amount = _money(payment_in.amount)
+    balance_amount = _money(payable.balance_amount)
+    if payment_amount > balance_amount:
         raise HTTPException(status_code=400, detail="Pagamento maior que o saldo em aberto.")
 
     payable.payments.append(
         PayablePayment(
             user_id=current_user.id,
-            amount=payment_in.amount,
+            amount=payment_amount,
             method=payment_in.method,
             notes=payment_in.notes,
         )
     )
-    payable.paid_amount += payment_in.amount
-    payable.balance_amount -= payment_in.amount
-    if payable.balance_amount <= 0:
+    payable.paid_amount = _money(payable.paid_amount + payment_amount)
+    payable.balance_amount = _money(payable.balance_amount - payment_amount)
+    if _money(payable.balance_amount) <= 0:
         payable.balance_amount = 0
         payable.status = "paid"
         payable.settled_at = datetime.utcnow()

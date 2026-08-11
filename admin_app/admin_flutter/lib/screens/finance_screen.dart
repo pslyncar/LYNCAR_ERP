@@ -892,15 +892,17 @@ class _ClientPaymentDialogState extends State<_ClientPaymentDialog> {
   Future<void> _save() async {
     final clientId = widget.account.client?.id;
     final amount = parseBrazilianNumber(_amount.text);
+    final amountCents = _toMoneyCents(amount);
+    final balanceCents = _toMoneyCents(widget.account.balance);
     if (clientId == null) {
       setState(() => _error = 'Cliente cadastrado obrigatorio.');
       return;
     }
-    if (amount <= 0) {
+    if (amountCents <= 0) {
       setState(() => _error = 'Informe o valor recebido.');
       return;
     }
-    if (amount > widget.account.balance) {
+    if (amountCents > balanceCents) {
       setState(() => _error = 'Valor maior que o saldo em aberto.');
       return;
     }
@@ -1058,11 +1060,13 @@ class _ReceivablePaymentDialogState extends State<_ReceivablePaymentDialog> {
 
   Future<void> _save() async {
     final amount = parseBrazilianNumber(_amount.text);
-    if (amount <= 0) {
+    final amountCents = _toMoneyCents(amount);
+    final balanceCents = _toMoneyCents(widget.receivable.balanceAmount);
+    if (amountCents <= 0) {
       setState(() => _error = 'Informe o valor recebido.');
       return;
     }
-    if (amount > widget.receivable.balanceAmount) {
+    if (amountCents > balanceCents) {
       setState(() => _error = 'Valor maior que o saldo em aberto.');
       return;
     }
@@ -1732,11 +1736,13 @@ class _PayablePaymentDialogState extends State<_PayablePaymentDialog> {
 
   Future<void> _save() async {
     final amount = parseBrazilianNumber(_amount.text);
-    if (amount <= 0) {
+    final amountCents = _toMoneyCents(amount);
+    final balanceCents = _toMoneyCents(widget.payable.balanceAmount);
+    if (amountCents <= 0) {
       setState(() => _error = 'Informe o valor pago.');
       return;
     }
-    if (amount > widget.payable.balanceAmount) {
+    if (amountCents > balanceCents) {
       setState(() => _error = 'Valor maior que o saldo em aberto.');
       return;
     }
@@ -1987,6 +1993,8 @@ String _paymentLabel(String value) {
 }
 
 String _money(double value) => 'R\$ ${formatBrazilianMoneyInput(value)}';
+
+int _toMoneyCents(double value) => (value * 100).round();
 
 String _date(DateTime? value) {
   if (value == null) return '-';

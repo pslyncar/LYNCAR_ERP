@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -23,6 +24,10 @@ router = APIRouter()
 
 def receivable_number(receivable_id: int) -> str:
     return f"CR{receivable_id}"
+
+
+def _money(value: Decimal) -> Decimal:
+    return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 def get_receivable_or_404(db: Session, receivable_id: int) -> Receivable:
@@ -110,7 +115,9 @@ def pay_receivable(
         raise HTTPException(status_code=400, detail="Recebivel ja quitado.")
     if receivable.status == "canceled":
         raise HTTPException(status_code=400, detail="Recebivel cancelado.")
-    if payment_in.amount > receivable.balance_amount:
+    payment_amount = _money(payment_in.amount)
+    balance_amount = _money(receivable.balance_amount)
+    if payment_amount > balance_amount:
         raise HTTPException(
             status_code=400,
             detail="Pagamento maior que o saldo em aberto.",
@@ -119,14 +126,14 @@ def pay_receivable(
     receivable.payments.append(
         ReceivablePayment(
             user_id=current_user.id,
-            amount=payment_in.amount,
+            amount=payment_amount,
             method=payment_in.method,
             notes=payment_in.notes,
         )
     )
-    receivable.paid_amount += payment_in.amount
-    receivable.balance_amount -= payment_in.amount
-    if receivable.balance_amount <= 0:
+    receivable.paid_amount = _money(receivable.paid_amount + payment_amount)
+    receivable.balance_amount = _money(receivable.balance_amount - payment_amount)
+    if _money(receivable.balance_amount) <= 0:
         receivable.balance_amount = 0
         receivable.status = "paid"
         receivable.settled_at = datetime.utcnow()
@@ -197,19 +204,20 @@ def pay_client_receivables(
             detail="Cliente nao possui contas a receber em aberto.",
         )
 
-    total_balance = sum(item.balance_amount for item in open_receivables)
-    if payment_in.amount > total_balance:
+    total_balance = _money(sum(item.balance_amount for item in open_receivables))
+    payment_amount = _money(payment_in.amount)
+    if payment_amount > total_balance:
         raise HTTPException(
             status_code=400,
             detail="Recebimento maior que o saldo em aberto do cliente.",
         )
 
-    remaining = payment_in.amount
+    remaining = payment_amount
     changed_ids: list[int] = []
     for receivable in open_receivables:
         if remaining <= 0:
             break
-        applied = min(receivable.balance_amount, remaining)
+        applied = min(_money(receivable.balance_amount), remaining)
         receivable.payments.append(
             ReceivablePayment(
                 user_id=current_user.id,
@@ -218,9 +226,9 @@ def pay_client_receivables(
                 notes=payment_in.notes,
             )
         )
-        receivable.paid_amount += applied
-        receivable.balance_amount -= applied
-        if receivable.balance_amount <= 0:
+        receivable.paid_amount = _money(receivable.paid_amount + applied)
+        receivable.balance_amount = _money(receivable.balance_amount - applied)
+        if _money(receivable.balance_amount) <= 0:
             receivable.balance_amount = 0
             receivable.status = "paid"
             receivable.settled_at = datetime.utcnow()
