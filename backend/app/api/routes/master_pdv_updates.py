@@ -29,7 +29,8 @@ router = APIRouter()
 
 def _version_key(value: str | None) -> tuple[int, ...]:
     parts: list[int] = []
-    for part in (value or "").replace("-", ".").split("."):
+    normalized = (value or "").replace("-", ".").replace("+", ".")
+    for part in normalized.split("."):
         digits = "".join(char for char in part if char.isdigit())
         if digits:
             parts.append(int(digits))
