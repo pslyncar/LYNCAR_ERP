@@ -4,6 +4,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'models/session.dart';
@@ -26,6 +27,9 @@ class PapezzoSyncAdminApp extends StatelessWidget {
       navigatorKey: rootNavigatorKey,
       title: 'Lyncar',
       debugShowCheckedModeBanner: false,
+      locale: const Locale('pt', 'BR'),
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: const [Locale('pt', 'BR')],
       scrollBehavior: const _PapezzoScrollBehavior(),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(

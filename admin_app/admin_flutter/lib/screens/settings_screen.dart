@@ -24,7 +24,7 @@ const _moduleLabels = {
   'production': 'Produção',
   'service_contracts': 'Contratos variáveis',
   'sales': 'Vendas',
-  'cash_closings': 'Caixa',
+  'cash_closings': 'Caixa e tesouraria',
   'pdv': 'Vendas de PDV',
   'pdv_windows': 'PDV Windows',
   'service_orders': 'Ordens de serviço',
@@ -134,6 +134,8 @@ const _permissionUsageHints = {
   'sales:cancel': 'Permite cancelar venda e estornar estoque.',
   'pdv_operators:manage':
       'Mostra Op. PDV e permite cadastrar operadores/fiscais do caixa.',
+  'cash_closings:manage':
+      'Permite aprovar, corrigir e marcar divergencias em Caixa e tesouraria.',
   'finance:view': 'Mostra Financeiro.',
   'finance:receivables:view': 'Permite ver contas a receber e crediário.',
   'finance:receivables:pay': 'Permite baixar/receber contas a receber.',

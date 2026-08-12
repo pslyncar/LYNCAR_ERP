@@ -226,7 +226,7 @@ class _AppShellState extends State<AppShell> {
         if (widget.session.hasModule('cash_closings') &&
             widget.session.can('sales:view'))
           _Destination(
-            label: 'Caixa',
+            label: 'Caixa e tesouraria',
             icon: Icons.account_balance_wallet_outlined,
             selectedIcon: Icons.account_balance_wallet,
             screen: CashClosingsScreen(session: widget.session),

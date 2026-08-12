@@ -102,6 +102,12 @@ PERMISSIONS = [
     PermissionDefinition("sales:view", "Ver vendas", "sales", "Visualizar vendas e historico comercial."),
     PermissionDefinition("sales:create", "Operar PDV", "pdv", "Abrir o PDV, registrar vendas e receber pagamentos."),
     PermissionDefinition("sales:cancel", "Cancelar vendas", "sales", "Cancelar vendas e estornar estoque."),
+    PermissionDefinition(
+        "cash_closings:manage",
+        "Conferir caixa e tesouraria",
+        "cash_closings",
+        "Aprovar, corrigir e marcar divergencias nos fechamentos de caixa.",
+    ),
     PermissionDefinition("pdv_operators:manage", "Administrar PDV Windows", "pdv_windows", "Criar operadores, fiscais e terminais do aplicativo Windows."),
     PermissionDefinition("service_orders:view", "Ver OS", "service_orders", "Visualizar ordens de serviço."),
     PermissionDefinition("service_orders:create", "Criar OS", "service_orders", "Abrir ordens de serviço."),

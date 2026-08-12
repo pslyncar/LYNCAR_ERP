@@ -19,7 +19,7 @@ const _planModuleLabels = {
   'production': 'Producao',
   'service_contracts': 'Contratos',
   'sales': 'Vendas',
-  'cash_closings': 'Caixa',
+  'cash_closings': 'Caixa e tesouraria',
   'pdv': 'PDV Web',
   'pdv_windows': 'PDV Windows',
   'service_orders': 'Ordens de servico',

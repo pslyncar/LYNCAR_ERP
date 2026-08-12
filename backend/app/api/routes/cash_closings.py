@@ -297,7 +297,9 @@ def treasury_review_cash_closing(
     closing_id: int,
     review: CashClosingTreasuryReview,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("pdv_operators:manage")),
+    current_user: User = Depends(
+        require_any_permission("cash_closings:manage", "pdv_operators:manage")
+    ),
 ) -> CashClosing:
     closing = get_closing_or_404(db, closing_id)
     if review.counted_cash_amount is not None:

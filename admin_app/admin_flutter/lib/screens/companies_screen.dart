@@ -33,7 +33,7 @@ const _moduleLabels = {
   'production': 'Produção',
   'service_contracts': 'Contratos variáveis',
   'sales': 'Histórico de vendas',
-  'cash_closings': 'Caixa',
+  'cash_closings': 'Caixa e tesouraria',
   'pdv': 'PDV Web',
   'pdv_windows': 'PDV Windows',
   'service_orders': 'OS',
