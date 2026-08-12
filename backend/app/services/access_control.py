@@ -118,3 +118,11 @@ def user_has_permission(db: Session, user: User, permission_code: str) -> bool:
     if user.role == "admin":
         return True
     return permission_code in get_user_permission_codes(db, user)
+
+
+def user_has_configured_permission(
+    db: Session,
+    user: User,
+    permission_code: str,
+) -> bool:
+    return permission_code in get_user_permission_codes(db, user)

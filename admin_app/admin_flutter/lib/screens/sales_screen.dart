@@ -789,7 +789,6 @@ class _SalesScreenState extends State<SalesScreen> {
   );
   int get _discountCents => _moneyCents(parseBrazilianNumber(_discount.text));
   bool get _canOverrideDiscount =>
-      widget.session.role == 'admin' ||
       widget.session.can('sales:discount:override');
   int get _maxDiscountCents => widget.pdvMode || _canOverrideDiscount
       ? _subtotalCents

@@ -1,14 +1,19 @@
 import socket
 import unicodedata
 from datetime import UTC, datetime
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.dependencies import require_permission
+from app.api.dependencies import bearer_scheme, require_permission
 from app.core.database import get_db
+from app.core.master_database import MasterSessionLocal
+from app.core.security import decode_access_token
 from app.models.client import Client
+from app.models.company import Company
 from app.models.equipment import Equipment
 from app.models.product import Product
 from app.models.service_order import ServiceOrder, ServiceOrderItem
@@ -22,9 +27,44 @@ from app.schemas.service_order import (
     ServiceOrderUpdate,
 )
 from app.schemas.printing import ThermalPrintRequest, ThermalPrintResponse
+from app.services.access_control import user_has_configured_permission
 from app.services.service_order_totals import recalculate_service_order_totals
 
 router = APIRouter()
+
+MONEY_QUANT = Decimal("0.01")
+DEFAULT_MAX_DISCOUNT_PERCENT = Decimal("100.00")
+
+
+def money(value: Decimal) -> Decimal:
+    return value.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+
+def percent(value: Decimal | int | float | str | None) -> Decimal:
+    if value is None:
+        return DEFAULT_MAX_DISCOUNT_PERCENT
+    normalized = Decimal(str(value)).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+    return max(Decimal("0.00"), min(DEFAULT_MAX_DISCOUNT_PERCENT, normalized))
+
+
+def tenant_company_code(
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
+    payload = decode_access_token(credentials.credentials)
+    company_code = payload.get("company_code")
+    if not isinstance(company_code, str) or not company_code.strip():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.")
+    return company_code.strip()
+
+
+def sales_max_discount_percent(company_code: str) -> Decimal:
+    with MasterSessionLocal() as master_db:
+        company = master_db.scalar(select(Company).where(Company.code == company_code))
+        if company is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Empresa nao encontrada.")
+        return percent(company.sales_max_discount_percent)
 
 
 def strip_accents(value: str) -> str:
@@ -142,6 +182,32 @@ def apply_service_order_waiting_rule(service_order: ServiceOrder) -> None:
         service_order.waiting_reason = None
 
 
+def ensure_service_order_discount_allowed(
+    db: Session,
+    current_user: User,
+    service_order: ServiceOrder,
+    company_code: str,
+) -> None:
+    if service_order.discount_amount <= 0:
+        return
+    if user_has_configured_permission(db, current_user, "sales:discount:override"):
+        return
+    max_discount_percent = sales_max_discount_percent(company_code)
+    max_discount = money(
+        (service_order.items_amount + service_order.labor_amount)
+        * max_discount_percent
+        / Decimal("100")
+    )
+    if service_order.discount_amount > max_discount:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Desconto acima do limite permitido para OS. "
+                f"Maximo permitido: {max_discount_percent}%."
+            ),
+        )
+
+
 def service_order_code(service_order_id: int) -> str:
     return f"M{service_order_id}"
 
@@ -166,6 +232,7 @@ def create_service_order(
     service_order_in: ServiceOrderCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("service_orders:create")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> ServiceOrder:
     ensure_service_order_relations(
         db,
@@ -178,6 +245,12 @@ def create_service_order(
     apply_service_order_closed_at(service_order, service_order.status)
     apply_service_order_waiting_rule(service_order)
     recalculate_service_order_totals(service_order)
+    ensure_service_order_discount_allowed(
+        db,
+        current_user,
+        service_order,
+        tenant_company_code(credentials),
+    )
     db.add(service_order)
     db.commit()
     db.refresh(service_order)
@@ -219,6 +292,7 @@ def update_service_order(
     service_order_in: ServiceOrderUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("service_orders:update")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> ServiceOrder:
     service_order = get_service_order_or_404(db, service_order_id)
     update_data = service_order_in.model_dump(exclude_unset=True)
@@ -238,6 +312,12 @@ def update_service_order(
     apply_service_order_closed_at(service_order, update_data.get("status"))
     apply_service_order_waiting_rule(service_order)
     recalculate_service_order_totals(service_order)
+    ensure_service_order_discount_allowed(
+        db,
+        current_user,
+        service_order,
+        tenant_company_code(credentials),
+    )
     db.commit()
     return get_service_order_or_404(db, service_order.id)
 

@@ -117,6 +117,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
       builder: (context) => _ServiceOrderDialog(
         api: _api,
         token: widget.session.token,
+        session: widget.session,
         order: order,
         clients: _clients,
         equipments: _equipments,
@@ -701,7 +702,6 @@ class _ServiceOrderSaleDialogState extends State<_ServiceOrderSaleDialog> {
 
   int get _discountCents => _moneyCents(widget.order.discountAmount);
   bool get _canOverrideDiscount =>
-      widget.session.role == 'admin' ||
       widget.session.can('sales:discount:override');
   int get _maxDiscountCents => _canOverrideDiscount
       ? _subtotalCents
@@ -1348,6 +1348,7 @@ class _ServiceOrderDialog extends StatefulWidget {
   const _ServiceOrderDialog({
     required this.api,
     required this.token,
+    required this.session,
     required this.clients,
     required this.equipments,
     required this.products,
@@ -1356,6 +1357,7 @@ class _ServiceOrderDialog extends StatefulWidget {
 
   final ApiClient api;
   final String token;
+  final Session session;
   final ServiceOrder? order;
   final List<Client> clients;
   final List<Equipment> equipments;
@@ -1389,6 +1391,7 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
   String _status = 'aberta';
   String _priority = 'media';
   ServiceOrder? _current;
+  double _maxDiscountPercent = 100;
   bool _saving = false;
   String? _error;
 
@@ -1417,6 +1420,7 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
     } else if (widget.clients.isNotEmpty) {
       _clientId = widget.clients.first.id;
     }
+    _loadSalesSettings();
   }
 
   @override
@@ -1445,6 +1449,13 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate() || _clientId == null) return;
+    if (!_canOverrideDiscount && _discountCents > _maxDiscountCents + 1) {
+      setState(
+        () => _error =
+            'Desconto acima do limite permitido. Maximo: ${_money(_maxDiscountCents / 100)} (${formatBrazilianMoneyInput(_maxDiscountPercent)}%).',
+      );
+      return;
+    }
     setState(() {
       _saving = true;
       _error = null;
@@ -1488,6 +1499,31 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
       setState(() => _error = 'Não foi possível salvar a OS.');
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  bool get _canOverrideDiscount =>
+      widget.session.can('sales:discount:override');
+  int get _discountCents => _moneyCents(_parseMoney(_discount.text));
+  int get _subtotalCents {
+    final itemsAmount = _current?.itemsAmount ?? 0;
+    final laborAmount = _parseMoney(_labor.text);
+    return _moneyCents(itemsAmount + laborAmount);
+  }
+
+  int get _maxDiscountCents => _canOverrideDiscount
+      ? _subtotalCents
+      : _moneyCents((_subtotalCents / 100) * (_maxDiscountPercent / 100));
+
+  Future<void> _loadSalesSettings() async {
+    try {
+      final settings = await widget.api.getSalesSettings(widget.token);
+      if (!mounted) return;
+      setState(() {
+        _maxDiscountPercent = settings.maxDiscountPercent;
+      });
+    } catch (_) {
+      // Mantem o padrao permissivo se a configuracao nao puder ser carregada.
     }
   }
 

@@ -351,6 +351,7 @@ class _UserDialogState extends State<_UserDialog> {
   late String _role;
   late bool _active;
   late bool _appAccess;
+  late bool _discountOverride;
   bool _saving = false;
   String? _error;
 
@@ -370,6 +371,10 @@ class _UserDialogState extends State<_UserDialog> {
     _role = roleExists && userRole != null ? userRole : widget.roles.first.name;
     _active = user?.active ?? true;
     _appAccess = user?.permissions.contains('app:access') ?? false;
+    _discountOverride =
+        user?.permissions.contains('sales:discount:override') ??
+        (_selectedRole?.permissions.contains('sales:discount:override') ??
+            false);
   }
 
   @override
@@ -404,15 +409,22 @@ class _UserDialogState extends State<_UserDialog> {
       allowCrossCompanyDuplicate: allowCrossCompanyDuplicate,
     );
     try {
+      late final SystemUser savedUser;
       if (_editing) {
-        await widget.api.updateSystemUser(
+        savedUser = await widget.api.updateSystemUser(
           widget.token,
           widget.user!.id,
           payload,
         );
       } else {
-        await widget.api.createSystemUser(widget.token, payload);
+        savedUser = await widget.api.createSystemUser(widget.token, payload);
       }
+      await widget.api.setSystemUserPermission(
+        widget.token,
+        savedUser.id,
+        permissionCode: 'sales:discount:override',
+        allowed: _discountOverride,
+      );
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (error) {
       if (await _showDuplicateEmailBlock(error)) return;
@@ -505,21 +517,20 @@ class _UserDialogState extends State<_UserDialog> {
                 ),
                 const SizedBox(height: 12),
                 if (_selectedRole?.isSellerProfile == true) ...[
-                TextFormField(
-                  controller: _sellerCode,
-                  textCapitalization: TextCapitalization.characters,
-                  decoration: const InputDecoration(
-                    labelText: 'Código vendedor',
-                    helperText:
-                        'Opcional. Use quando esse usuário também vender no sistema.',
-                    border: OutlineInputBorder(),
+                  TextFormField(
+                    controller: _sellerCode,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      labelText: 'Código vendedor',
+                      helperText:
+                          'Opcional. Use quando esse usuário também vender no sistema.',
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) => value == null || value.trim().isEmpty
+                        ? 'Informe o codigo de vendedor.'
+                        : null,
                   ),
-                  validator: (value) =>
-                      value == null || value.trim().isEmpty
-                      ? 'Informe o codigo de vendedor.'
-                      : null,
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
                 ],
                 if (_selectedRole?.isTechnicianProfile == true) ...[
                   TextFormField(
@@ -529,8 +540,7 @@ class _UserDialogState extends State<_UserDialog> {
                       labelText: 'Codigo tecnico',
                       border: OutlineInputBorder(),
                     ),
-                    validator: (value) =>
-                        value == null || value.trim().isEmpty
+                    validator: (value) => value == null || value.trim().isEmpty
                         ? 'Informe o codigo de tecnico.'
                         : null,
                   ),
@@ -587,6 +597,18 @@ class _UserDialogState extends State<_UserDialog> {
                   ),
                   value: _appAccess,
                   onChanged: (value) => setState(() => _appAccess = value),
+                ),
+                const SizedBox(height: 4),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.percent_outlined),
+                  title: const Text('Desconto livre'),
+                  subtitle: const Text(
+                    'Permite este usuario ultrapassar o limite de desconto em vendas e OS.',
+                  ),
+                  value: _discountOverride,
+                  onChanged: (value) =>
+                      setState(() => _discountOverride = value),
                 ),
                 const SizedBox(height: 4),
                 SwitchListTile(
