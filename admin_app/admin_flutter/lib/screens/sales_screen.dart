@@ -874,6 +874,8 @@ class _SalesScreenState extends State<SalesScreen> {
       });
       await _persistOpenCashSession();
       if (!mounted) return;
+      await _emitNonFiscalReceiptAfterSale(sale);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Venda ${sale.number ?? sale.id} finalizada.')),
       );
@@ -936,6 +938,22 @@ class _SalesScreenState extends State<SalesScreen> {
       cashRegisterNumber: sale.cashRegisterNumber,
       operatorName: sale.sellerName,
     );
+  }
+
+  Future<void> _emitNonFiscalReceiptAfterSale(Sale sale) async {
+    try {
+      await openNonFiscalSaleReceipt(
+        sale: sale,
+        companyName: widget.session.companyName,
+        cashRegisterNumber: sale.cashRegisterNumber,
+        operatorName: sale.sellerName,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Falha ao imprimir: $error')));
+    }
   }
 
   Future<bool> _requestFiscalAuthorization({
