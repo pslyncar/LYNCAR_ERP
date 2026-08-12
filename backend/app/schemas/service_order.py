@@ -8,6 +8,7 @@ ServiceOrderStatus = Literal[
     "aberta",
     "em_diagnostico",
     "aguardando_aprovacao",
+    "aguardando_retirada",
     "em_execucao",
     "concluida",
     "cancelada",

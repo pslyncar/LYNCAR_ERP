@@ -18,6 +18,7 @@ const _statuses = {
   'aberta': 'Aberta',
   'em_diagnostico': 'Em diagnostico',
   'aguardando_aprovacao': 'Aguardando',
+  'aguardando_retirada': 'Aguardando retirada',
   'em_execucao': 'Em execucao',
   'concluida': 'Concluida',
   'cancelada': 'Cancelada',
@@ -44,6 +45,7 @@ const _workflowTabs = [
   ], Icons.build_outlined),
   _WorkflowTab('aguardando', 'Aguardando', [
     'aguardando_aprovacao',
+    'aguardando_retirada',
   ], Icons.hourglass_top_outlined),
   _WorkflowTab('concluidas', 'Concluido', [
     'concluida',
@@ -150,17 +152,6 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
     await _load();
   }
 
-  // ignore: unused_element
-  void _sendToSales(ServiceOrder order) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'A OS ${order.number?.isNotEmpty == true ? order.number : _serviceOrderCode(order)} já está pronta para virar venda. A tela de Vendas será criada no próximo modulo.',
-        ),
-      ),
-    );
-  }
-
   Future<void> _openServiceOrderSale(ServiceOrder order) async {
     final sale = await showDialog<Sale>(
       context: context,
@@ -178,6 +169,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Venda ${sale.number ?? sale.id} gerada da OS.')),
     );
+    await _load();
   }
 
   @override
@@ -305,8 +297,11 @@ class _SummaryStrip extends StatelessWidget {
               order.status == 'em_execucao' || order.status == 'em_diagnostico',
         )
         .length;
-    final approval = orders
+    final waiting = orders
         .where((order) => order.status == 'aguardando_aprovacao')
+        .length;
+    final waitingPickup = orders
+        .where((order) => order.status == 'aguardando_retirada')
         .length;
     final total = orders.fold<double>(
       0,
@@ -319,7 +314,11 @@ class _SummaryStrip extends StatelessWidget {
         final items = [
           _SummaryItem('Abertas', open, Icons.assignment_outlined),
           _SummaryItem('Em trabalho', running, Icons.build_outlined),
-          _SummaryItem('Aguardando', approval, Icons.fact_check_outlined),
+          _SummaryItem(
+            'Aguardando',
+            waiting + waitingPickup,
+            Icons.fact_check_outlined,
+          ),
           _SummaryItem(
             'Total em OS',
             total,
@@ -620,7 +619,8 @@ class _ServiceOrdersTable extends StatelessWidget {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        if (canSendToSales && order.status == 'concluida')
+                        if (canSendToSales &&
+                            order.status == 'aguardando_retirada')
                           IconButton(
                             tooltip: 'Enviar para vendas',
                             onPressed: () => onSendToSales(order),

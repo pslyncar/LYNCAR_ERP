@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.models.client import Client
 from app.models.receivable import Receivable, ReceivablePayment
 from app.models.sale import Sale
+from app.models.service_order import ServiceOrder
 from app.models.user import User
 from app.schemas.receivable import (
     ReceivableAccountPaymentCreate,
@@ -28,6 +29,39 @@ def receivable_number(receivable_id: int) -> str:
 
 def _money(value: Decimal) -> Decimal:
     return Decimal(value).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _service_order_id_from_sale(sale: Sale | None) -> int | None:
+    if sale is None or sale.source != "os":
+        return None
+    marker = (sale.offline_client_id or "").strip()
+    if not marker.startswith("os:"):
+        return None
+    try:
+        return int(marker.split(":", 1)[1])
+    except ValueError:
+        return None
+
+
+def _sync_service_order_after_receivable_payment(db: Session, sale: Sale | None) -> None:
+    service_order_id = _service_order_id_from_sale(sale)
+    if service_order_id is None:
+        return
+    service_order = db.get(ServiceOrder, service_order_id)
+    if service_order is None or service_order.status == "cancelada":
+        return
+    open_receivables = list(
+        db.scalars(
+            select(Receivable).where(
+                Receivable.sale_id == sale.id,
+                Receivable.status != "paid",
+                Receivable.status != "canceled",
+                Receivable.balance_amount > 0,
+            )
+        ).all()
+    )
+    service_order.status = "aguardando_retirada" if open_receivables else "concluida"
+    service_order.closed_at = datetime.utcnow() if not open_receivables else None
 
 
 def get_receivable_or_404(db: Session, receivable_id: int) -> Receivable:
@@ -139,6 +173,7 @@ def pay_receivable(
         receivable.settled_at = datetime.utcnow()
     else:
         receivable.status = "partial"
+    _sync_service_order_after_receivable_payment(db, receivable.sale)
     db.commit()
     return get_receivable_or_404(db, receivable.id)
 
@@ -214,6 +249,7 @@ def pay_client_receivables(
 
     remaining = payment_amount
     changed_ids: list[int] = []
+    changed_sales: dict[int, Sale] = {}
     for receivable in open_receivables:
         if remaining <= 0:
             break
@@ -236,7 +272,11 @@ def pay_client_receivables(
             receivable.status = "partial"
         remaining -= applied
         changed_ids.append(receivable.id)
+        if receivable.sale is not None:
+            changed_sales[receivable.sale.id] = receivable.sale
 
+    for sale in changed_sales.values():
+        _sync_service_order_after_receivable_payment(db, sale)
     db.commit()
     return [
         get_receivable_or_404(db, receivable_id)

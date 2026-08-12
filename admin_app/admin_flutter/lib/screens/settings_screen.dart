@@ -1153,20 +1153,29 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
                     ),
                   ),
                   const Gap(14),
-                  if (widget.session.sellerRoleEnabled ||
-                      widget.session.technicianRoleEnabled) ...[
-                    _OperationalRoleBox(
-                      sellerAvailable: widget.session.sellerRoleEnabled,
-                      technicianAvailable: widget.session.technicianRoleEnabled,
-                      isSellerProfile: _isSellerProfile,
-                      isTechnicianProfile: _isTechnicianProfile,
-                      onSellerChanged: (value) =>
-                          setState(() => _isSellerProfile = value),
-                      onTechnicianChanged: (value) =>
-                          setState(() => _isTechnicianProfile = value),
+                  _OperationalRoleBox(
+                    sellerAvailable: widget.session.sellerRoleEnabled,
+                    technicianAvailable: widget.session.technicianRoleEnabled,
+                    isSellerProfile: _isSellerProfile,
+                    isTechnicianProfile: _isTechnicianProfile,
+                    canOverrideDiscount: _selected.contains(
+                      'sales:discount:override',
                     ),
-                    const Gap(14),
-                  ],
+                    onSellerChanged: (value) =>
+                        setState(() => _isSellerProfile = value),
+                    onTechnicianChanged: (value) =>
+                        setState(() => _isTechnicianProfile = value),
+                    onOverrideDiscountChanged: (value) {
+                      setState(() {
+                        if (value) {
+                          _selected.add('sales:discount:override');
+                        } else {
+                          _selected.remove('sales:discount:override');
+                        }
+                      });
+                    },
+                  ),
+                  const Gap(14),
                   const Gap(14),
                   const _PermissionHelpBox(),
                   const Gap(14),
@@ -1252,16 +1261,20 @@ class _OperationalRoleBox extends StatelessWidget {
     required this.technicianAvailable,
     required this.isSellerProfile,
     required this.isTechnicianProfile,
+    required this.canOverrideDiscount,
     required this.onSellerChanged,
     required this.onTechnicianChanged,
+    required this.onOverrideDiscountChanged,
   });
 
   final bool sellerAvailable;
   final bool technicianAvailable;
   final bool isSellerProfile;
   final bool isTechnicianProfile;
+  final bool canOverrideDiscount;
   final ValueChanged<bool> onSellerChanged;
   final ValueChanged<bool> onTechnicianChanged;
+  final ValueChanged<bool> onOverrideDiscountChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1295,6 +1308,15 @@ class _OperationalRoleBox extends StatelessWidget {
                 subtitle: const Text('Exige codigo de tecnico no usuario.'),
                 contentPadding: EdgeInsets.zero,
               ),
+            SwitchListTile(
+              value: canOverrideDiscount,
+              onChanged: onOverrideDiscountChanged,
+              title: const Text('Desconto livre'),
+              subtitle: const Text(
+                'Permite ultrapassar o limite configurado em Vendas e OS.',
+              ),
+              contentPadding: EdgeInsets.zero,
+            ),
           ],
         ),
       ),

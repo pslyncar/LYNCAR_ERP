@@ -17,6 +17,7 @@ from app.models.pdv_cash_session import PdvCashSession
 from app.models.product import Product
 from app.models.receivable import Receivable
 from app.models.sale import Sale, SaleItem, SalePayment
+from app.models.service_order import ServiceOrder
 from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.schemas.sale import (
@@ -77,6 +78,34 @@ def sale_number(sale_id: int) -> str:
 
 def receivable_number(receivable_id: int) -> str:
     return f"CR{receivable_id}"
+
+
+def service_order_id_from_sale(sale: Sale) -> int | None:
+    marker = (sale.offline_client_id or "").strip()
+    if sale.source != "os" or not marker.startswith("os:"):
+        return None
+    try:
+        return int(marker.split(":", 1)[1])
+    except ValueError:
+        return None
+
+
+def sync_service_order_status_from_sale(
+    db: Session,
+    sale: Sale,
+    has_financial_receivable: bool,
+) -> None:
+    service_order_id = service_order_id_from_sale(sale)
+    if service_order_id is None:
+        return
+    service_order = db.get(ServiceOrder, service_order_id)
+    if service_order is None:
+        return
+    service_order.status = "aguardando_retirada" if has_financial_receivable else "concluida"
+    if service_order.status == "concluida" and service_order.closed_at is None:
+        service_order.closed_at = datetime.utcnow()
+    if service_order.status != "concluida":
+        service_order.closed_at = None
 
 
 @router.get("/settings", response_model=SalesSettings)
@@ -636,6 +665,11 @@ def create_sale(
         db.flush()
         receivable.number = receivable_number(receivable.id)
     create_administrative_cash_control(db, sale, current_user)
+    sync_service_order_status_from_sale(
+        db,
+        sale,
+        has_financial_receivable=financial_amount > 0,
+    )
     for movement in stock_movements:
         product = movement["product"]
         apply_batch_out(
