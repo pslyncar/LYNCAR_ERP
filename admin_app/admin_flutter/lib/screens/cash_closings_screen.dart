@@ -1027,38 +1027,6 @@ class _TreasuryOverview extends StatelessWidget {
   }
 }
 
-class _TreasuryHealthLine extends StatelessWidget {
-  const _TreasuryHealthLine({
-    required this.label,
-    required this.danger,
-    required this.icon,
-  });
-
-  final String label;
-  final bool danger;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = danger ? const Color(0xFFB45309) : const Color(0xFF047857);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 5),
-      child: Row(
-        children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(color: color, fontWeight: FontWeight.w800),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _PanelHeader extends StatelessWidget {
   const _PanelHeader({
     required this.icon,
