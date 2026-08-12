@@ -12,6 +12,7 @@ import '../services/api_client.dart';
 import '../services/app_session_storage.dart';
 import '../services/receipt_print.dart';
 import '../utils/input_formatters.dart';
+import '../utils/sale_installments.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
 
@@ -86,6 +87,8 @@ class _SalesScreenState extends State<SalesScreen> {
   String? _cashRegisterNumber;
   String? _terminalKey;
   String _paymentMethod = 'dinheiro';
+  int _installmentCount = 1;
+  DateTime _firstDueDate = DateTime.now();
   String _salesStatusFilter = 'todos';
   String _salesSourceFilter = 'todos';
   String _salesPeriodFilter = 'todos';
@@ -95,6 +98,7 @@ class _SalesScreenState extends State<SalesScreen> {
   double _cashOpeningAmount = 0;
   int _persistedSaleCount = 0;
   double _persistedSessionTotal = 0;
+  double _maxDiscountPercent = 100;
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -138,12 +142,16 @@ class _SalesScreenState extends State<SalesScreen> {
       final sales = await _api.listSales(widget.session.token);
       final operators = await _api.listPdvOperators(widget.session.token);
       final sellers = await _api.listSaleSellers(widget.session.token);
+      final settings = await _api.getSalesSettings(widget.session.token);
       setState(() {
         _clients = clients;
         _products = products;
         _sales = sales;
         _operators = operators;
         _sellers = sellers;
+        _maxDiscountPercent = settings.maxDiscountPercent
+            .clamp(0, 100)
+            .toDouble();
         _sellerUserId = _sellerUserId == null
             ? null
             : _sellers.any((seller) => seller.id == _sellerUserId)
@@ -416,6 +424,206 @@ class _SalesScreenState extends State<SalesScreen> {
     _sellerCode.text = seller?.sellerCode ?? '';
   }
 
+  Future<List<SaleInstallmentPayload>?> _confirmInstallments() async {
+    final installments = buildSaleInstallments(
+      totalCents: _paidCents,
+      count: _installmentCount,
+      firstDueDate: _firstDueDate,
+    );
+    final controllers = [
+      for (final installment in installments)
+        TextEditingController(
+          text: formatBrazilianMoneyInput(installment.amountCents / 100),
+        ),
+    ];
+    try {
+      return await showDialog<List<SaleInstallmentPayload>>(
+        context: context,
+        builder: (context) {
+          String? error;
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              int currentSum() => controllers.fold(
+                0,
+                (sum, controller) =>
+                    sum + _moneyCents(parseBrazilianNumber(controller.text)),
+              );
+
+              final difference = currentSum() - _paidCents;
+              Future<void> pickDate(int index) async {
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: installments[index].dueDate,
+                  firstDate: DateTime(2020),
+                  lastDate: DateTime(2100),
+                  locale: const Locale('pt', 'BR'),
+                );
+                if (picked == null) return;
+                setDialogState(() {
+                  installments[index].dueDate = picked;
+                });
+              }
+
+              return AlertDialog(
+                title: Text(
+                  'Confirmar parcelas de ${_paymentMethods[_paymentMethod]}',
+                ),
+                content: SizedBox(
+                  width: 720,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (
+                          var index = 0;
+                          index < installments.length;
+                          index++
+                        )
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 10),
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                final narrow = constraints.maxWidth < 560;
+                                final dueButton = OutlinedButton.icon(
+                                  onPressed: () => pickDate(index),
+                                  icon: const Icon(Icons.event_outlined),
+                                  label: Text(
+                                    formatBrazilianDate(
+                                      installments[index].dueDate,
+                                    ),
+                                  ),
+                                );
+                                final amountField = TextField(
+                                  controller: controllers[index],
+                                  keyboardType: TextInputType.text,
+                                  inputFormatters: const [
+                                    BrazilianMoneyInputFormatter(),
+                                  ],
+                                  onChanged: (_) =>
+                                      setDialogState(() => error = null),
+                                  decoration: InputDecoration(
+                                    labelText:
+                                        'Valor ${installments[index].number}/${installments.length}',
+                                    border: const OutlineInputBorder(),
+                                  ),
+                                );
+                                if (narrow) {
+                                  return Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      dueButton,
+                                      const SizedBox(height: 8),
+                                      amountField,
+                                    ],
+                                  );
+                                }
+                                return Row(
+                                  children: [
+                                    SizedBox(width: 190, child: dueButton),
+                                    const SizedBox(width: 12),
+                                    Expanded(child: amountField),
+                                  ],
+                                );
+                              },
+                            ),
+                          ),
+                        const Divider(height: 24),
+                        _SalePreviewLine(
+                          'Total da venda',
+                          _money(_paidCents / 100),
+                        ),
+                        _SalePreviewLine(
+                          'Total das parcelas',
+                          _money(currentSum() / 100),
+                        ),
+                        if (difference.abs() > 1)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              'A soma precisa fechar em ${_money(_paidCents / 100)}.',
+                              style: const TextStyle(
+                                color: Color(0xFFB91C1C),
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        if (error != null)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8),
+                            child: Text(
+                              error!,
+                              style: const TextStyle(color: Color(0xFFB91C1C)),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    child: const Text('Cancelar'),
+                  ),
+                  FilledButton.icon(
+                    onPressed: () {
+                      final sum = currentSum();
+                      if ((sum - _paidCents).abs() > 1) {
+                        setDialogState(() {
+                          error =
+                              'Ajuste os valores das parcelas antes de confirmar.';
+                        });
+                        return;
+                      }
+                      Navigator.of(context).pop([
+                        for (
+                          var index = 0;
+                          index < installments.length;
+                          index++
+                        )
+                          SaleInstallmentPayload(
+                            number: installments[index].number,
+                            dueDate: installments[index].dueDate,
+                            amount:
+                                _moneyCents(
+                                  parseBrazilianNumber(controllers[index].text),
+                                ) /
+                                100,
+                          ),
+                      ]);
+                    },
+                    icon: const Icon(Icons.check_outlined),
+                    label: const Text('Confirmar'),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      for (final controller in controllers) {
+        controller.dispose();
+      }
+    }
+  }
+
+  Future<void> _showRequiredInfoDialog(String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Atenção'),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   SaleSeller? _sellerById(int? id) {
     if (id == null) return null;
     for (final seller in _sellers) {
@@ -580,10 +788,14 @@ class _SalesScreenState extends State<SalesScreen> {
     (sum, item) => sum + _moneyCents(item.quantity * item.unitPrice),
   );
   int get _discountCents => _moneyCents(parseBrazilianNumber(_discount.text));
+  int get _maxDiscountCents => widget.pdvMode
+      ? _subtotalCents
+      : _moneyCents((_subtotalCents / 100) * (_maxDiscountPercent / 100));
   int get _totalCents => _nonNegativeCents(_subtotalCents - _discountCents);
   int get _paidCents => _moneyCents(parseBrazilianNumber(_paymentAmount.text));
   bool get _usesFinancialPayment =>
       _paymentMethod == 'boleto' || _paymentMethod == 'crediario';
+  bool get _usesCreditInstallments => _paymentMethod == 'credito';
   bool get _paymentCoversTotal => _paidCents + 1 >= _totalCents;
   double get _withdrawTotal => _cashMovements
       .where((movement) => movement.type == 'sangria')
@@ -810,17 +1022,32 @@ class _SalesScreenState extends State<SalesScreen> {
     }
     if (!widget.pdvMode &&
         (_sellerById(_sellerUserId)?.sellerCode ?? '').trim().isEmpty) {
-      setState(() => _error = 'Informe um vendedor com codigo cadastrado.');
+      await _showRequiredInfoDialog(
+        'Informe um vendedor com código cadastrado para finalizar a venda.',
+      );
       return;
     }
     if (!_paymentCoversTotal) {
       setState(() => _error = 'Pagamento menor que o total.');
       return;
     }
-    if (_usesFinancialPayment && _clientId == null) {
-      setState(() => _error = 'Boleto e crediario exigem cliente cadastrado.');
+    if (!widget.pdvMode && _discountCents > _maxDiscountCents + 1) {
+      setState(
+        () => _error =
+            'Desconto acima do limite permitido. Máximo: ${_money(_maxDiscountCents / 100)} (${formatBrazilianMoneyInput(_maxDiscountPercent)}%).',
+      );
       return;
     }
+    if (_usesFinancialPayment && _clientId == null) {
+      await _showRequiredInfoDialog(
+        'Boleto e crediário exigem cliente cadastrado. Selecione um cliente antes de finalizar.',
+      );
+      return;
+    }
+    final installments = _usesFinancialPayment
+        ? await _confirmInstallments()
+        : const <SaleInstallmentPayload>[];
+    if (!mounted || installments == null) return;
     setState(() {
       _saving = true;
       _error = null;
@@ -851,8 +1078,12 @@ class _SalesScreenState extends State<SalesScreen> {
             SalePaymentPayload(
               method: _paymentMethod,
               amount: _paidCents / 100,
+              notes: _usesCreditInstallments
+                  ? 'Crédito ${_installmentCount}x'
+                  : null,
             ),
           ],
+          installments: installments,
         ),
       );
       if (!mounted) return;
@@ -874,7 +1105,13 @@ class _SalesScreenState extends State<SalesScreen> {
       });
       await _persistOpenCashSession();
       if (!mounted) return;
-      await _emitNonFiscalReceiptAfterSale(sale);
+      await _emitNonFiscalReceiptAfterSale(
+        sale,
+        installments: installments,
+        creditInstallmentCount: _usesCreditInstallments
+            ? _installmentCount
+            : null,
+      );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Venda ${sale.number ?? sale.id} finalizada.')),
@@ -940,13 +1177,19 @@ class _SalesScreenState extends State<SalesScreen> {
     );
   }
 
-  Future<void> _emitNonFiscalReceiptAfterSale(Sale sale) async {
+  Future<void> _emitNonFiscalReceiptAfterSale(
+    Sale sale, {
+    List<SaleInstallmentPayload> installments = const [],
+    int? creditInstallmentCount,
+  }) async {
     try {
       await openNonFiscalSaleReceipt(
         sale: sale,
         companyName: widget.session.companyName,
         cashRegisterNumber: sale.cashRegisterNumber,
         operatorName: sale.sellerName,
+        installments: installments,
+        creditInstallmentCount: creditInstallmentCount,
       );
     } catch (error) {
       if (!mounted) return;
@@ -1186,8 +1429,18 @@ class _SalesScreenState extends State<SalesScreen> {
                     discount: _discount,
                     paymentAmount: _paymentAmount,
                     paymentMethod: _paymentMethod,
-                    onPaymentMethodChanged: (value) =>
-                        setState(() => _paymentMethod = value),
+                    installmentCount: _installmentCount,
+                    firstDueDate: _firstDueDate,
+                    maxDiscountPercent: _maxDiscountPercent,
+                    maxDiscountCents: _maxDiscountCents,
+                    onPaymentMethodChanged: (value) {
+                      setState(() => _paymentMethod = value);
+                      _syncPaymentWithTotal();
+                    },
+                    onInstallmentCountChanged: (value) =>
+                        setState(() => _installmentCount = value),
+                    onFirstDueDateChanged: (value) =>
+                        setState(() => _firstDueDate = value),
                     subtotalCents: _subtotalCents,
                     saving: _saving,
                     onCartChanged: () {
@@ -1339,8 +1592,18 @@ class _SalesScreenState extends State<SalesScreen> {
                   discount: _discount,
                   paymentAmount: _paymentAmount,
                   paymentMethod: _paymentMethod,
-                  onPaymentMethodChanged: (value) =>
-                      setState(() => _paymentMethod = value),
+                  installmentCount: _installmentCount,
+                  firstDueDate: _firstDueDate,
+                  maxDiscountPercent: _maxDiscountPercent,
+                  maxDiscountCents: _maxDiscountCents,
+                  onPaymentMethodChanged: (value) {
+                    setState(() => _paymentMethod = value);
+                    _syncPaymentWithTotal();
+                  },
+                  onInstallmentCountChanged: (value) =>
+                      setState(() => _installmentCount = value),
+                  onFirstDueDateChanged: (value) =>
+                      setState(() => _firstDueDate = value),
                   subtotalCents: _subtotalCents,
                   saving: _saving,
                   onCartChanged: () {
@@ -1924,7 +2187,13 @@ class _CartPanel extends StatelessWidget {
     required this.discount,
     required this.paymentAmount,
     required this.paymentMethod,
+    required this.installmentCount,
+    required this.firstDueDate,
+    required this.maxDiscountPercent,
+    required this.maxDiscountCents,
     required this.onPaymentMethodChanged,
+    required this.onInstallmentCountChanged,
+    required this.onFirstDueDateChanged,
     required this.subtotalCents,
     required this.saving,
     required this.onCartChanged,
@@ -1938,7 +2207,13 @@ class _CartPanel extends StatelessWidget {
   final TextEditingController discount;
   final TextEditingController paymentAmount;
   final String paymentMethod;
+  final int installmentCount;
+  final DateTime firstDueDate;
+  final double maxDiscountPercent;
+  final int maxDiscountCents;
   final ValueChanged<String> onPaymentMethodChanged;
+  final ValueChanged<int> onInstallmentCountChanged;
+  final ValueChanged<DateTime> onFirstDueDateChanged;
   final int subtotalCents;
   final bool saving;
   final VoidCallback onCartChanged;
@@ -1957,8 +2232,19 @@ class _CartPanel extends StatelessWidget {
     final currentTotalCents = _nonNegativeCents(
       subtotalCents - currentDiscountCents,
     );
+    final manualDiscountTooHigh =
+        !pdvMode && currentDiscountCents > maxDiscountCents + 1;
     final currentChangeCents = _nonNegativeCents(
       currentPaidCents - currentTotalCents,
+    );
+    final usesReceivableInstallments =
+        paymentMethod == 'boleto' || paymentMethod == 'crediario';
+    final usesInstallments =
+        usesReceivableInstallments || paymentMethod == 'credito';
+    final previewInstallments = buildSaleInstallments(
+      totalCents: currentPaidCents,
+      count: installmentCount,
+      firstDueDate: firstDueDate,
     );
     return AppCard(
       padding: EdgeInsets.all(pdvMode ? 24 : 18),
@@ -1990,8 +2276,14 @@ class _CartPanel extends StatelessWidget {
             keyboardType: TextInputType.text,
             inputFormatters: const [BrazilianMoneyInputFormatter()],
             onChanged: (_) => onAmountChanged(),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Desconto',
+              helperText: pdvMode
+                  ? null
+                  : 'Máximo permitido: ${_money(maxDiscountCents / 100)} (${formatBrazilianMoneyInput(maxDiscountPercent)}%)',
+              errorText: manualDiscountTooHigh
+                  ? 'Desconto acima do limite permitido'
+                  : null,
               border: OutlineInputBorder(),
             ),
           ),
@@ -2019,6 +2311,79 @@ class _CartPanel extends StatelessWidget {
               border: OutlineInputBorder(),
             ),
           ),
+          if (usesInstallments) ...[
+            const SizedBox(height: 10),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final narrow = constraints.maxWidth < 520;
+                final countField = DropdownButtonFormField<int>(
+                  initialValue: installmentCount,
+                  decoration: const InputDecoration(
+                    labelText: 'Parcelas',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: [
+                    for (var count = 1; count <= 12; count++)
+                      DropdownMenuItem(value: count, child: Text('${count}x')),
+                  ],
+                  onChanged: (value) => onInstallmentCountChanged(value ?? 1),
+                );
+                final dateButton = usesReceivableInstallments
+                    ? OutlinedButton.icon(
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: firstDueDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                            locale: const Locale('pt', 'BR'),
+                          );
+                          if (picked != null) onFirstDueDateChanged(picked);
+                        },
+                        icon: const Icon(Icons.event_outlined),
+                        label: Text(
+                          '1º vencimento ${formatBrazilianDate(firstDueDate)}',
+                        ),
+                      )
+                    : null;
+                final installmentValue = previewInstallments.isEmpty
+                    ? _money(0)
+                    : _money(previewInstallments.first.amountCents / 100);
+                final valueLabel = Align(
+                  alignment: narrow ? Alignment.centerLeft : Alignment.center,
+                  child: Text(
+                    'Parcela: $installmentValue',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                );
+                if (narrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      countField,
+                      if (dateButton != null) ...[
+                        const SizedBox(height: 8),
+                        dateButton,
+                      ],
+                      const SizedBox(height: 8),
+                      valueLabel,
+                    ],
+                  );
+                }
+                return Row(
+                  children: [
+                    SizedBox(width: 130, child: countField),
+                    if (dateButton != null) ...[
+                      const SizedBox(width: 10),
+                      Expanded(child: dateButton),
+                    ],
+                    const SizedBox(width: 10),
+                    valueLabel,
+                  ],
+                );
+              },
+            ),
+          ],
           const SizedBox(height: 14),
           _MoneyRow(
             'Total',
@@ -2509,6 +2874,26 @@ class _MoneyRow extends StatelessWidget {
                   : const Color(0xFF0F172A),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SalePreviewLine extends StatelessWidget {
+  const _SalePreviewLine(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
         ],
       ),
     );

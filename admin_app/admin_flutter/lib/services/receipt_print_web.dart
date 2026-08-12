@@ -33,6 +33,8 @@ Future<void> openNonFiscalSaleReceipt({
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
+  List<SaleInstallmentPayload> installments = const [],
+  int? creditInstallmentCount,
 }) async {
   final receipt = _buildNonFiscalSaleReceiptHtml(
     sale: sale,
@@ -40,6 +42,8 @@ Future<void> openNonFiscalSaleReceipt({
     companyDocument: companyDocument,
     cashRegisterNumber: cashRegisterNumber,
     operatorName: operatorName,
+    installments: installments,
+    creditInstallmentCount: creditInstallmentCount,
   );
   final blob = html.Blob([receipt], 'text/html;charset=utf-8');
   final url = html.Url.createObjectUrlFromBlob(blob);
@@ -201,6 +205,8 @@ String _buildNonFiscalSaleReceiptHtml({
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
+  List<SaleInstallmentPayload> installments = const [],
+  int? creditInstallmentCount,
 }) {
   final rows = sale.items.map((item) {
     return '''
@@ -209,14 +215,25 @@ String _buildNonFiscalSaleReceiptHtml({
       </tr>
       <tr>
         <td>${_quantity(item.quantity)} ${_escape(item.unit)}</td>
-        <td class="right">x ${_money(item.unitPrice)}</td>
-        <td class="right">${_money(item.totalPrice)}</td>
+        <td class="right muted">x ${_money(item.unitPrice)}</td>
+        <td class="right strong">${_money(item.totalPrice)}</td>
       </tr>
     ''';
   }).join();
   final payments = sale.payments.map((payment) {
     return '<div class="between"><span>${_escape(_paymentLabel(payment.method))}</span><span>${_money(payment.amount)}</span></div>';
   }).join();
+  final installmentRows = installments.map((installment) {
+    return '<div class="between"><span>${installment.number}/${installments.length} - ${_shortDate(installment.dueDate)}</span><span>${_money(installment.amount)}</span></div>';
+  }).join();
+  final hasCredit = sale.payments.any((payment) => payment.method == 'credito');
+  final creditInstallments = hasCredit
+      ? (creditInstallmentCount ?? _creditInstallmentsFromNotes(sale))
+      : null;
+  final creditInstallmentInfo =
+      creditInstallments == null || creditInstallments <= 1
+      ? ''
+      : '<div class="between"><span>Parcelamento</span><span>${creditInstallments}x de ${_money(sale.totalAmount / creditInstallments)}</span></div>';
   final document = (companyDocument ?? '').trim();
   final notes = (sale.notes ?? '').trim();
   return '''
@@ -228,18 +245,24 @@ String _buildNonFiscalSaleReceiptHtml({
   <style>
     @page { size: 80mm auto; margin: 3mm; }
     * { box-sizing: border-box; }
-    body { width: 72mm; margin: 0 auto; color: #111; font: 11px/1.25 Arial, sans-serif; }
+    body { width: 72mm; margin: 0 auto; color: #111827; font: 11px/1.35 Arial, Helvetica, sans-serif; }
     .center { text-align: center; }
-    .brand { font-size: 17px; font-weight: 900; }
-    .warning { margin: 7px 0; padding: 6px; border: 2px solid #111; font-size: 13px; font-weight: 900; text-align: center; }
-    .line { border-top: 1px dashed #111; margin: 7px 0; }
+    .brand { font-size: 15px; font-weight: 900; text-transform: uppercase; }
+    .document { margin-top: 2px; color: #374151; }
+    .stamp { margin: 8px 0; padding: 6px; border: 2px solid #111827; border-radius: 2px; text-align: center; }
+    .stamp-title { font-size: 13px; font-weight: 900; letter-spacing: .3px; }
+    .stamp-subtitle { font-size: 9px; font-weight: 800; }
+    .line { border-top: 1px dashed #111827; margin: 8px 0; }
     table { width: 100%; border-collapse: collapse; }
     td { padding: 2px 0; vertical-align: top; }
-    .item-name { padding-top: 5px; font-weight: 800; }
+    .item-name { padding-top: 6px; font-weight: 900; }
     .right { text-align: right; }
     .between { display: flex; justify-content: space-between; margin: 2px 0; }
-    .total { font-size: 14px; font-weight: 900; }
+    .strong { font-weight: 800; }
+    .total { font-size: 15px; font-weight: 900; }
     .muted { font-size: 9px; }
+    .section-title { margin-bottom: 3px; font-size: 10px; font-weight: 900; text-transform: uppercase; }
+    .summary { padding: 4px 0; }
     .actions { margin: 10px 0; }
     button { width: 100%; height: 34px; border: 0; border-radius: 4px; background: #0f766e; color: #fff; font-weight: 800; }
     @media print { .actions { display: none; } body { width: 72mm; } }
@@ -249,24 +272,31 @@ String _buildNonFiscalSaleReceiptHtml({
   <div class="actions"><button onclick="window.print()">Imprimir cupom</button></div>
   <div class="center">
     <div class="brand">${_escape(companyName)}</div>
-    ${document.isEmpty ? '' : '<div>CNPJ ${_escape(_formatDocument(document))}</div>'}
+    ${document.isEmpty ? '' : '<div class="document">CNPJ ${_escape(_formatDocument(document))}</div>'}
   </div>
-  <div class="warning">CUPOM NÃO FISCAL<br><span class="muted">NÃO É DOCUMENTO FISCAL</span></div>
-  <div>Venda: ${_escape(sale.number ?? sale.id.toString())}</div>
+  <div class="stamp">
+    <div class="stamp-title">CUPOM NÃO FISCAL</div>
+    <div class="stamp-subtitle">NÃO É DOCUMENTO FISCAL</div>
+  </div>
+  <div class="between"><span>Venda</span><span>${_escape(sale.number ?? sale.id.toString())}</span></div>
   ${((cashRegisterNumber ?? sale.cashRegisterNumber) ?? '').trim().isEmpty ? '' : '<div>Caixa: ${_escape((cashRegisterNumber ?? sale.cashRegisterNumber)!.trim())}</div>'}
-  <div>Data: ${_date(sale.soldAt)}</div>
-  <div>Operador: ${_escape(operatorName ?? sale.sellerName ?? '-')}</div>
+  <div class="between"><span>Data</span><span>${_date(sale.soldAt)}</span></div>
+  <div class="between"><span>Operador</span><span>${_escape(operatorName ?? sale.sellerName ?? '-')}</span></div>
   <div class="line"></div>
   <table>$rows</table>
   <div class="line"></div>
-  <div class="between"><span>Subtotal</span><span>${_money(sale.subtotalAmount)}</span></div>
-  ${sale.discountAmount > 0 ? '<div class="between"><span>Desconto</span><span>-${_money(sale.discountAmount)}</span></div>' : ''}
-  <div class="between total"><span>TOTAL</span><span>${_money(sale.totalAmount)}</span></div>
+  <div class="summary">
+    <div class="between"><span>Subtotal</span><span>${_money(sale.subtotalAmount)}</span></div>
+    ${sale.discountAmount > 0 ? '<div class="between"><span>Desconto</span><span>-${_money(sale.discountAmount)}</span></div>' : ''}
+    <div class="between total"><span>TOTAL</span><span>${_money(sale.totalAmount)}</span></div>
+  </div>
   <div class="line"></div>
-  <div><strong>Pagamentos</strong></div>
+  <div class="section-title">Pagamentos</div>
   $payments
   <div class="between"><span>Recebido</span><span>${_money(sale.amountPaid)}</span></div>
   ${sale.changeAmount > 0 ? '<div class="between"><span>Troco</span><span>${_money(sale.changeAmount)}</span></div>' : ''}
+  $creditInstallmentInfo
+  ${installmentRows.isEmpty ? '' : '<div class="line"></div><div class="section-title">Parcelas</div>$installmentRows'}
   ${notes.isEmpty ? '' : '<div class="line"></div><div>Observações: ${_escape(notes)}</div>'}
   <div class="line"></div>
   <div class="center muted">Comprovante comercial sem valor fiscal.</div>
@@ -351,7 +381,7 @@ String _buildReceiptHtml({
   <div class="box">$request</div>
   <div class="line"></div>
   <div>
-    Recebemos o equipamento descrito acima para avaliacao técnica.
+    Recebemos o equipamento descrito acima para avaliação técnica.
     A PapezzoSync não coleta tela, arquivos pessoais ou senhas sem consentimento.
   </div>
   <div class="signature">Assinatura do cliente</div>
@@ -369,6 +399,12 @@ String _date(DateTime value) {
   final local = value.toLocal();
   String two(int number) => number.toString().padLeft(2, '0');
   return '${two(local.day)}/${two(local.month)}/${local.year} ${two(local.hour)}:${two(local.minute)}';
+}
+
+String _shortDate(DateTime value) {
+  final local = value.toLocal();
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(local.day)}/${two(local.month)}/${local.year}';
 }
 
 String _money(double value) =>
@@ -394,6 +430,19 @@ String _paymentLabel(String method) {
     'outro': 'Outro',
   };
   return labels[method] ?? method;
+}
+
+int? _creditInstallmentsFromNotes(Sale sale) {
+  for (final payment in sale.payments) {
+    final notes = payment.notes ?? '';
+    final match = RegExp(
+      r'Cr[eé]dito\s+(\d+)x',
+      caseSensitive: false,
+    ).firstMatch(notes);
+    if (match == null) continue;
+    return int.tryParse(match.group(1) ?? '');
+  }
+  return null;
 }
 
 String _formatDocument(String value) {

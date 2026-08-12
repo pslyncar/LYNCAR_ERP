@@ -75,6 +75,7 @@ COMPANY_COLUMNS = [
     ("xml_email_token", "VARCHAR(40)"),
     ("xml_email_enabled", "BOOLEAN NOT NULL DEFAULT true"),
     ("business_day_cutoff_minutes", "INTEGER NOT NULL DEFAULT 180"),
+    ("sales_max_discount_percent", "NUMERIC(5, 2) NOT NULL DEFAULT 100"),
 ]
 
 BILLING_COLUMNS = [

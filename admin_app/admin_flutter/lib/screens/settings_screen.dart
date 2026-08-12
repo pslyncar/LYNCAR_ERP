@@ -8,6 +8,7 @@ import '../models/fiscal.dart';
 import '../models/session.dart';
 import '../models/system_user.dart';
 import '../services/api_client.dart';
+import '../utils/input_formatters.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
 import 'fiscal_screen.dart';
@@ -255,6 +256,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   bool get _canOpenProfiles => widget.session.can('permissions:manage');
+  bool get _canOpenSalesSettings => widget.session.can('permissions:manage');
   bool get _canOpenPdvLogo =>
       widget.session.hasModule('pdv_windows') &&
       widget.session.can('pdv_operators:manage');
@@ -281,6 +283,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           subtitle: 'Crie cargos e defina o que cada usuário pode fazer',
           icon: Icons.admin_panel_settings_outlined,
           screen: AccessProfilesPanel(session: widget.session),
+        ),
+      if (_canOpenSalesSettings)
+        _SettingsOption(
+          keyName: 'sales',
+          title: 'Vendas',
+          subtitle: 'Limite de desconto da venda manual e da OS',
+          icon: Icons.sell_outlined,
+          screen: SalesSettingsPanel(session: widget.session),
         ),
       if (_canOpenPdvLogo)
         _SettingsOption(
@@ -369,6 +379,173 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class SalesSettingsPanel extends StatefulWidget {
+  const SalesSettingsPanel({super.key, required this.session});
+
+  final Session session;
+
+  @override
+  State<SalesSettingsPanel> createState() => _SalesSettingsPanelState();
+}
+
+class _SalesSettingsPanelState extends State<SalesSettingsPanel> {
+  late final ApiClient _api = ApiClient(widget.session.apiBaseUrl);
+  final _maxDiscount = TextEditingController(text: '100,00');
+  bool _loading = true;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _maxDiscount.dispose();
+    super.dispose();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final settings = await _api.getSalesSettings(widget.session.token);
+      if (!mounted) return;
+      setState(() {
+        _maxDiscount.text = formatBrazilianMoneyInput(
+          settings.maxDiscountPercent,
+        );
+      });
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Não foi possível carregar as configurações.');
+      }
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _save() async {
+    final value = parseBrazilianNumber(_maxDiscount.text);
+    if (value < 0 || value > 100) {
+      setState(() => _error = 'Informe um percentual entre 0% e 100%.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final settings = await _api.updateSalesSettings(
+        widget.session.token,
+        value,
+      );
+      if (!mounted) return;
+      setState(() {
+        _maxDiscount.text = formatBrazilianMoneyInput(
+          settings.maxDiscountPercent,
+        );
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configurações de vendas salvas.')),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Não foi possível salvar as configurações.');
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const AppCard(child: Center(child: CircularProgressIndicator()));
+    }
+    return AppCard(
+      child: ListView(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.sell_outlined,
+                  color: Color(0xFF2563EB),
+                ),
+              ),
+              const SizedBox(width: 14),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Vendas',
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Controle o desconto máximo da venda manual e da venda gerada pela OS.',
+                      style: TextStyle(color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+              IconButton.outlined(
+                tooltip: 'Recarregar',
+                onPressed: _saving ? null : _load,
+                icon: const Icon(Icons.refresh),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          if (_error != null) ...[
+            ErrorPanel(message: _error!, onRetry: _load),
+            const SizedBox(height: 14),
+          ],
+          TextField(
+            controller: _maxDiscount,
+            keyboardType: TextInputType.text,
+            inputFormatters: const [BrazilianMoneyInputFormatter()],
+            decoration: const InputDecoration(
+              labelText: 'Desconto máximo permitido (%)',
+              helperText:
+                  'Ex.: 5,00 permite desconto até 5% do subtotal. O PDV não usa esta regra.',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 18),
+          Align(
+            alignment: Alignment.centerRight,
+            child: FilledButton.icon(
+              onPressed: _saving ? null : _save,
+              icon: const Icon(Icons.save_outlined),
+              label: Text(_saving ? 'Salvando...' : 'Salvar'),
+            ),
+          ),
+        ],
       ),
     );
   }

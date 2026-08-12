@@ -34,6 +34,12 @@ class SalePaymentCreate(BaseModel):
     notes: str | None = None
 
 
+class SaleInstallmentCreate(BaseModel):
+    number: int = Field(ge=1, le=12)
+    due_date: datetime
+    amount: Decimal = Field(gt=0)
+
+
 class SaleCreate(BaseModel):
     client_id: int | None = None
     seller_user_id: int | None = None
@@ -47,6 +53,7 @@ class SaleCreate(BaseModel):
     notes: str | None = None
     items: list[SaleItemCreate] = Field(min_length=1)
     payments: list[SalePaymentCreate] = Field(min_length=1)
+    installments: list[SaleInstallmentCreate] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_finalized_payment(self) -> "SaleCreate":
@@ -101,8 +108,8 @@ class SaleRead(BaseModel):
     canceled_at: datetime | None
     has_fiscal_document: bool = False
     has_authorized_fiscal_document: bool = False
-    items: list[SaleItemRead] = []
-    payments: list[SalePaymentRead] = []
+    items: list[SaleItemRead] = Field(default_factory=list)
+    payments: list[SalePaymentRead] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -114,3 +121,7 @@ class SaleSellerRead(BaseModel):
     role: str
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class SalesSettings(BaseModel):
+    max_discount_percent: Decimal = Field(default=100, ge=0, le=100)

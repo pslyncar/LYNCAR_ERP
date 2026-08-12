@@ -1397,6 +1397,26 @@ class ApiClient {
     return Sale.fromJson(_decodeResponse(response));
   }
 
+  Future<SalesSettings> getSalesSettings(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/sales/settings'),
+      headers: _authHeaders(token),
+    );
+    return SalesSettings.fromJson(_decodeResponse(response));
+  }
+
+  Future<SalesSettings> updateSalesSettings(
+    String token,
+    double maxDiscountPercent,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/sales/settings'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'max_discount_percent': maxDiscountPercent}),
+    );
+    return SalesSettings.fromJson(_decodeResponse(response));
+  }
+
   Future<Sale> cancelSale(String token, int saleId) async {
     final response = await http.post(
       Uri.parse('$baseUrl/sales/$saleId/cancel'),

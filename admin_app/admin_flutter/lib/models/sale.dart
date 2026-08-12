@@ -159,6 +159,7 @@ class SalePayload {
     required this.notes,
     required this.items,
     required this.payments,
+    this.installments = const [],
   });
 
   final int? clientId;
@@ -172,6 +173,7 @@ class SalePayload {
   final String notes;
   final List<SaleItemPayload> items;
   final List<SalePaymentPayload> payments;
+  final List<SaleInstallmentPayload> installments;
 
   Map<String, dynamic> toJson() {
     return {
@@ -191,7 +193,20 @@ class SalePayload {
       'notes': notes.trim().isEmpty ? null : notes.trim(),
       'items': items.map((item) => item.toJson()).toList(),
       'payments': payments.map((payment) => payment.toJson()).toList(),
+      'installments': installments.map((item) => item.toJson()).toList(),
     };
+  }
+}
+
+class SalesSettings {
+  const SalesSettings({required this.maxDiscountPercent});
+
+  final double maxDiscountPercent;
+
+  factory SalesSettings.fromJson(Map<String, dynamic> json) {
+    return SalesSettings(
+      maxDiscountPercent: _toDouble(json['max_discount_percent']),
+    );
   }
 }
 
@@ -266,6 +281,27 @@ class SalePaymentPayload {
       'amount': _moneyJson(amount),
       'authorization_code': authorizationCode,
       'notes': notes,
+    };
+  }
+}
+
+class SaleInstallmentPayload {
+  const SaleInstallmentPayload({
+    required this.number,
+    required this.dueDate,
+    required this.amount,
+  });
+
+  final int number;
+  final DateTime dueDate;
+  final double amount;
+
+  Map<String, dynamic> toJson() {
+    final date = DateTime(dueDate.year, dueDate.month, dueDate.day, 12);
+    return {
+      'number': number,
+      'due_date': date.toIso8601String(),
+      'amount': _moneyJson(amount),
     };
   }
 }

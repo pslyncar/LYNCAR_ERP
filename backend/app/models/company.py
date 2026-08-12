@@ -1,6 +1,7 @@
 from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, Integer, JSON, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, Integer, JSON, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.master_database import MasterBase
@@ -55,6 +56,11 @@ class Company(MasterBase):
         Integer,
         nullable=False,
         default=180,
+    )
+    sales_max_discount_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=Decimal("100.00"),
     )
     digital_certificate_configured: Mapped[bool] = mapped_column(Boolean, default=False)
     digital_certificate_name: Mapped[str | None] = mapped_column(String(180))

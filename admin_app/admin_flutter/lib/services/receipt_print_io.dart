@@ -22,6 +22,8 @@ Future<void> openNonFiscalSaleReceipt({
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
+  List<SaleInstallmentPayload> installments = const [],
+  int? creditInstallmentCount,
 }) async {
   if (!Platform.isWindows) return;
   await _printWindowsRaw(

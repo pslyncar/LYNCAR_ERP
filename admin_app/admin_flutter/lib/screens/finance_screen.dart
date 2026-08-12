@@ -721,8 +721,7 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
   @override
   Widget build(BuildContext context) {
     final account = widget.account;
-    final receivables = [...account.receivables]
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    final statementEntries = _statementEntries(account.receivables);
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
       child: ConstrainedBox(
@@ -780,72 +779,8 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      for (final receivable in receivables)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: AppCard(
-                            child: ExpansionTile(
-                              tilePadding: EdgeInsets.zero,
-                              childrenPadding: const EdgeInsets.only(top: 8),
-                              title: Text(
-                                '${receivable.number ?? 'CR${receivable.id}'} - ${receivable.saleNumber ?? receivable.description}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                ),
-                              ),
-                              subtitle: Text(
-                                '${_dateTime(receivable.saleSoldAt ?? receivable.createdAt)} | ${_statusLabel(receivable.status)}',
-                              ),
-                              trailing: Wrap(
-                                spacing: 8,
-                                crossAxisAlignment: WrapCrossAlignment.center,
-                                children: [
-                                  Text(
-                                    _money(receivable.balanceAmount),
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                  if (widget.canPay &&
-                                      receivable.balanceAmount > 0.009)
-                                    FilledButton.icon(
-                                      onPressed: () async {
-                                        final navigator = Navigator.of(context);
-                                        final changed = await _pay(receivable);
-                                        if (!mounted) return;
-                                        if (changed) {
-                                          navigator.pop(true);
-                                        }
-                                      },
-                                      icon: const Icon(Icons.payments_outlined),
-                                      label: const Text('Baixar'),
-                                    ),
-                                  if (widget.canPay &&
-                                      receivable.balanceAmount > 0.009)
-                                    IconButton(
-                                      tooltip: 'Cancelar crediario',
-                                      onPressed: () async {
-                                        final navigator = Navigator.of(context);
-                                        final changed = await _cancelReceivable(
-                                          receivable,
-                                        );
-                                        if (!mounted) return;
-                                        if (changed) navigator.pop(true);
-                                      },
-                                      icon: const Icon(Icons.cancel_outlined),
-                                    ),
-                                ],
-                              ),
-                              children: [
-                                _StatementAmounts(receivable: receivable),
-                                const SizedBox(height: 10),
-                                _SaleItems(items: receivable.saleItems),
-                                const SizedBox(height: 10),
-                                _PaymentHistory(payments: receivable.payments),
-                              ],
-                            ),
-                          ),
-                        ),
+                      for (final entry in statementEntries)
+                        _buildStatementEntry(context, entry),
                     ],
                   ),
                 ),
@@ -853,6 +788,167 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatementEntry(BuildContext context, _StatementEntry entry) {
+    if (entry.isSaleGroup) {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 10),
+        child: AppCard(
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            childrenPadding: const EdgeInsets.only(top: 8),
+            title: Text(
+              'Venda ${entry.saleNumber} - ${entry.receivables.length} parcelas',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            subtitle: Text(_saleGroupSubtitle(entry)),
+            trailing: Text(
+              'Saldo ${_money(entry.balanceAmount)}',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+            children: [
+              _SaleGroupSummary(entry: entry),
+              const SizedBox(height: 10),
+              _SaleItems(items: entry.first.saleItems),
+              const SizedBox(height: 10),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Parcelas',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              for (final receivable in entry.receivables)
+                _buildInstallmentRow(context, receivable),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final receivable = entry.first;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        child: ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          childrenPadding: const EdgeInsets.only(top: 8),
+          title: Text(
+            _receivableStatementTitle(receivable),
+            style: const TextStyle(fontWeight: FontWeight.w900),
+          ),
+          subtitle: Text(_receivableStatementSubtitle(receivable)),
+          trailing: Wrap(
+            spacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              Text(
+                _receivableBalanceLabel(receivable),
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+              if (widget.canPay && receivable.balanceAmount > 0.009)
+                FilledButton.icon(
+                  onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final changed = await _pay(receivable);
+                    if (!mounted) return;
+                    if (changed) navigator.pop(true);
+                  },
+                  icon: const Icon(Icons.payments_outlined),
+                  label: const Text('Baixar'),
+                ),
+              if (widget.canPay && receivable.balanceAmount > 0.009)
+                IconButton(
+                  tooltip: 'Cancelar crediario',
+                  onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final changed = await _cancelReceivable(receivable);
+                    if (!mounted) return;
+                    if (changed) navigator.pop(true);
+                  },
+                  icon: const Icon(Icons.cancel_outlined),
+                ),
+            ],
+          ),
+          children: [
+            _ReceivableSaleSummary(receivable: receivable),
+            const SizedBox(height: 10),
+            _StatementAmounts(receivable: receivable),
+            const SizedBox(height: 10),
+            _SaleItems(items: receivable.saleItems),
+            const SizedBox(height: 10),
+            _PaymentHistory(payments: receivable.payments),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInstallmentRow(BuildContext context, Receivable receivable) {
+    final installment = _installmentInfo(receivable.description);
+    final title = installment == null
+        ? receivable.number ?? 'CR${receivable.id}'
+        : '${receivable.number ?? 'CR${receivable.id}'} - parcela ${installment.current}/${installment.total}';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 220,
+            child: Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          SizedBox(
+            width: 130,
+            child: Text('Vence ${_date(receivable.dueDate)}'),
+          ),
+          SizedBox(width: 120, child: Text(_statusLabel(receivable.status))),
+          SizedBox(
+            width: 140,
+            child: Text(
+              'Saldo ${_money(receivable.balanceAmount)}',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ),
+          if (widget.canPay && receivable.balanceAmount > 0.009)
+            FilledButton.icon(
+              onPressed: () async {
+                final navigator = Navigator.of(context);
+                final changed = await _pay(receivable);
+                if (!mounted) return;
+                if (changed) navigator.pop(true);
+              },
+              icon: const Icon(Icons.payments_outlined),
+              label: const Text('Baixar'),
+            ),
+          if (widget.canPay && receivable.balanceAmount > 0.009)
+            IconButton(
+              tooltip: 'Cancelar parcela',
+              onPressed: () async {
+                final navigator = Navigator.of(context);
+                final changed = await _cancelReceivable(receivable);
+                if (!mounted) return;
+                if (changed) navigator.pop(true);
+              },
+              icon: const Icon(Icons.cancel_outlined),
+            ),
+        ],
       ),
     );
   }
@@ -1189,6 +1285,146 @@ class _ReceivablePaymentDialogState extends State<_ReceivablePaymentDialog> {
   }
 }
 
+class _StatementEntry {
+  const _StatementEntry(this.receivables);
+
+  final List<Receivable> receivables;
+
+  Receivable get first => receivables.first;
+
+  bool get isSaleGroup => first.saleId != null && receivables.length > 1;
+
+  String get saleNumber => first.saleNumber ?? 'V${first.saleId}';
+
+  double get originalAmount =>
+      receivables.fold(0, (sum, item) => sum + item.originalAmount);
+
+  double get paidAmount =>
+      receivables.fold(0, (sum, item) => sum + item.paidAmount);
+
+  double get balanceAmount =>
+      receivables.fold(0, (sum, item) => sum + item.balanceAmount);
+
+  double get saleTotal {
+    final itemsTotal = first.saleItems.fold<double>(
+      0,
+      (sum, item) => sum + item.totalPrice,
+    );
+    return itemsTotal > 0.009 ? itemsTotal : originalAmount;
+  }
+
+  DateTime get sortDate => first.saleSoldAt ?? first.createdAt;
+}
+
+List<_StatementEntry> _statementEntries(List<Receivable> receivables) {
+  final saleGroups = <int, List<Receivable>>{};
+  final entries = <_StatementEntry>[];
+
+  for (final receivable in receivables) {
+    final saleId = receivable.saleId;
+    if (saleId == null) {
+      entries.add(_StatementEntry([receivable]));
+      continue;
+    }
+    saleGroups.putIfAbsent(saleId, () => []).add(receivable);
+  }
+
+  for (final group in saleGroups.values) {
+    group.sort(_compareInstallments);
+    entries.add(_StatementEntry(group));
+  }
+
+  entries.sort((a, b) => b.sortDate.compareTo(a.sortDate));
+  return entries;
+}
+
+int _compareInstallments(Receivable a, Receivable b) {
+  final aInstallment = _installmentInfo(a.description);
+  final bInstallment = _installmentInfo(b.description);
+  final aOrder = aInstallment?.current ?? 0;
+  final bOrder = bInstallment?.current ?? 0;
+  if (aOrder != bOrder) return aOrder.compareTo(bOrder);
+  final aDue = a.dueDate;
+  final bDue = b.dueDate;
+  if (aDue != null && bDue != null) return aDue.compareTo(bDue);
+  if (aDue != null) return -1;
+  if (bDue != null) return 1;
+  return a.id.compareTo(b.id);
+}
+
+String _saleGroupSubtitle(_StatementEntry entry) {
+  final method = _methodFromReceivableDescription(entry.first.description);
+  final parts = <String>[
+    _dateTime(entry.sortDate),
+    '${entry.receivables.length} parcelas',
+    _statusLabel(_saleGroupStatus(entry)),
+  ];
+  if (method != null) parts.add(method);
+  return parts.join(' | ');
+}
+
+String _saleGroupStatus(_StatementEntry entry) {
+  if (entry.receivables.every((item) => item.status == 'paid')) {
+    return 'paid';
+  }
+  if (entry.receivables.every((item) => item.status == 'canceled')) {
+    return 'canceled';
+  }
+  if (entry.paidAmount > 0.009) return 'partial';
+  return 'open';
+}
+
+class _SaleGroupSummary extends StatelessWidget {
+  const _SaleGroupSummary({required this.entry});
+
+  final _StatementEntry entry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt_long_outlined, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Venda ${entry.saleNumber}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              Chip(
+                label: Text('${entry.receivables.length} parcelas'),
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _StatementTextLine('Total da venda', _money(entry.saleTotal)),
+          _StatementTextLine('Total parcelado', _money(entry.originalAmount)),
+          _StatementTextLine('Recebido', _money(entry.paidAmount)),
+          _StatementTextLine('Saldo em aberto', _money(entry.balanceAmount)),
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              'A venda é única. As parcelas abaixo são os títulos financeiros para baixa por vencimento.',
+              style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _StatementAmounts extends StatelessWidget {
   const _StatementAmounts({required this.receivable});
 
@@ -1196,12 +1432,111 @@ class _StatementAmounts extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final installment = _installmentInfo(receivable.description);
     return Column(
       children: [
-        _ReviewLine('Valor original', receivable.originalAmount),
+        _ReviewLine(
+          installment == null ? 'Valor original' : 'Valor da parcela',
+          receivable.originalAmount,
+        ),
         _ReviewLine('Recebido', receivable.paidAmount),
-        _ReviewLine('Saldo', receivable.balanceAmount, strong: true),
+        _ReviewLine(
+          installment == null ? 'Saldo' : 'Saldo da parcela',
+          receivable.balanceAmount,
+          strong: true,
+        ),
       ],
+    );
+  }
+}
+
+class _ReceivableSaleSummary extends StatelessWidget {
+  const _ReceivableSaleSummary({required this.receivable});
+
+  final Receivable receivable;
+
+  @override
+  Widget build(BuildContext context) {
+    final saleTotal = receivable.saleItems.fold<double>(
+      0,
+      (sum, item) => sum + item.totalPrice,
+    );
+    final installment = _installmentInfo(receivable.description);
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.receipt_long_outlined, color: Color(0xFF2563EB)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  receivable.saleNumber == null
+                      ? receivable.description
+                      : 'Venda ${receivable.saleNumber}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              if (installment != null)
+                Chip(
+                  label: Text(
+                    'Parcela ${installment.current}/${installment.total}',
+                  ),
+                  visualDensity: VisualDensity.compact,
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _StatementTextLine(
+            'T�tulo em aberto',
+            '${receivable.number ?? 'CR${receivable.id}'} - ${_money(receivable.originalAmount)}',
+          ),
+          if (receivable.dueDate != null)
+            _StatementTextLine('Vencimento', _date(receivable.dueDate)),
+          if (saleTotal > 0.009)
+            _StatementTextLine('Total da venda', _money(saleTotal)),
+          if (installment != null)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: Text(
+                'Os itens abaixo pertencem � venda completa. O valor deste t�tulo � somente a parcela selecionada.',
+                style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatementTextLine extends StatelessWidget {
+  const _StatementTextLine(this.label, this.value);
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF64748B)),
+            ),
+          ),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.w800)),
+        ],
+      ),
     );
   }
 }
@@ -1972,6 +2307,61 @@ String _creditLabel(Client? client) {
   if (client == null) return '-';
   if (!client.allowCredit) return 'Bloqueado';
   return '${client.creditStatus} / ${_money(client.creditLimit)}';
+}
+
+String _receivableStatementTitle(Receivable receivable) {
+  final number = receivable.number ?? 'CR${receivable.id}';
+  final installment = _installmentInfo(receivable.description);
+  if (receivable.saleNumber == null) {
+    return '$number - ${receivable.description}';
+  }
+  if (installment == null) return '$number - Venda ${receivable.saleNumber}';
+  return '$number - Venda ${receivable.saleNumber} - parcela ${installment.current}/${installment.total}';
+}
+
+String _receivableStatementSubtitle(Receivable receivable) {
+  final parts = <String>[
+    _dateTime(receivable.saleSoldAt ?? receivable.createdAt),
+    _statusLabel(receivable.status),
+  ];
+  if (receivable.dueDate != null) {
+    parts.add('vence em ${_date(receivable.dueDate)}');
+  }
+  final method = _methodFromReceivableDescription(receivable.description);
+  if (method != null) parts.add(method);
+  return parts.join(' | ');
+}
+
+String _receivableBalanceLabel(Receivable receivable) {
+  final installment = _installmentInfo(receivable.description);
+  final value = _money(receivable.balanceAmount);
+  return installment == null ? value : 'Parcela $value';
+}
+
+_InstallmentInfo? _installmentInfo(String description) {
+  final match = RegExp(
+    r'parcela\s+(\d+)\s*/\s*(\d+)',
+    caseSensitive: false,
+  ).firstMatch(description);
+  if (match == null) return null;
+  final current = int.tryParse(match.group(1) ?? '');
+  final total = int.tryParse(match.group(2) ?? '');
+  if (current == null || total == null) return null;
+  return _InstallmentInfo(current: current, total: total);
+}
+
+String? _methodFromReceivableDescription(String description) {
+  final normalized = _normalize(description);
+  if (normalized.contains('boleto')) return 'Boleto';
+  if (normalized.contains('crediario')) return 'Crediário';
+  return null;
+}
+
+class _InstallmentInfo {
+  const _InstallmentInfo({required this.current, required this.total});
+
+  final int current;
+  final int total;
 }
 
 String _statusLabel(String value) {

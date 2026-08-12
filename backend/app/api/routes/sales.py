@@ -2,20 +2,30 @@ from datetime import date, datetime, time
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.api.dependencies import require_permission
+from app.api.dependencies import bearer_scheme, require_any_permission, require_permission
 from app.core.database import get_db
+from app.core.master_database import MasterSessionLocal
+from app.core.security import decode_access_token
 from app.models.cash_closing import CashClosing, CashClosingMovement, CashClosingPayment
 from app.models.client import Client
+from app.models.company import Company
 from app.models.pdv_cash_session import PdvCashSession
 from app.models.product import Product
 from app.models.receivable import Receivable
 from app.models.sale import Sale, SaleItem, SalePayment
 from app.models.stock_movement import StockMovement
 from app.models.user import User
-from app.schemas.sale import SaleCreate, SalePaymentsUpdate, SaleRead, SaleSellerRead
+from app.schemas.sale import (
+    SaleCreate,
+    SalePaymentsUpdate,
+    SaleRead,
+    SaleSellerRead,
+    SalesSettings,
+)
 from app.services.product_batches import apply_batch_out, return_to_batch
 from app.services.product_costs import apply_stock_in, apply_stock_out
 
@@ -24,10 +34,40 @@ router = APIRouter()
 MONEY_QUANT = Decimal("0.01")
 MONEY_TOLERANCE = Decimal("0.01")
 FINANCIAL_PAYMENT_METHODS = {"boleto", "crediario"}
+DEFAULT_MAX_DISCOUNT_PERCENT = Decimal("100.00")
 
 
 def money(value: Decimal) -> Decimal:
     return value.quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+
+
+def percent(value: Decimal | int | float | str | None) -> Decimal:
+    if value is None:
+        return DEFAULT_MAX_DISCOUNT_PERCENT
+    normalized = Decimal(str(value)).quantize(MONEY_QUANT, rounding=ROUND_HALF_UP)
+    return max(Decimal("0.00"), min(DEFAULT_MAX_DISCOUNT_PERCENT, normalized))
+
+
+def _tenant_company_code(
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    if credentials is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
+    payload = decode_access_token(credentials.credentials)
+    company_code = payload.get("company_code")
+    if not isinstance(company_code, str) or not company_code.strip():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.")
+    return company_code.strip()
+
+
+def _sales_settings_for_company(company_code: str) -> SalesSettings:
+    with MasterSessionLocal() as master_db:
+        company = master_db.scalar(select(Company).where(Company.code == company_code))
+        if company is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Empresa nao encontrada.")
+        return SalesSettings(
+            max_discount_percent=percent(company.sales_max_discount_percent)
+        )
 
 
 def sale_number(sale_id: int) -> str:
@@ -36,6 +76,31 @@ def sale_number(sale_id: int) -> str:
 
 def receivable_number(receivable_id: int) -> str:
     return f"CR{receivable_id}"
+
+
+@router.get("/settings", response_model=SalesSettings)
+def get_sales_settings(
+    current_user: User = Depends(require_any_permission("sales:view", "sales:create")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> SalesSettings:
+    return _sales_settings_for_company(_tenant_company_code(credentials))
+
+
+@router.put("/settings", response_model=SalesSettings)
+def update_sales_settings(
+    payload: SalesSettings,
+    current_user: User = Depends(require_permission("permissions:manage")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> SalesSettings:
+    company_code = _tenant_company_code(credentials)
+    max_discount_percent = percent(payload.max_discount_percent)
+    with MasterSessionLocal() as master_db:
+        company = master_db.scalar(select(Company).where(Company.code == company_code))
+        if company is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Empresa nao encontrada.")
+        company.sales_max_discount_percent = max_discount_percent
+        master_db.commit()
+    return SalesSettings(max_discount_percent=max_discount_percent)
 
 
 def is_financial_payment(method: str) -> bool:
@@ -362,6 +427,7 @@ def create_sale(
     sale_in: SaleCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("sales:create")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> Sale:
     offline_client_id = (sale_in.offline_client_id or "").strip() or None
     if offline_client_id:
@@ -451,10 +517,28 @@ def create_sale(
     total = money(subtotal - sale_in.discount_amount)
     if total < 0:
         raise HTTPException(status_code=400, detail="Desconto maior que o total da venda.")
+    if sale_in.source in {"venda", "os"} and sale_in.discount_amount > 0:
+        settings = _sales_settings_for_company(_tenant_company_code(credentials))
+        max_discount = money(
+            subtotal * settings.max_discount_percent / Decimal("100")
+        )
+        if sale_in.discount_amount > max_discount + MONEY_TOLERANCE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Desconto acima do limite permitido para vendas. "
+                    f"Maximo permitido: {settings.max_discount_percent}%."
+                ),
+            )
 
     amount_paid = Decimal("0.00")
     financial_amount = Decimal("0.00")
     financial_methods: set[str] = set()
+    installment_total = money(
+        sum((money(item.amount) for item in sale_in.installments), Decimal("0"))
+    )
+    if sale_in.installments and len(sale_in.installments) > 12:
+        raise HTTPException(status_code=400, detail="Venda permite no maximo 12 parcelas.")
     for payment_in in sale_in.payments:
         payment_amount = money(payment_in.amount)
         amount_paid += payment_amount
@@ -493,6 +577,16 @@ def create_sale(
                 status_code=400,
                 detail="Cliente bloqueado para crediario.",
             )
+        if sale_in.installments and abs(installment_total - financial_amount) > MONEY_TOLERANCE:
+            raise HTTPException(
+                status_code=400,
+                detail="Total das parcelas precisa bater com o valor do boleto/crediario.",
+            )
+    if sale_in.installments and financial_amount <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Parcelas sao permitidas apenas para boleto ou crediario.",
+        )
 
     sale.subtotal_amount = subtotal
     sale.total_amount = total
@@ -502,7 +596,27 @@ def create_sale(
     db.add(sale)
     db.flush()
     sale.number = sale_number(sale.id)
-    if financial_amount > 0:
+    if financial_amount > 0 and sale_in.installments:
+        for installment in sorted(sale_in.installments, key=lambda item: item.number):
+            amount = money(installment.amount)
+            receivable = Receivable(
+                sale_id=sale.id,
+                client_id=sale.client_id,
+                description=(
+                    f"{financial_description(financial_methods, sale.number)} "
+                    f"parcela {installment.number}/{len(sale_in.installments)}"
+                ),
+                original_amount=amount,
+                paid_amount=Decimal("0"),
+                balance_amount=amount,
+                status="open",
+                due_date=installment.due_date,
+                notes="Gerado automaticamente por venda parcelada.",
+            )
+            db.add(receivable)
+            db.flush()
+            receivable.number = receivable_number(receivable.id)
+    elif financial_amount > 0:
         receivable = Receivable(
             sale_id=sale.id,
             client_id=sale.client_id,
