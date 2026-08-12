@@ -1495,7 +1495,7 @@ class _ReceivableSaleSummary extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           _StatementTextLine(
-            'T�tulo em aberto',
+            'Título em aberto',
             '${receivable.number ?? 'CR${receivable.id}'} - ${_money(receivable.originalAmount)}',
           ),
           if (receivable.dueDate != null)
@@ -1506,7 +1506,7 @@ class _ReceivableSaleSummary extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.only(top: 6),
               child: Text(
-                'Os itens abaixo pertencem � venda completa. O valor deste t�tulo � somente a parcela selecionada.',
+                'Os itens abaixo pertencem à venda completa. O valor deste título é somente a parcela selecionada.',
                 style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
               ),
             ),
