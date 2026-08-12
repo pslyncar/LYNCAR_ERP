@@ -133,6 +133,8 @@ const _permissionUsageHints = {
   'sales:view': 'Mostra o botão Vendas e o histórico/listagem de vendas.',
   'sales:create': 'Mostra o botão PDV e permite vender no caixa.',
   'sales:cancel': 'Permite cancelar venda e estornar estoque.',
+  'sales:discount:override':
+      'Permite ultrapassar o limite de desconto na venda manual e na venda da OS.',
   'pdv_operators:manage':
       'Mostra Op. PDV e permite cadastrar operadores/fiscais do caixa.',
   'cash_closings:manage':

@@ -167,6 +167,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
       builder: (context) => _ServiceOrderSaleDialog(
         api: _api,
         token: widget.session.token,
+        session: widget.session,
         order: order,
         client: _findClient(_clients, order.clientId),
         products: _products,
@@ -647,6 +648,7 @@ class _ServiceOrderSaleDialog extends StatefulWidget {
   const _ServiceOrderSaleDialog({
     required this.api,
     required this.token,
+    required this.session,
     required this.order,
     required this.products,
     required this.sellers,
@@ -655,6 +657,7 @@ class _ServiceOrderSaleDialog extends StatefulWidget {
 
   final ApiClient api;
   final String token;
+  final Session session;
   final ServiceOrder order;
   final Client? client;
   final List<Product> products;
@@ -697,8 +700,12 @@ class _ServiceOrderSaleDialogState extends State<_ServiceOrderSaleDialog> {
   }
 
   int get _discountCents => _moneyCents(widget.order.discountAmount);
-  int get _maxDiscountCents =>
-      _moneyCents((_subtotalCents / 100) * (_maxDiscountPercent / 100));
+  bool get _canOverrideDiscount =>
+      widget.session.role == 'admin' ||
+      widget.session.can('sales:discount:override');
+  int get _maxDiscountCents => _canOverrideDiscount
+      ? _subtotalCents
+      : _moneyCents((_subtotalCents / 100) * (_maxDiscountPercent / 100));
   int get _totalCents => _nonNegativeCents(_subtotalCents - _discountCents);
   int get _paidCents => _moneyCents(parseBrazilianNumber(_paymentAmount.text));
   bool get _usesFinancialPayment =>
@@ -987,7 +994,7 @@ class _ServiceOrderSaleDialogState extends State<_ServiceOrderSaleDialog> {
       setState(() => _error = 'A OS precisa ter valor maior que zero.');
       return;
     }
-    if (_discountCents > _maxDiscountCents + 1) {
+    if (!_canOverrideDiscount && _discountCents > _maxDiscountCents + 1) {
       setState(
         () => _error =
             'Desconto acima do limite permitido. Máximo: ${_money(_maxDiscountCents / 100)} (${formatBrazilianMoneyInput(_maxDiscountPercent)}%).',
@@ -1243,8 +1250,12 @@ class _ServiceOrderSaleDialogState extends State<_ServiceOrderSaleDialog> {
               _MoneySummaryLine('Itens', _subtotalCents / 100),
               _MoneySummaryLine('Desconto da OS', _discountCents / 100),
               _SalePreviewLine(
-                'Desconto máximo permitido',
-                '${_money(_maxDiscountCents / 100)} (${formatBrazilianMoneyInput(_maxDiscountPercent)}%)',
+                _canOverrideDiscount
+                    ? 'Desconto liberado'
+                    : 'Desconto máximo permitido',
+                _canOverrideDiscount
+                    ? 'Perfil autorizado a ultrapassar o limite'
+                    : '${_money(_maxDiscountCents / 100)} (${formatBrazilianMoneyInput(_maxDiscountPercent)}%)',
               ),
               _MoneySummaryLine('Total', _totalCents / 100, strong: true),
               _MoneySummaryLine('Recebido', _paidCents / 100),

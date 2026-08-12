@@ -103,6 +103,12 @@ PERMISSIONS = [
     PermissionDefinition("sales:create", "Operar PDV", "pdv", "Abrir o PDV, registrar vendas e receber pagamentos."),
     PermissionDefinition("sales:cancel", "Cancelar vendas", "sales", "Cancelar vendas e estornar estoque."),
     PermissionDefinition(
+        "sales:discount:override",
+        "Liberar desconto acima do limite",
+        "sales",
+        "Permite ultrapassar o limite de desconto configurado para venda manual e venda de OS.",
+    ),
+    PermissionDefinition(
         "cash_closings:manage",
         "Conferir caixa e tesouraria",
         "cash_closings",

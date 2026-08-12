@@ -788,7 +788,10 @@ class _SalesScreenState extends State<SalesScreen> {
     (sum, item) => sum + _moneyCents(item.quantity * item.unitPrice),
   );
   int get _discountCents => _moneyCents(parseBrazilianNumber(_discount.text));
-  int get _maxDiscountCents => widget.pdvMode
+  bool get _canOverrideDiscount =>
+      widget.session.role == 'admin' ||
+      widget.session.can('sales:discount:override');
+  int get _maxDiscountCents => widget.pdvMode || _canOverrideDiscount
       ? _subtotalCents
       : _moneyCents((_subtotalCents / 100) * (_maxDiscountPercent / 100));
   int get _totalCents => _nonNegativeCents(_subtotalCents - _discountCents);
@@ -1031,7 +1034,9 @@ class _SalesScreenState extends State<SalesScreen> {
       setState(() => _error = 'Pagamento menor que o total.');
       return;
     }
-    if (!widget.pdvMode && _discountCents > _maxDiscountCents + 1) {
+    if (!widget.pdvMode &&
+        !_canOverrideDiscount &&
+        _discountCents > _maxDiscountCents + 1) {
       setState(
         () => _error =
             'Desconto acima do limite permitido. Máximo: ${_money(_maxDiscountCents / 100)} (${formatBrazilianMoneyInput(_maxDiscountPercent)}%).',
@@ -1433,6 +1438,7 @@ class _SalesScreenState extends State<SalesScreen> {
                     firstDueDate: _firstDueDate,
                     maxDiscountPercent: _maxDiscountPercent,
                     maxDiscountCents: _maxDiscountCents,
+                    canOverrideDiscount: _canOverrideDiscount,
                     onPaymentMethodChanged: (value) {
                       setState(() => _paymentMethod = value);
                       _syncPaymentWithTotal();
@@ -1596,6 +1602,7 @@ class _SalesScreenState extends State<SalesScreen> {
                   firstDueDate: _firstDueDate,
                   maxDiscountPercent: _maxDiscountPercent,
                   maxDiscountCents: _maxDiscountCents,
+                  canOverrideDiscount: _canOverrideDiscount,
                   onPaymentMethodChanged: (value) {
                     setState(() => _paymentMethod = value);
                     _syncPaymentWithTotal();
@@ -2191,6 +2198,7 @@ class _CartPanel extends StatelessWidget {
     required this.firstDueDate,
     required this.maxDiscountPercent,
     required this.maxDiscountCents,
+    required this.canOverrideDiscount,
     required this.onPaymentMethodChanged,
     required this.onInstallmentCountChanged,
     required this.onFirstDueDateChanged,
@@ -2211,6 +2219,7 @@ class _CartPanel extends StatelessWidget {
   final DateTime firstDueDate;
   final double maxDiscountPercent;
   final int maxDiscountCents;
+  final bool canOverrideDiscount;
   final ValueChanged<String> onPaymentMethodChanged;
   final ValueChanged<int> onInstallmentCountChanged;
   final ValueChanged<DateTime> onFirstDueDateChanged;
@@ -2233,7 +2242,9 @@ class _CartPanel extends StatelessWidget {
       subtotalCents - currentDiscountCents,
     );
     final manualDiscountTooHigh =
-        !pdvMode && currentDiscountCents > maxDiscountCents + 1;
+        !pdvMode &&
+        !canOverrideDiscount &&
+        currentDiscountCents > maxDiscountCents + 1;
     final currentChangeCents = _nonNegativeCents(
       currentPaidCents - currentTotalCents,
     );
@@ -2280,6 +2291,8 @@ class _CartPanel extends StatelessWidget {
               labelText: 'Desconto',
               helperText: pdvMode
                   ? null
+                  : canOverrideDiscount
+                  ? 'Desconto livre para este perfil.'
                   : 'Máximo permitido: ${_money(maxDiscountCents / 100)} (${formatBrazilianMoneyInput(maxDiscountPercent)}%)',
               errorText: manualDiscountTooHigh
                   ? 'Desconto acima do limite permitido'

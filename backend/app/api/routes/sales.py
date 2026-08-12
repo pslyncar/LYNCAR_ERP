@@ -26,6 +26,7 @@ from app.schemas.sale import (
     SaleSellerRead,
     SalesSettings,
 )
+from app.services.access_control import user_has_permission
 from app.services.product_batches import apply_batch_out, return_to_batch
 from app.services.product_costs import apply_stock_in, apply_stock_out
 
@@ -517,7 +518,11 @@ def create_sale(
     total = money(subtotal - sale_in.discount_amount)
     if total < 0:
         raise HTTPException(status_code=400, detail="Desconto maior que o total da venda.")
-    if sale_in.source in {"venda", "os"} and sale_in.discount_amount > 0:
+    if (
+        sale_in.source in {"venda", "os"}
+        and sale_in.discount_amount > 0
+        and not user_has_permission(db, current_user, "sales:discount:override")
+    ):
         settings = _sales_settings_for_company(_tenant_company_code(credentials))
         max_discount = money(
             subtotal * settings.max_discount_percent / Decimal("100")
