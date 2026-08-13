@@ -1505,6 +1505,7 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
   String _status = 'aberta';
   String _priority = 'media';
   ServiceOrder? _current;
+  int _dialogTabIndex = 0;
   double _maxDiscountPercent = 100;
   bool _saving = false;
   String? _error;
@@ -1970,66 +1971,89 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                   _textArea(_notes, 'Observações internas'),
                   if (order != null) ...[
                     const SizedBox(height: 18),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _printBrowserReceipt,
-                          icon: const Icon(Icons.receipt_long_outlined),
-                          label: const Text('Imprimir PDF / navegador'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _printThermalReceipt,
-                          icon: const Icon(Icons.print_outlined),
-                          label: const Text('Impressao termica direta'),
-                        ),
-                      ],
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: SegmentedButton<int>(
+                        segments: const [
+                          ButtonSegment<int>(
+                            value: 0,
+                            icon: Icon(Icons.assignment_outlined),
+                            label: Text('OS'),
+                          ),
+                          ButtonSegment<int>(
+                            value: 1,
+                            icon: Icon(Icons.history_outlined),
+                            label: Text('Historico'),
+                          ),
+                        ],
+                        selected: {_dialogTabIndex},
+                        onSelectionChanged: (selection) {
+                          setState(() => _dialogTabIndex = selection.first);
+                        },
+                      ),
                     ),
                     const SizedBox(height: 18),
-                    const _SectionTitle(
-                      title: 'Diagnostico tecnico e valores',
-                      subtitle: 'Preenchido depois da avaliacao técnica.',
-                    ),
-                    const SizedBox(height: 12),
-                    _textArea(_diagnosis, 'Diagnostico tecnico'),
-                    const SizedBox(height: 12),
-                    _textArea(
-                      _performed,
-                      'Servico executado / solucao aplicada',
-                    ),
-                    const SizedBox(height: 12),
-                    _ResponsiveFields(
-                      children: [
-                        _field(_labor, 'Mao de obra (R\$)', money: true),
-                        _field(_discount, 'Desconto (R\$)', money: true),
-                      ],
-                    ),
-                    const SizedBox(height: 18),
-                    _ItemsEditor(
-                      order: order,
-                      products: widget.products,
-                      selectedProductId: _productId,
-                      description: _itemDescription,
-                      quantity: _itemQuantity,
-                      price: _itemPrice,
-                      onProductChanged: (value) {
-                        final product = _findProduct(widget.products, value);
-                        setState(() {
-                          _productId = value;
-                          if (product != null) {
-                            _itemDescription.text = product.name;
-                            _itemPrice.text = _moneyInput(product.salePrice);
-                          }
-                        });
-                      },
-                      onAdd: _saving ? null : _addItem,
-                      onDelete: _deleteItem,
-                    ),
-                    const SizedBox(height: 12),
-                    _TotalsPanel(order: order),
-                    const SizedBox(height: 12),
-                    _ServiceOrderHistory(events: order.events),
+                    if (_dialogTabIndex == 0) ...[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _printBrowserReceipt,
+                            icon: const Icon(Icons.receipt_long_outlined),
+                            label: const Text('Imprimir PDF / navegador'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: _printThermalReceipt,
+                            icon: const Icon(Icons.print_outlined),
+                            label: const Text('Impressao termica direta'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      const _SectionTitle(
+                        title: 'Diagnostico tecnico e valores',
+                        subtitle: 'Preenchido depois da avaliacao técnica.',
+                      ),
+                      const SizedBox(height: 12),
+                      _textArea(_diagnosis, 'Diagnostico tecnico'),
+                      const SizedBox(height: 12),
+                      _textArea(
+                        _performed,
+                        'Servico executado / solucao aplicada',
+                      ),
+                      const SizedBox(height: 12),
+                      _ResponsiveFields(
+                        children: [
+                          _field(_labor, 'Mao de obra (R\$)', money: true),
+                          _field(_discount, 'Desconto (R\$)', money: true),
+                        ],
+                      ),
+                      const SizedBox(height: 18),
+                      _ItemsEditor(
+                        order: order,
+                        products: widget.products,
+                        selectedProductId: _productId,
+                        description: _itemDescription,
+                        quantity: _itemQuantity,
+                        price: _itemPrice,
+                        onProductChanged: (value) {
+                          final product = _findProduct(widget.products, value);
+                          setState(() {
+                            _productId = value;
+                            if (product != null) {
+                              _itemDescription.text = product.name;
+                              _itemPrice.text = _moneyInput(product.salePrice);
+                            }
+                          });
+                        },
+                        onAdd: _saving ? null : _addItem,
+                        onDelete: _deleteItem,
+                      ),
+                      const SizedBox(height: 12),
+                      _TotalsPanel(order: order),
+                    ] else
+                      _ServiceOrderHistory(events: order.events),
                   ],
                   if (_error != null) ...[
                     const SizedBox(height: 12),
