@@ -202,7 +202,7 @@ class _AppShellState extends State<AppShell> {
           ),
         if (widget.session.hasModule('sales') &&
             (widget.session.can('sales:view') ||
-                widget.session.can('sales:create')))
+                widget.session.can('sales:manual')))
           _Destination(
             label: 'Vendas',
             icon: Icons.receipt_long_outlined,

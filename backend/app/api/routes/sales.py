@@ -124,7 +124,9 @@ def sync_service_order_status_from_sale(
 
 @router.get("/settings", response_model=SalesSettings)
 def get_sales_settings(
-    current_user: User = Depends(require_any_permission("sales:view", "sales:create")),
+    current_user: User = Depends(
+        require_any_permission("sales:view", "sales:manual", "sales:create")
+    ),
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> SalesSettings:
     return _sales_settings_for_company(_tenant_company_code(credentials))
@@ -455,7 +457,9 @@ def mark_administrative_cash_control_canceled(
 @router.get("/sellers", response_model=list[SaleSellerRead])
 def list_sellers(
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("sales:create")),
+    current_user: User = Depends(
+        require_any_permission("sales:manual", "sales:create", "service_orders:sell")
+    ),
 ) -> list[User]:
     return list(
         db.scalars(
@@ -470,7 +474,9 @@ def list_sellers(
 def create_sale(
     sale_in: SaleCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("sales:create")),
+    current_user: User = Depends(
+        require_any_permission("sales:manual", "sales:create", "service_orders:sell")
+    ),
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> Sale:
     offline_client_id = (sale_in.offline_client_id or "").strip() or None
@@ -498,6 +504,18 @@ def create_sale(
             raise HTTPException(
                 status_code=400,
                 detail="Venda da OS precisa de vendedor com codigo cadastrado.",
+            )
+    elif sale_in.source == "pdv":
+        if not user_has_configured_permission(db, current_user, "sales:create"):
+            raise HTTPException(
+                status_code=403,
+                detail="Usuario sem permissao para operar o PDV.",
+            )
+    else:
+        if not user_has_configured_permission(db, current_user, "sales:manual"):
+            raise HTTPException(
+                status_code=403,
+                detail="Usuario sem permissao para criar venda manual.",
             )
     if sale_in.cash_session_id is not None:
         cash_session = db.get(PdvCashSession, sale_in.cash_session_id)
@@ -842,7 +860,7 @@ def update_sale_payments(
     sale_id: int,
     payload: SalePaymentsUpdate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("sales:create")),
+    current_user: User = Depends(require_any_permission("sales:manual", "sales:create")),
 ) -> Sale:
     sale = get_sale_or_404(db, sale_id)
     if sale.status == "cancelada":

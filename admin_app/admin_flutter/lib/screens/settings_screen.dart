@@ -22,97 +22,96 @@ const _moduleLabels = {
   'stock_entries': 'Entradas',
   'stock_withdrawals': 'Baixas',
   'suppliers': 'Fornecedores',
-  'production': 'Produção',
-  'service_contracts': 'Contratos variáveis',
+  'production': 'ProduÃ§Ã£o',
+  'service_contracts': 'Contratos variÃ¡veis',
   'sales': 'Vendas',
   'cash_closings': 'Caixa e tesouraria',
   'pdv': 'Vendas de PDV',
   'pdv_windows': 'PDV Windows',
-  'service_orders': 'Ordens de serviço',
+  'service_orders': 'Ordens de serviÃ§o',
   'monitoring': 'Monitoramento',
-  'dashboard': 'Início',
-  'reports': 'Relatórios',
+  'dashboard': 'InÃ­cio',
+  'reports': 'RelatÃ³rios',
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
   'support': 'Suporte',
   'settings': 'Configuracoes',
-  'users': 'Usuários',
-  'permissions': 'Permissões',
+  'users': 'UsuÃ¡rios',
+  'permissions': 'PermissÃµes',
 };
 
 const _moduleDescriptions = {
-  'clients': 'Cadastro de clientes, dados de contato e crediário.',
-  'products': 'Produtos, preços, estoque e códigos de barras.',
+  'clients': 'Cadastro de clientes, dados de contato e crediÃ¡rio.',
+  'products': 'Produtos, preÃ§os, estoque e cÃ³digos de barras.',
   'stock': 'Estoque, produtos e lotes/validade.',
-  'stock_entries': 'Entradas, XML de compra e conferência de mercadoria.',
+  'stock_entries': 'Entradas, XML de compra e conferÃªncia de mercadoria.',
   'stock_withdrawals': 'Baixas de estoque por perda, consumo e vencimento.',
   'suppliers': 'Cadastro de fornecedores usados nas compras.',
   'service_contracts':
       'Contratos recorrentes por apontamento, baixa de produtos e fechamento quinzenal.',
-  'sales': 'Consulta e cancelamento do histórico de vendas.',
-  'pdv': 'Abrir PDV, vender no caixa, operadores, fiscais e autorizações.',
+  'sales': 'Venda manual administrativa e consulta do histÃ³rico de vendas.',
+  'pdv': 'PDV Web/caixa, operadores, fiscais e autorizaÃ§Ãµes.',
   'finance': 'Contas a pagar, contas a receber e baixas.',
   'fiscal': 'Certificado, NFC-e/NF-e e documentos fiscais.',
   'support': 'Abertura e acompanhamento de chamados com o suporte.',
   'settings': 'Configuracoes',
   'dashboard': 'Tela inicial, avisos e indicadores.',
-  'reports': 'Relatórios e exportações.',
-  'users': 'Cadastro de usuários do sistema.',
-  'permissions': 'Criação de perfis e liberação de acessos.',
-  'production': 'Ordens de produção e baixa de insumos.',
-  'service_orders': 'Ordens de serviço e atendimento técnico.',
+  'reports': 'RelatÃ³rios e exportaÃ§Ãµes.',
+  'users': 'Cadastro de usuÃ¡rios do sistema.',
+  'permissions': 'CriaÃ§Ã£o de perfis e liberaÃ§Ã£o de acessos.',
+  'production': 'Ordens de produÃ§Ã£o e baixa de insumos.',
+  'service_orders': 'Ordens de serviÃ§o e atendimento tÃ©cnico.',
   'monitoring': 'Monitoramento de equipamentos.',
   'equipments': 'Equipamentos vinculados a clientes.',
-  'tickets': 'Chamados e solicitações.',
+  'tickets': 'Chamados e solicitaÃ§Ãµes.',
 };
 
 const _moduleQuickGuides = {
-  'pdv':
-      'Para liberar somente o caixa/PDV, marque Operar PDV. Não marque Ver vendas no módulo Vendas.',
+  'pdv': 'Controla somente o botÃ£o PDV Web/caixa. NÃ£o libera a tela Vendas.',
   'sales':
-      'Controla o histórico/listagem de vendas. Não é obrigatório para vender no PDV.',
+      'Controla a venda manual administrativa e o histÃ³rico. NÃ£o libera o PDV Web.',
   'service_contracts':
-      'Use para empresas que cobram por atendimento/quinzena. Ver contratos só consulta; Gerenciar cria regras e produtos; Apontar confirma dias e baixa estoque; Fechar gera contas a receber.',
+      'Use para empresas que cobram por atendimento/quinzena. Ver contratos sÃ³ consulta; Gerenciar cria regras e produtos; Apontar confirma dias e baixa estoque; Fechar gera contas a receber.',
   'clients':
-      'Use só se o usuário puder ver ou cadastrar clientes. Para caixa simples, pode ficar desmarcado.',
+      'Use sÃ³ se o usuÃ¡rio puder ver ou cadastrar clientes. Para caixa simples, pode ficar desmarcado.',
   'products':
-      'Ver produtos ajuda o usuário a consultar itens. Criar/editar/excluir muda o cadastro.',
+      'Ver produtos ajuda o usuÃ¡rio a consultar itens. Criar/editar/excluir muda o cadastro.',
   'stock':
-      'Ver estoque permite consultar saldo. Entradas/conferência são para compras e recebimento.',
+      'Ver estoque permite consultar saldo. Entradas/conferÃªncia sÃ£o para compras e recebimento.',
   'finance':
-      'Libera contas a receber, contas a pagar, crediário e baixas financeiras.',
+      'Libera contas a receber, contas a pagar, crediÃ¡rio e baixas financeiras.',
   'fiscal':
-      'Libera configurações fiscais, certificados e documentos NFC-e/NF-e quando contratado.',
+      'Libera configuraÃ§Ãµes fiscais, certificados e documentos NFC-e/NF-e quando contratado.',
   'users':
-      'Libera criar e alterar usuários. Normalmente fica só para dono/gerente.',
+      'Libera criar e alterar usuÃ¡rios. Normalmente fica sÃ³ para dono/gerente.',
   'permissions':
-      'Libera criar perfis de acesso. Normalmente fica só para dono/gerente.',
+      'Libera criar perfis de acesso. Normalmente fica sÃ³ para dono/gerente.',
   'reports':
-      'Libera relatórios. Alguns relatórios também dependem do módulo de origem.',
+      'Libera relatÃ³rios. Alguns relatÃ³rios tambÃ©m dependem do mÃ³dulo de origem.',
 };
 
 const _permissionUsageHints = {
-  'dashboard:view': 'Mostra o botão Início.',
-  'clients:view': 'Mostra o botão Clientes e permite consultar clientes.',
+  'dashboard:view': 'Mostra o botÃ£o InÃ­cio.',
+  'clients:view': 'Mostra o botÃ£o Clientes e permite consultar clientes.',
   'clients:create': 'Permite cadastrar novo cliente.',
   'clients:update': 'Permite alterar cadastro de cliente.',
   'clients:delete': 'Permite excluir cliente.',
   'products:view':
       'Mostra Produtos/Estoque quando combinado com estoque e permite consultar itens.',
   'products:create': 'Permite cadastrar produto.',
-  'products:update': 'Permite alterar produto, preço e dados do cadastro.',
+  'products:update': 'Permite alterar produto, preÃ§o e dados do cadastro.',
   'products:delete': 'Permite excluir produto.',
   'stock:view': 'Mostra Estoque e permite consultar saldo.',
   'stock:move': 'Permite movimentar estoque manualmente.',
   'app:access':
-      'Permite entrar no aplicativo Android/iOS. Sem esta permissão o login do app é bloqueado.',
+      'Permite entrar no aplicativo Android/iOS. Sem esta permissÃ£o o login do app Ã© bloqueado.',
   'stock:withdraw':
-      'Mostra apenas Baixas e registra perdas, consumo e outras saídas no nome do usuário logado.',
+      'Mostra apenas Baixas e registra perdas, consumo e outras saÃ­das no nome do usuÃ¡rio logado.',
   'stock:entries:view': 'Mostra Entradas e permite consultar recebimentos.',
-  'stock:entries:create': 'Permite lançar entrada de mercadoria.',
+  'stock:entries:create': 'Permite lanÃ§ar entrada de mercadoria.',
   'stock:entries:confirm':
-      'Permite finalizar conferência e movimentar estoque.',
-  'stock:entries:return': 'Permite marcar divergência/devolução na entrada.',
+      'Permite finalizar conferÃªncia e movimentar estoque.',
+  'stock:entries:return': 'Permite marcar divergÃªncia/devoluÃ§Ã£o na entrada.',
   'stock:entries:create_product_from_xml':
       'Permite criar produto a partir de XML de compra.',
   'stock:batches:view': 'Permite ver lotes e validades.',
@@ -120,8 +119,8 @@ const _permissionUsageHints = {
   'suppliers:create': 'Permite cadastrar fornecedor.',
   'suppliers:update': 'Permite alterar fornecedor.',
   'suppliers:delete': 'Permite excluir fornecedor.',
-  'production:view': 'Mostra Produção e permite consultar ordens.',
-  'production:create': 'Permite criar ordem de produção e baixar insumos.',
+  'production:view': 'Mostra ProduÃ§Ã£o e permite consultar ordens.',
+  'production:create': 'Permite criar ordem de produÃ§Ã£o e baixar insumos.',
   'service_contracts:view':
       'Mostra Contratos e permite consultar contratos e apontamentos.',
   'service_contracts:manage':
@@ -130,8 +129,10 @@ const _permissionUsageHints = {
       'Permite gerar, editar, confirmar e cancelar apontamentos; confirmar baixa estoque.',
   'service_contracts:billing':
       'Permite fechar quinzena e gerar contas a receber.',
-  'sales:view': 'Mostra o botão Vendas e o histórico/listagem de vendas.',
-  'sales:create': 'Mostra o botão PDV e permite vender no caixa.',
+  'sales:view': 'Mostra a aba HistÃ³rico no menu Vendas.',
+  'sales:manual':
+      'Mostra o menu Vendas e permite criar venda manual fora do PDV.',
+  'sales:create': 'Mostra o botÃ£o PDV Web e permite vender no caixa.',
   'sales:cancel': 'Permite cancelar venda e estornar estoque.',
   'sales:discount:override':
       'Permite ultrapassar o limite de desconto na venda manual e na venda da OS.',
@@ -140,23 +141,23 @@ const _permissionUsageHints = {
   'cash_closings:manage':
       'Permite aprovar, corrigir e marcar divergencias em Caixa e tesouraria.',
   'finance:view': 'Mostra Financeiro.',
-  'finance:receivables:view': 'Permite ver contas a receber e crediário.',
+  'finance:receivables:view': 'Permite ver contas a receber e crediÃ¡rio.',
   'finance:receivables:pay': 'Permite baixar/receber contas a receber.',
   'finance:payables:view': 'Permite ver contas a pagar.',
   'finance:payables:manage': 'Permite criar, alterar e baixar contas a pagar.',
-  'fiscal:view': 'Mostra área fiscal e status/configurações fiscais.',
-  'fiscal:settings': 'Permite alterar certificado e configuração fiscal.',
-  'fiscal:emit': 'Permite preparar/emissão fiscal quando disponível.',
+  'fiscal:view': 'Mostra Ã¡rea fiscal e status/configuraÃ§Ãµes fiscais.',
+  'fiscal:settings': 'Permite alterar certificado e configuraÃ§Ã£o fiscal.',
+  'fiscal:emit': 'Permite preparar/emissÃ£o fiscal quando disponÃ­vel.',
   'fiscal:documents:view': 'Permite consultar documentos fiscais/XMLs.',
-  'reports:view': 'Mostra Relatórios.',
-  'users:manage': 'Mostra Usuários e permite criar/alterar usuários.',
+  'reports:view': 'Mostra RelatÃ³rios.',
+  'users:manage': 'Mostra UsuÃ¡rios e permite criar/alterar usuÃ¡rios.',
   'permissions:manage': 'Permite criar e alterar perfis de acesso.',
 };
 
 const _profilePresets = [
   _ProfilePreset(
     'App baixas',
-    'Entra no aplicativo e registra saídas justificadas do estoque.',
+    'Entra no aplicativo e registra saÃ­das justificadas do estoque.',
     {'app:access', 'stock:withdraw'},
   ),
   _ProfilePreset(
@@ -179,7 +180,7 @@ const _profilePresets = [
     'products:view',
     'stock:view',
     'sales:view',
-    'sales:create',
+    'sales:manual',
     'reports:view',
   }),
   _ProfilePreset('Financeiro', 'Cuida das contas a pagar, receber e baixas.', {
@@ -194,7 +195,7 @@ const _profilePresets = [
   }),
   _ProfilePreset(
     'Estoque / Compras',
-    'Cadastra fornecedores, entradas e conferência de mercadoria.',
+    'Cadastra fornecedores, entradas e conferÃªncia de mercadoria.',
     {
       'dashboard:view',
       'products:view',
@@ -215,7 +216,7 @@ const _profilePresets = [
   ),
   _ProfilePreset(
     'Gerente',
-    'Acompanha a operação e resolve exceções do dia a dia.',
+    'Acompanha a operaÃ§Ã£o e resolve exceÃ§Ãµes do dia a dia.',
     {
       'dashboard:view',
       'clients:view',
@@ -227,6 +228,7 @@ const _profilePresets = [
       'stock:view',
       'stock:entries:view',
       'sales:view',
+      'sales:manual',
       'sales:create',
       'sales:cancel',
       'pdv_operators:manage',
@@ -282,7 +284,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _SettingsOption(
           keyName: 'profiles',
           title: 'Perfis de acesso',
-          subtitle: 'Crie cargos e defina o que cada usuário pode fazer',
+          subtitle: 'Crie cargos e defina o que cada usuÃ¡rio pode fazer',
           icon: Icons.admin_panel_settings_outlined,
           screen: AccessProfilesPanel(session: widget.session),
         ),
@@ -306,7 +308,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _SettingsOption(
           keyName: 'fiscal',
           title: 'Fiscal',
-          subtitle: 'Certificado A1, CSC/ID, séries e cadastro tributário',
+          subtitle: 'Certificado A1, CSC/ID, sÃ©ries e cadastro tributÃ¡rio',
           icon: Icons.receipt_long_outlined,
           screen: FiscalScreen(session: widget.session),
         ),
@@ -333,7 +335,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Expanded(
                       child: selectedOption == null
                           ? const AppCard(
-                              child: Text('Selecione uma configuração.'),
+                              child: Text('Selecione uma configuraÃ§Ã£o.'),
                             )
                           : selectedOption.screen,
                     ),
@@ -354,7 +356,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     Expanded(
                       child: selectedOption == null
                           ? const AppCard(
-                              child: Text('Selecione uma configuração.'),
+                              child: Text('Selecione uma configuraÃ§Ã£o.'),
                             )
                           : selectedOption.screen,
                     ),
@@ -367,12 +369,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Configurações',
+                  'ConfiguraÃ§Ãµes',
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
                 ),
                 const SizedBox(height: 6),
                 const Text(
-                  'Parâmetros do sistema que não fazem parte da operação diária',
+                  'ParÃ¢metros do sistema que nÃ£o fazem parte da operaÃ§Ã£o diÃ¡ria',
                   style: TextStyle(color: Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 18),
@@ -431,7 +433,9 @@ class _SalesSettingsPanelState extends State<SalesSettingsPanel> {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Não foi possível carregar as configurações.');
+        setState(
+          () => _error = 'NÃ£o foi possÃ­vel carregar as configuraÃ§Ãµes.',
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -460,13 +464,15 @@ class _SalesSettingsPanelState extends State<SalesSettingsPanel> {
         );
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Configurações de vendas salvas.')),
+        const SnackBar(content: Text('ConfiguraÃ§Ãµes de vendas salvas.')),
       );
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
-        setState(() => _error = 'Não foi possível salvar as configurações.');
+        setState(
+          () => _error = 'NÃ£o foi possÃ­vel salvar as configuraÃ§Ãµes.',
+        );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -509,7 +515,7 @@ class _SalesSettingsPanelState extends State<SalesSettingsPanel> {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Controle o desconto máximo da venda manual e da venda gerada pela OS.',
+                      'Controle o desconto mÃ¡ximo da venda manual e da venda gerada pela OS.',
                       style: TextStyle(color: Color(0xFF64748B)),
                     ),
                   ],
@@ -532,9 +538,9 @@ class _SalesSettingsPanelState extends State<SalesSettingsPanel> {
             keyboardType: TextInputType.text,
             inputFormatters: const [BrazilianMoneyInputFormatter()],
             decoration: const InputDecoration(
-              labelText: 'Desconto máximo permitido (%)',
+              labelText: 'Desconto mÃ¡ximo permitido (%)',
               helperText:
-                  'Ex.: 5,00 permite desconto até 5% do subtotal. O PDV não usa esta regra.',
+                  'Ex.: 5,00 permite desconto atÃ© 5% do subtotal. O PDV nÃ£o usa esta regra.',
               border: OutlineInputBorder(),
             ),
           ),
@@ -818,7 +824,7 @@ class _AccessProfilesPanelState extends State<AccessProfilesPanel> {
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } catch (_) {
-      setState(() => _error = 'Não foi possível carregar os perfis.');
+      setState(() => _error = 'NÃ£o foi possÃ­vel carregar os perfis.');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -891,7 +897,7 @@ class _AccessProfilesPanelState extends State<AccessProfilesPanel> {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Monte cargos da sua empresa usando apenas os módulos liberados no plano.',
+                      'Monte cargos da sua empresa usando apenas os mÃ³dulos liberados no plano.',
                       style: TextStyle(color: Color(0xFF64748B)),
                     ),
                   ],
@@ -920,7 +926,7 @@ class _AccessProfilesPanelState extends State<AccessProfilesPanel> {
               child: _roles.isEmpty
                   ? const Center(
                       child: Text(
-                        'Nenhum perfil cadastrado. Crie o primeiro para liberar novos usuários.',
+                        'Nenhum perfil cadastrado. Crie o primeiro para liberar novos usuÃ¡rios.',
                       ),
                     )
                   : ListView.separated(
@@ -1100,7 +1106,7 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } catch (_) {
-      setState(() => _error = 'Não foi possível salvar o perfil.');
+      setState(() => _error = 'NÃ£o foi possÃ­vel salvar o perfil.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1148,7 +1154,7 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
                   TextFormField(
                     controller: _description,
                     decoration: const InputDecoration(
-                      labelText: 'Descrição',
+                      labelText: 'DescriÃ§Ã£o',
                       border: OutlineInputBorder(),
                     ),
                   ),
@@ -1188,7 +1194,7 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
                     children: [
                       const Expanded(
                         child: Text(
-                          'Acessos por módulo',
+                          'Acessos por mÃ³dulo',
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w900,
@@ -1205,7 +1211,7 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
                   const Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Abra um módulo para ver o que cada acesso libera.',
+                      'Abra um mÃ³dulo para ver o que cada acesso libera.',
                       style: TextStyle(color: Color(0xFF64748B)),
                     ),
                   ),
@@ -1346,17 +1352,17 @@ class _PermissionHelpBox extends StatelessWidget {
           ),
           Gap(6),
           Text(
-            'Para liberar apenas o botão PDV, use o modelo Somente PDV ou marque Operar PDV em Vendas de PDV. Não marque Ver vendas se não quiser mostrar o botão Vendas.',
+            'Para liberar apenas o botao PDV Web, use o modelo Somente PDV ou marque Operar PDV Web em Vendas de PDV. Isso nao libera a tela Vendas.',
             style: TextStyle(color: Color(0xFF475569), height: 1.35),
           ),
           Gap(8),
           Text(
-            'Receita rápida: somente PDV = Início, Ver produtos, Ver estoque, Ver lotes e Operar PDV. Não precisa marcar Clientes, Vendas, Financeiro, Fiscal, Usuários ou Permissões.',
+            'Para liberar a venda administrativa, marque Criar venda manual em Vendas. Para liberar a aba de consulta, marque Ver historico de vendas.',
             style: TextStyle(color: Color(0xFF475569), height: 1.35),
           ),
           Gap(8),
           Text(
-            'Evite Liberar tudo quando quiser acesso limitado. Use Liberar tudo somente para gerente/dono daquele módulo.',
+            'Evite Liberar tudo quando quiser acesso limitado. Use Liberar tudo somente para gerente/dono daquele mÃ³dulo.',
             style: TextStyle(color: Color(0xFF475569), height: 1.35),
           ),
           Gap(8),
@@ -1390,7 +1396,7 @@ class _PresetPicker extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const Text(
-          'Começar por um modelo',
+          'ComeÃ§ar por um modelo',
           style: TextStyle(fontWeight: FontWeight.w900),
         ),
         const Gap(4),
@@ -1455,7 +1461,7 @@ class _PermissionModuleTile extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w900),
         ),
         subtitle: Text(
-          '${_moduleDescriptions[module] ?? 'Acessos deste módulo.'} $selectedCount/${permissions.length} selecionado(s).',
+          '${_moduleDescriptions[module] ?? 'Acessos deste mÃ³dulo.'} $selectedCount/${permissions.length} selecionado(s).',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
         ),
@@ -1566,7 +1572,7 @@ class _EmptySettingsPanel extends StatelessWidget {
           Gap(12),
           Expanded(
             child: Text(
-              'Nenhuma configuração adicional liberada para esta empresa.',
+              'Nenhuma configuraÃ§Ã£o adicional liberada para esta empresa.',
               style: TextStyle(color: Color(0xFF475569)),
             ),
           ),

@@ -183,6 +183,7 @@ def list_clients(
         require_any_permission(
             "clients:view",
             "sales:view",
+            "sales:manual",
             "sales:create",
             "service_orders:view",
             "service_orders:create",
@@ -227,6 +228,7 @@ def get_client(
         require_any_permission(
             "clients:view",
             "sales:view",
+            "sales:manual",
             "sales:create",
             "service_orders:view",
             "service_orders:create",

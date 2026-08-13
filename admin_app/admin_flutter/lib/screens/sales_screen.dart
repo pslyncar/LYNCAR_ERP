@@ -134,17 +134,21 @@ class _SalesScreenState extends State<SalesScreen> {
       _error = null;
     });
     try {
-      final canCreateSale = widget.session.can('sales:create');
+      final canCreateSale = widget.session.can('sales:manual');
+      final canOperatePdv = widget.session.can('sales:create');
+      final canViewSales = widget.session.can('sales:view');
       final clients = await _api.listClients(widget.session.token);
       final products = await _api.listProducts(
         widget.session.token,
         active: true,
       );
-      final sales = await _api.listSales(widget.session.token);
-      final operators = canCreateSale
+      final sales = canViewSales
+          ? await _api.listSales(widget.session.token)
+          : <Sale>[];
+      final operators = canOperatePdv
           ? await _api.listPdvOperators(widget.session.token)
           : <PdvOperator>[];
-      final sellers = canCreateSale
+      final sellers = canCreateSale || canOperatePdv
           ? await _api.listSaleSellers(widget.session.token)
           : <SaleSeller>[];
       final settings = await _api.getSalesSettings(widget.session.token);
@@ -1311,7 +1315,7 @@ class _SalesScreenState extends State<SalesScreen> {
   @override
   Widget build(BuildContext context) {
     final canViewSales = widget.session.can('sales:view');
-    final canCreateSale = widget.session.can('sales:create');
+    final canCreateSale = widget.session.can('sales:manual');
     final canCancelSale = widget.session.can('sales:cancel');
     final tabs = [
       if (canCreateSale)

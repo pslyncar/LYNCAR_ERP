@@ -203,6 +203,7 @@ def list_products(
             "products:view",
             "stock:withdraw",
             "sales:view",
+            "sales:manual",
             "sales:create",
             "service_orders:view",
             "service_orders:update",
@@ -251,6 +252,7 @@ def lookup_product_by_code(
             "products:view",
             "stock:withdraw",
             "sales:view",
+            "sales:manual",
             "sales:create",
             "service_orders:view",
             "service_orders:update",
@@ -324,6 +326,7 @@ def get_product(
         require_any_permission(
             "products:view",
             "sales:view",
+            "sales:manual",
             "sales:create",
             "service_orders:view",
             "service_orders:update",
