@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:web/web.dart' as web;
 
 import '../models/marketplace.dart';
 import '../models/session.dart';
@@ -56,17 +56,15 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
   Future<void> _connectMercadoLivre() async {
     try {
       final auth = await _api.getMercadoLivreAuthUrl(widget.session.token);
-      await Clipboard.setData(ClipboardData(text: auth.authUrl));
-      if (!mounted) return;
-      final opened = await launchUrl(
-        Uri.parse(auth.authUrl),
-        webOnlyWindowName: '_self',
-      );
-      if (!opened && mounted) {
+      final authUrl = auth.authUrl.trim();
+      if (authUrl.isEmpty) {
         _showMessage(
-          'Não foi possível abrir o Mercado Livre automaticamente. O link foi copiado; cole em uma nova aba.',
+          'Não foi possível gerar o link de conexão do Mercado Livre.',
         );
+        return;
       }
+      await Clipboard.setData(ClipboardData(text: auth.authUrl));
+      web.window.location.assign(authUrl);
     } on ApiException catch (error) {
       if (!mounted) return;
       _showMessage(error.message);

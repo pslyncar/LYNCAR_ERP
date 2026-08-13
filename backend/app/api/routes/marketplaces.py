@@ -292,7 +292,13 @@ def mercado_livre_auth_url(
         )
     )
     db.commit()
-    return MercadoLivreAuthUrlRead(auth_url=build_authorization_url(state), state=state)
+    auth_url = build_authorization_url(state)
+    if not auth_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Configuração Mercado Livre incompleta. Revise Client ID e URI de redirect no Master.",
+        )
+    return MercadoLivreAuthUrlRead(auth_url=auth_url, state=state)
 
 
 @router.get("/mercado-livre/callback")
