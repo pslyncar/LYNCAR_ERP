@@ -1831,146 +1831,7 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                     ],
                   ),
                   const SizedBox(height: 18),
-                  _ResponsiveFields(
-                    children: [
-                      DropdownButtonFormField<int>(
-                        initialValue: _clientId,
-                        decoration: const InputDecoration(
-                          labelText: 'Cliente',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          for (final client in widget.clients)
-                            DropdownMenuItem(
-                              value: client.id,
-                              child: Text(client.name),
-                            ),
-                        ],
-                        onChanged: (value) => setState(() {
-                          _clientId = value;
-                          _equipmentId = null;
-                        }),
-                        validator: (value) =>
-                            value == null ? 'Selecione o cliente.' : null,
-                      ),
-                      if (widget.hasMonitoring)
-                        DropdownButtonFormField<int?>(
-                          initialValue: _equipmentId,
-                          decoration: const InputDecoration(
-                            labelText: 'Maquina monitorada, se existir',
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            const DropdownMenuItem(
-                              value: null,
-                              child: Text('Sem equipamento'),
-                            ),
-                            for (final equipment in filteredEquipments)
-                              DropdownMenuItem(
-                                value: equipment.id,
-                                child: Text(equipment.hostname),
-                              ),
-                          ],
-                          onChanged: (value) =>
-                              setState(() => _equipmentId = value),
-                        ),
-                      _field(_title, 'Titulo', required: true),
-                      TextFormField(
-                        controller: _receivedEquipment,
-                        decoration: const InputDecoration(
-                          labelText: 'Equipamento recebido/avulso',
-                          hintText:
-                              'Ex: impressora Epson, notebook Dell, fonte ATX',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (_equipmentId == null &&
-                              (value == null || value.trim().length < 2)) {
-                            return 'Informe o que o cliente trouxe.';
-                          }
-                          return null;
-                        },
-                      ),
-                      DropdownButtonFormField<String>(
-                        initialValue: _status,
-                        decoration: const InputDecoration(
-                          labelText: 'Status',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          for (final entry in _statuses.entries)
-                            DropdownMenuItem(
-                              value: entry.key,
-                              child: Text(entry.value),
-                            ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _status = value ?? _status),
-                      ),
-                      if ({
-                        'aguardando_aprovacao',
-                        'aguardando_retorno_cliente',
-                      }.contains(_status))
-                        TextFormField(
-                          controller: _waitingReason,
-                          decoration: const InputDecoration(
-                            labelText: 'Motivo do aguardando',
-                            hintText:
-                                'Ex: aguardando peca, aprovacao ou retorno',
-                            border: OutlineInputBorder(),
-                          ),
-                          validator: (value) {
-                            if ({
-                                  'aguardando_aprovacao',
-                                  'aguardando_retorno_cliente',
-                                }.contains(_status) &&
-                                (value == null || value.trim().length < 3)) {
-                              return 'Informe o motivo do aguardando.';
-                            }
-                            return null;
-                          },
-                        ),
-                      DropdownButtonFormField<String>(
-                        initialValue: _priority,
-                        decoration: const InputDecoration(
-                          labelText: 'Prioridade',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          for (final entry in _priorities.entries)
-                            DropdownMenuItem(
-                              value: entry.key,
-                              child: Text(entry.value),
-                            ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _priority = value ?? _priority),
-                      ),
-                      _field(_serviceType, 'Tipo de servico'),
-                      _field(
-                        _scheduledAt,
-                        'Agendamento (dd/mm/aaaa hh:mm)',
-                        inputFormatters: const [
-                          BrazilianDateTimeInputFormatter(),
-                        ],
-                        suffixIcon: IconButton(
-                          tooltip: 'Abrir calendario',
-                          onPressed: _pickScheduledAt,
-                          icon: const Icon(Icons.calendar_month_outlined),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _textArea(
-                    _request,
-                    'Descricao do problema/solicitacao',
-                    required: true,
-                  ),
-                  const SizedBox(height: 12),
-                  _textArea(_notes, 'Observações internas'),
                   if (order != null) ...[
-                    const SizedBox(height: 18),
                     Align(
                       alignment: Alignment.centerLeft,
                       child: SegmentedButton<int>(
@@ -1993,7 +1854,158 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                       ),
                     ),
                     const SizedBox(height: 18),
-                    if (_dialogTabIndex == 0) ...[
+                  ],
+                  if (order != null && _dialogTabIndex == 1) ...[
+                    _ServiceOrderHistory(events: order.events),
+                    const SizedBox(height: 18),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () => Navigator.of(context).pop(false),
+                        child: const Text('Fechar'),
+                      ),
+                    ),
+                  ] else ...[
+                    _ResponsiveFields(
+                      children: [
+                        DropdownButtonFormField<int>(
+                          initialValue: _clientId,
+                          decoration: const InputDecoration(
+                            labelText: 'Cliente',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            for (final client in widget.clients)
+                              DropdownMenuItem(
+                                value: client.id,
+                                child: Text(client.name),
+                              ),
+                          ],
+                          onChanged: (value) => setState(() {
+                            _clientId = value;
+                            _equipmentId = null;
+                          }),
+                          validator: (value) =>
+                              value == null ? 'Selecione o cliente.' : null,
+                        ),
+                        if (widget.hasMonitoring)
+                          DropdownButtonFormField<int?>(
+                            initialValue: _equipmentId,
+                            decoration: const InputDecoration(
+                              labelText: 'Maquina monitorada, se existir',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              const DropdownMenuItem(
+                                value: null,
+                                child: Text('Sem equipamento'),
+                              ),
+                              for (final equipment in filteredEquipments)
+                                DropdownMenuItem(
+                                  value: equipment.id,
+                                  child: Text(equipment.hostname),
+                                ),
+                            ],
+                            onChanged: (value) =>
+                                setState(() => _equipmentId = value),
+                          ),
+                        _field(_title, 'Titulo', required: true),
+                        TextFormField(
+                          controller: _receivedEquipment,
+                          decoration: const InputDecoration(
+                            labelText: 'Equipamento recebido/avulso',
+                            hintText:
+                                'Ex: impressora Epson, notebook Dell, fonte ATX',
+                            border: OutlineInputBorder(),
+                          ),
+                          validator: (value) {
+                            if (_equipmentId == null &&
+                                (value == null || value.trim().length < 2)) {
+                              return 'Informe o que o cliente trouxe.';
+                            }
+                            return null;
+                          },
+                        ),
+                        DropdownButtonFormField<String>(
+                          initialValue: _status,
+                          decoration: const InputDecoration(
+                            labelText: 'Status',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            for (final entry in _statuses.entries)
+                              DropdownMenuItem(
+                                value: entry.key,
+                                child: Text(entry.value),
+                              ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _status = value ?? _status),
+                        ),
+                        if ({
+                          'aguardando_aprovacao',
+                          'aguardando_retorno_cliente',
+                        }.contains(_status))
+                          TextFormField(
+                            controller: _waitingReason,
+                            decoration: const InputDecoration(
+                              labelText: 'Motivo do aguardando',
+                              hintText:
+                                  'Ex: aguardando peca, aprovacao ou retorno',
+                              border: OutlineInputBorder(),
+                            ),
+                            validator: (value) {
+                              if ({
+                                    'aguardando_aprovacao',
+                                    'aguardando_retorno_cliente',
+                                  }.contains(_status) &&
+                                  (value == null || value.trim().length < 3)) {
+                                return 'Informe o motivo do aguardando.';
+                              }
+                              return null;
+                            },
+                          ),
+                        DropdownButtonFormField<String>(
+                          initialValue: _priority,
+                          decoration: const InputDecoration(
+                            labelText: 'Prioridade',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            for (final entry in _priorities.entries)
+                              DropdownMenuItem(
+                                value: entry.key,
+                                child: Text(entry.value),
+                              ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _priority = value ?? _priority),
+                        ),
+                        _field(_serviceType, 'Tipo de servico'),
+                        _field(
+                          _scheduledAt,
+                          'Agendamento (dd/mm/aaaa hh:mm)',
+                          inputFormatters: const [
+                            BrazilianDateTimeInputFormatter(),
+                          ],
+                          suffixIcon: IconButton(
+                            tooltip: 'Abrir calendario',
+                            onPressed: _pickScheduledAt,
+                            icon: const Icon(Icons.calendar_month_outlined),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _textArea(
+                      _request,
+                      'Descricao do problema/solicitacao',
+                      required: true,
+                    ),
+                    const SizedBox(height: 12),
+                    _textArea(_notes, 'Observações internas'),
+                    if (order != null) ...[
+                      const SizedBox(height: 18),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -2052,34 +2064,33 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                       ),
                       const SizedBox(height: 12),
                       _TotalsPanel(order: order),
-                    ] else
-                      _ServiceOrderHistory(events: order.events),
-                  ],
-                  if (_error != null) ...[
-                    const SizedBox(height: 12),
-                    Text(
-                      _error!,
-                      style: const TextStyle(color: Color(0xFFB91C1C)),
-                    ),
-                  ],
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 8,
-                    alignment: WrapAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: _saving
-                            ? null
-                            : () => Navigator.of(context).pop(false),
-                        child: const Text('Cancelar'),
-                      ),
-                      FilledButton.icon(
-                        onPressed: _saving ? null : _save,
-                        icon: const Icon(Icons.save_outlined),
-                        label: Text(_saving ? 'Salvando...' : 'Salvar OS'),
+                    ],
+                    if (_error != null) ...[
+                      const SizedBox(height: 12),
+                      Text(
+                        _error!,
+                        style: const TextStyle(color: Color(0xFFB91C1C)),
                       ),
                     ],
-                  ),
+                    const SizedBox(height: 18),
+                    Wrap(
+                      spacing: 8,
+                      alignment: WrapAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: _saving
+                              ? null
+                              : () => Navigator.of(context).pop(false),
+                          child: const Text('Cancelar'),
+                        ),
+                        FilledButton.icon(
+                          onPressed: _saving ? null : _save,
+                          icon: const Icon(Icons.save_outlined),
+                          label: Text(_saving ? 'Salvando...' : 'Salvar OS'),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
