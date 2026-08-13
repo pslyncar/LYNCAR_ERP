@@ -316,10 +316,10 @@ def add_equipment_current_status_columns() -> None:
                 )
 
 
-def add_service_order_columns() -> None:
-    with engine.begin() as connection:
+def add_service_order_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
         for column_name, column_type in SERVICE_ORDER_COLUMNS:
-            if not column_exists("service_orders", column_name):
+            if not column_exists_in_connection(connection, "service_orders", column_name):
                 connection.execute(
                     text(f"ALTER TABLE service_orders ADD COLUMN {column_name} {column_type}")
                 )
@@ -879,6 +879,7 @@ def migrate_registered_tenants() -> None:
             add_pdv_terminal_columns(tenant_engine)
             normalize_sale_sources(tenant_engine)
             add_user_seller_columns(tenant_engine)
+            add_service_order_columns(tenant_engine)
             add_fiscal_setting_columns(tenant_engine)
             with tenant_engine.begin() as connection:
                 connection.execute(
