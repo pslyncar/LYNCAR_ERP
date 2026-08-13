@@ -26,7 +26,11 @@ class User(Base):
     )
 
     tickets = relationship("Ticket", back_populates="assigned_user")
-    service_orders = relationship("ServiceOrder", back_populates="assigned_user")
+    service_orders = relationship(
+        "ServiceOrder",
+        back_populates="assigned_user",
+        foreign_keys="ServiceOrder.assigned_user_id",
+    )
     sales = relationship("Sale", back_populates="seller")
     permission_overrides = relationship(
         "UserPermission",

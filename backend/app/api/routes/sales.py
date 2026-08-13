@@ -17,7 +17,7 @@ from app.models.pdv_cash_session import PdvCashSession
 from app.models.product import Product
 from app.models.receivable import Receivable
 from app.models.sale import Sale, SaleItem, SalePayment
-from app.models.service_order import ServiceOrder
+from app.models.service_order import ServiceOrder, ServiceOrderEvent
 from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.schemas.sale import (
@@ -94,6 +94,7 @@ def sync_service_order_status_from_sale(
     db: Session,
     sale: Sale,
     has_financial_receivable: bool,
+    current_user: User,
 ) -> None:
     service_order_id = service_order_id_from_sale(sale)
     if service_order_id is None:
@@ -101,11 +102,24 @@ def sync_service_order_status_from_sale(
     service_order = db.get(ServiceOrder, service_order_id)
     if service_order is None:
         return
+    previous_status = service_order.status
     service_order.status = "aguardando_retirada" if has_financial_receivable else "concluida"
+    service_order.sold_by_user_id = sale.seller_user_id
     if service_order.status == "concluida" and service_order.closed_at is None:
         service_order.closed_at = datetime.utcnow()
     if service_order.status != "concluida":
         service_order.closed_at = None
+    db.add(
+        ServiceOrderEvent(
+            service_order_id=service_order.id,
+            user_id=current_user.id,
+            event_type="sale_created",
+            status_from=previous_status,
+            status_to=service_order.status,
+            assigned_user_id=service_order.assigned_user_id,
+            notes=f"Venda {sale.number or sale.id} gerada para a OS.",
+        )
+    )
 
 
 @router.get("/settings", response_model=SalesSettings)
@@ -474,6 +488,17 @@ def create_sale(
     seller = db.get(User, seller_user_id)
     if seller is None or not seller.active:
         raise HTTPException(status_code=404, detail="Vendedor não encontrado ou inativo.")
+    if sale_in.source == "os":
+        if not user_has_configured_permission(db, current_user, "service_orders:sell"):
+            raise HTTPException(
+                status_code=403,
+                detail="Usuario sem permissao para gerar venda da OS.",
+            )
+        if not (seller.seller_code or "").strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Venda da OS precisa de vendedor com codigo cadastrado.",
+            )
     if sale_in.cash_session_id is not None:
         cash_session = db.get(PdvCashSession, sale_in.cash_session_id)
         if cash_session is None:
@@ -673,6 +698,7 @@ def create_sale(
         db,
         sale,
         has_financial_receivable=financial_amount > 0,
+        current_user=current_user,
     )
     for movement in stock_movements:
         product = movement["product"]

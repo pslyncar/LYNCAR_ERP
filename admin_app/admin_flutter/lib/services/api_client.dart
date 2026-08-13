@@ -2567,6 +2567,34 @@ class ApiClient {
     return ServiceOrder.fromJson(_decodeResponse(response));
   }
 
+  Future<ServiceOrder> attendServiceOrder(
+    String token,
+    int serviceOrderId, {
+    String? notes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/service-orders/$serviceOrderId/attend'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'notes': notes?.trim().isEmpty == true ? null : notes?.trim(),
+      }),
+    );
+    return ServiceOrder.fromJson(_decodeResponse(response));
+  }
+
+  Future<ServiceOrder> waitCustomerServiceOrder(
+    String token,
+    int serviceOrderId, {
+    required String notes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/service-orders/$serviceOrderId/waiting-customer'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'notes': notes}),
+    );
+    return ServiceOrder.fromJson(_decodeResponse(response));
+  }
+
   Future<ServiceOrderItem> addServiceOrderItem(
     String token,
     int serviceOrderId,

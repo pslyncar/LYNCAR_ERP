@@ -16,15 +16,17 @@ from app.models.client import Client
 from app.models.company import Company
 from app.models.equipment import Equipment
 from app.models.product import Product
-from app.models.service_order import ServiceOrder, ServiceOrderItem
+from app.models.service_order import ServiceOrder, ServiceOrderEvent, ServiceOrderItem
 from app.models.ticket import Ticket
 from app.models.user import User
 from app.schemas.service_order import (
     ServiceOrderCreate,
+    ServiceOrderEventRead,
     ServiceOrderItemCreate,
     ServiceOrderItemRead,
     ServiceOrderRead,
     ServiceOrderUpdate,
+    ServiceOrderWorkflowAction,
 )
 from app.schemas.printing import ThermalPrintRequest, ThermalPrintResponse
 from app.services.access_control import user_has_configured_permission
@@ -171,7 +173,7 @@ def apply_service_order_closed_at(service_order: ServiceOrder, new_status: str |
 
 
 def apply_service_order_waiting_rule(service_order: ServiceOrder) -> None:
-    if service_order.status == "aguardando_aprovacao":
+    if service_order.status in {"aguardando_aprovacao", "aguardando_retorno_cliente"}:
         if not service_order.waiting_reason or len(service_order.waiting_reason.strip()) < 3:
             raise HTTPException(
                 status_code=400,
@@ -217,6 +219,7 @@ def get_service_order_or_404(db: Session, service_order_id: int) -> ServiceOrder
         select(ServiceOrder)
         .options(
             selectinload(ServiceOrder.items),
+            selectinload(ServiceOrder.events),
             selectinload(ServiceOrder.client),
             selectinload(ServiceOrder.equipment),
         )
@@ -225,6 +228,37 @@ def get_service_order_or_404(db: Session, service_order_id: int) -> ServiceOrder
     if service_order is None:
         raise HTTPException(status_code=404, detail="Ordem de servico nao encontrada.")
     return service_order
+
+
+def ensure_technician_user(current_user: User) -> None:
+    if not (current_user.technician_code or "").strip():
+        raise HTTPException(
+            status_code=403,
+            detail="Apenas usuario com codigo de tecnico pode atender OS.",
+        )
+
+
+def add_service_order_event(
+    db: Session,
+    service_order: ServiceOrder,
+    current_user: User,
+    event_type: str,
+    status_from: str | None = None,
+    status_to: str | None = None,
+    assigned_user_id: int | None = None,
+    notes: str | None = None,
+) -> None:
+    db.add(
+        ServiceOrderEvent(
+            service_order_id=service_order.id,
+            user_id=current_user.id,
+            event_type=event_type,
+            status_from=status_from,
+            status_to=status_to,
+            assigned_user_id=assigned_user_id,
+            notes=(notes or "").strip() or None,
+        )
+    )
 
 
 @router.post("", response_model=ServiceOrderRead, status_code=status.HTTP_201_CREATED)
@@ -242,6 +276,7 @@ def create_service_order(
         service_order_in.assigned_user_id,
     )
     service_order = ServiceOrder(**service_order_in.model_dump())
+    service_order.opened_by_user_id = current_user.id
     apply_service_order_closed_at(service_order, service_order.status)
     apply_service_order_waiting_rule(service_order)
     recalculate_service_order_totals(service_order)
@@ -256,7 +291,15 @@ def create_service_order(
     db.refresh(service_order)
     if not service_order.number:
         service_order.number = service_order_code(service_order.id)
-        db.commit()
+    add_service_order_event(
+        db,
+        service_order,
+        current_user,
+        "created",
+        status_to=service_order.status,
+        assigned_user_id=service_order.assigned_user_id,
+    )
+    db.commit()
     return get_service_order_or_404(db, service_order.id)
 
 
@@ -267,8 +310,10 @@ def list_service_orders(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("service_orders:view")),
 ) -> list[ServiceOrder]:
-    query = select(ServiceOrder).options(selectinload(ServiceOrder.items)).order_by(
-        ServiceOrder.opened_at.desc()
+    query = (
+        select(ServiceOrder)
+        .options(selectinload(ServiceOrder.items), selectinload(ServiceOrder.events))
+        .order_by(ServiceOrder.opened_at.desc())
     )
     if client_id is not None:
         query = query.where(ServiceOrder.client_id == client_id)
@@ -296,6 +341,8 @@ def update_service_order(
 ) -> ServiceOrder:
     service_order = get_service_order_or_404(db, service_order_id)
     update_data = service_order_in.model_dump(exclude_unset=True)
+    previous_status = service_order.status
+    previous_assigned_user_id = service_order.assigned_user_id
 
     next_client_id = update_data.get("client_id", service_order.client_id)
     ensure_service_order_relations(
@@ -318,8 +365,96 @@ def update_service_order(
         service_order,
         tenant_company_code(credentials),
     )
+    if update_data:
+        add_service_order_event(
+            db,
+            service_order,
+            current_user,
+            "updated",
+            status_from=previous_status,
+            status_to=service_order.status if previous_status != service_order.status else None,
+            assigned_user_id=(
+                service_order.assigned_user_id
+                if previous_assigned_user_id != service_order.assigned_user_id
+                else None
+            ),
+        )
     db.commit()
     return get_service_order_or_404(db, service_order.id)
+
+
+@router.post("/{service_order_id}/attend", response_model=ServiceOrderRead)
+def attend_service_order(
+    service_order_id: int,
+    action: ServiceOrderWorkflowAction | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders:attend")),
+) -> ServiceOrder:
+    ensure_technician_user(current_user)
+    service_order = get_service_order_or_404(db, service_order_id)
+    previous_status = service_order.status
+    service_order.assigned_user_id = current_user.id
+    if service_order.status in {"aberta", "aguardando_aprovacao", "aguardando_retorno_cliente"}:
+        service_order.status = "em_execucao"
+    apply_service_order_closed_at(service_order, service_order.status)
+    apply_service_order_waiting_rule(service_order)
+    add_service_order_event(
+        db,
+        service_order,
+        current_user,
+        "attended",
+        status_from=previous_status,
+        status_to=service_order.status,
+        assigned_user_id=current_user.id,
+        notes=action.notes if action else None,
+    )
+    db.commit()
+    return get_service_order_or_404(db, service_order.id)
+
+
+@router.post("/{service_order_id}/waiting-customer", response_model=ServiceOrderRead)
+def wait_customer_service_order(
+    service_order_id: int,
+    action: ServiceOrderWorkflowAction,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders:attend")),
+) -> ServiceOrder:
+    ensure_technician_user(current_user)
+    service_order = get_service_order_or_404(db, service_order_id)
+    previous_status = service_order.status
+    service_order.assigned_user_id = current_user.id
+    service_order.status = "aguardando_retorno_cliente"
+    service_order.waiting_reason = (action.notes or "").strip()
+    apply_service_order_closed_at(service_order, service_order.status)
+    apply_service_order_waiting_rule(service_order)
+    add_service_order_event(
+        db,
+        service_order,
+        current_user,
+        "waiting_customer",
+        status_from=previous_status,
+        status_to=service_order.status,
+        assigned_user_id=current_user.id,
+        notes=action.notes,
+    )
+    db.commit()
+    return get_service_order_or_404(db, service_order.id)
+
+
+@router.get("/{service_order_id}/events", response_model=list[ServiceOrderEventRead])
+def list_service_order_events(
+    service_order_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders:view")),
+) -> list[ServiceOrderEvent]:
+    get_service_order_or_404(db, service_order_id)
+    return list(
+        db.scalars(
+            select(ServiceOrderEvent)
+            .where(ServiceOrderEvent.service_order_id == service_order_id)
+            .order_by(ServiceOrderEvent.created_at.desc())
+        ).all()
+    )
 
 
 @router.post(

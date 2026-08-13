@@ -13,9 +13,12 @@ class ServiceOrder {
     required this.openedAt,
     required this.createdAt,
     required this.items,
+    required this.events,
     this.equipmentId,
     this.ticketId,
     this.assignedUserId,
+    this.openedByUserId,
+    this.soldByUserId,
     this.number,
     this.serviceType,
     this.receivedEquipment,
@@ -32,6 +35,8 @@ class ServiceOrder {
   final int? equipmentId;
   final int? ticketId;
   final int? assignedUserId;
+  final int? openedByUserId;
+  final int? soldByUserId;
   final String? number;
   final String title;
   final String status;
@@ -52,6 +57,7 @@ class ServiceOrder {
   final DateTime? closedAt;
   final DateTime createdAt;
   final List<ServiceOrderItem> items;
+  final List<ServiceOrderEvent> events;
 
   factory ServiceOrder.fromJson(Map<String, dynamic> json) {
     return ServiceOrder(
@@ -60,6 +66,8 @@ class ServiceOrder {
       equipmentId: json['equipment_id'] as int?,
       ticketId: json['ticket_id'] as int?,
       assignedUserId: json['assigned_user_id'] as int?,
+      openedByUserId: json['opened_by_user_id'] as int?,
+      soldByUserId: json['sold_by_user_id'] as int?,
       number: json['number'] as String?,
       title: json['title'] as String,
       status: json['status'] as String,
@@ -88,6 +96,11 @@ class ServiceOrder {
             (item) => ServiceOrderItem.fromJson(item as Map<String, dynamic>),
           )
           .toList(),
+      events: (json['events'] as List<dynamic>? ?? [])
+          .map(
+            (item) => ServiceOrderEvent.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(),
     );
   }
 
@@ -95,6 +108,53 @@ class ServiceOrder {
     if (value == null) return 0;
     if (value is num) return value.toDouble();
     return double.tryParse(value.toString()) ?? 0;
+  }
+}
+
+class ServiceOrderEvent {
+  const ServiceOrderEvent({
+    required this.id,
+    required this.serviceOrderId,
+    required this.eventType,
+    required this.createdAt,
+    this.userId,
+    this.userName,
+    this.statusFrom,
+    this.statusTo,
+    this.assignedUserId,
+    this.assignedUserName,
+    this.assignedUserCode,
+    this.notes,
+  });
+
+  final int id;
+  final int serviceOrderId;
+  final int? userId;
+  final String? userName;
+  final String eventType;
+  final String? statusFrom;
+  final String? statusTo;
+  final int? assignedUserId;
+  final String? assignedUserName;
+  final String? assignedUserCode;
+  final String? notes;
+  final DateTime createdAt;
+
+  factory ServiceOrderEvent.fromJson(Map<String, dynamic> json) {
+    return ServiceOrderEvent(
+      id: json['id'] as int,
+      serviceOrderId: json['service_order_id'] as int,
+      userId: json['user_id'] as int?,
+      userName: json['user_name'] as String?,
+      eventType: json['event_type'] as String,
+      statusFrom: json['status_from'] as String?,
+      statusTo: json['status_to'] as String?,
+      assignedUserId: json['assigned_user_id'] as int?,
+      assignedUserName: json['assigned_user_name'] as String?,
+      assignedUserCode: json['assigned_user_code'] as String?,
+      notes: json['notes'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
   }
 }
 

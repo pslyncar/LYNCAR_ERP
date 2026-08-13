@@ -18,6 +18,7 @@ const _statuses = {
   'aberta': 'Aberta',
   'em_diagnostico': 'Em diagnostico',
   'aguardando_aprovacao': 'Aguardando',
+  'aguardando_retorno_cliente': 'Aguardando retorno',
   'aguardando_retirada': 'Aguardando retirada',
   'em_execucao': 'Em execucao',
   'concluida': 'Concluida',
@@ -45,6 +46,7 @@ const _workflowTabs = [
   ], Icons.build_outlined),
   _WorkflowTab('aguardando', 'Aguardando', [
     'aguardando_aprovacao',
+    'aguardando_retorno_cliente',
     'aguardando_retirada',
   ], Icons.hourglass_top_outlined),
   _WorkflowTab('concluidas', 'Concluido', [
@@ -90,7 +92,8 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
         _api.listClients(widget.session.token),
         _api.listEquipments(widget.session.token),
         _api.listProducts(widget.session.token),
-        if (widget.session.can('sales:create'))
+        if (widget.session.can('sales:create') ||
+            widget.session.can('service_orders:sell'))
           _api.listSaleSellers(widget.session.token)
         else
           Future.value(<SaleSeller>[]),
@@ -176,6 +179,36 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
     await _load();
   }
 
+  Future<void> _attendOrder(ServiceOrder order) async {
+    try {
+      await _api.attendServiceOrder(widget.session.token, order.id);
+      await _load();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      await _showCenterMessage(context, error.message);
+    }
+  }
+
+  Future<void> _waitCustomer(ServiceOrder order) async {
+    final notes = await _askWorkflowNotes(
+      context,
+      title: 'Aguardar retorno do cliente',
+      label: 'Motivo',
+    );
+    if (notes == null) return;
+    try {
+      await _api.waitCustomerServiceOrder(
+        widget.session.token,
+        order.id,
+        notes: notes,
+      );
+      await _load();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      await _showCenterMessage(context, error.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final clientById = {for (final client in _clients) client.id: client};
@@ -226,9 +259,14 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
                         equipmentById: equipmentById,
                         canUpdate: widget.session.can('service_orders:update'),
                         canDelete: widget.session.can('service_orders:delete'),
-                        canSendToSales: widget.session.can('sales:create'),
+                        canAttend: widget.session.can('service_orders:attend'),
+                        canSendToSales:
+                            widget.session.can('service_orders:sell') &&
+                            widget.session.can('sales:create'),
                         onOpen: _openForm,
                         onDelete: _deleteOrder,
+                        onAttend: _attendOrder,
+                        onWaitCustomer: _waitCustomer,
                         onSendToSales: _openServiceOrderSale,
                       ),
               ),
@@ -527,9 +565,12 @@ class _ServiceOrdersTable extends StatelessWidget {
     required this.equipmentById,
     required this.canUpdate,
     required this.canDelete,
+    required this.canAttend,
     required this.canSendToSales,
     required this.onOpen,
     required this.onDelete,
+    required this.onAttend,
+    required this.onWaitCustomer,
     required this.onSendToSales,
   });
 
@@ -538,9 +579,12 @@ class _ServiceOrdersTable extends StatelessWidget {
   final Map<int, Equipment> equipmentById;
   final bool canUpdate;
   final bool canDelete;
+  final bool canAttend;
   final bool canSendToSales;
   final ValueChanged<ServiceOrder> onOpen;
   final ValueChanged<ServiceOrder> onDelete;
+  final ValueChanged<ServiceOrder> onAttend;
+  final ValueChanged<ServiceOrder> onWaitCustomer;
   final ValueChanged<ServiceOrder> onSendToSales;
 
   @override
@@ -563,7 +607,7 @@ class _ServiceOrdersTable extends StatelessWidget {
               SizedBox(width: 150, child: _HeaderCell('Status')),
               SizedBox(width: 120, child: _HeaderCell('Prioridade')),
               SizedBox(width: 120, child: _HeaderCell('Total')),
-              SizedBox(width: 150, child: _HeaderCell('Acoes')),
+              SizedBox(width: 210, child: _HeaderCell('Acoes')),
             ],
           ),
         ),
@@ -619,10 +663,31 @@ class _ServiceOrdersTable extends StatelessWidget {
                     ),
                   ),
                   SizedBox(
-                    width: 150,
+                    width: 210,
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
+                        if (canAttend &&
+                            {
+                              'aberta',
+                              'aguardando_aprovacao',
+                              'aguardando_retorno_cliente',
+                            }.contains(order.status))
+                          IconButton(
+                            tooltip: 'Atender / assumir OS',
+                            onPressed: () => onAttend(order),
+                            icon: const Icon(Icons.engineering_outlined),
+                          ),
+                        if (canAttend &&
+                            {
+                              'em_execucao',
+                              'em_diagnostico',
+                            }.contains(order.status))
+                          IconButton(
+                            tooltip: 'Aguardar retorno do cliente',
+                            onPressed: () => onWaitCustomer(order),
+                            icon: const Icon(Icons.support_agent_outlined),
+                          ),
                         if (canSendToSales &&
                             order.status == 'aguardando_retirada')
                           IconButton(
@@ -1797,17 +1862,23 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                         onChanged: (value) =>
                             setState(() => _status = value ?? _status),
                       ),
-                      if (_status == 'aguardando_aprovacao')
+                      if ({
+                        'aguardando_aprovacao',
+                        'aguardando_retorno_cliente',
+                      }.contains(_status))
                         TextFormField(
                           controller: _waitingReason,
                           decoration: const InputDecoration(
                             labelText: 'Motivo do aguardando',
                             hintText:
-                                'Ex: aguardando peca, aprovacao, retirada',
+                                'Ex: aguardando peca, aprovacao ou retorno',
                             border: OutlineInputBorder(),
                           ),
                           validator: (value) {
-                            if (_status == 'aguardando_aprovacao' &&
+                            if ({
+                                  'aguardando_aprovacao',
+                                  'aguardando_retorno_cliente',
+                                }.contains(_status) &&
                                 (value == null || value.trim().length < 3)) {
                               return 'Informe o motivo do aguardando.';
                             }
@@ -1913,6 +1984,8 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                     ),
                     const SizedBox(height: 12),
                     _TotalsPanel(order: order),
+                    const SizedBox(height: 12),
+                    _ServiceOrderHistory(events: order.events),
                   ],
                   if (_error != null) ...[
                     const SizedBox(height: 12),
@@ -2530,6 +2603,136 @@ class _Pill extends StatelessWidget {
   }
 }
 
+class _ServiceOrderHistory extends StatelessWidget {
+  const _ServiceOrderHistory({required this.events});
+
+  final List<ServiceOrderEvent> events;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFD8E4F2)),
+        borderRadius: BorderRadius.circular(8),
+        color: const Color(0xFFF8FBFF),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Histórico de mudanças',
+            style: theme.textTheme.titleMedium?.copyWith(
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (events.isEmpty)
+            const Text('Nenhuma mudança registrada.')
+          else
+            ...events
+                .take(8)
+                .map(
+                  (event) => Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.history_outlined,
+                          size: 20,
+                          color: Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _serviceOrderEventTitle(event),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                _serviceOrderEventLine(event),
+                                style: const TextStyle(
+                                  color: Color(0xFF64748B),
+                                ),
+                              ),
+                              if ((event.notes ?? '').trim().isNotEmpty)
+                                Text(event.notes!.trim()),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+Future<void> _showCenterMessage(BuildContext context, String message) {
+  return showDialog<void>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Atenção'),
+      content: Text(message),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}
+
+Future<String?> _askWorkflowNotes(
+  BuildContext context, {
+  required String title,
+  required String label,
+}) async {
+  final controller = TextEditingController();
+  final result = await showDialog<String>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(title),
+      content: TextField(
+        controller: controller,
+        autofocus: true,
+        minLines: 2,
+        maxLines: 4,
+        decoration: InputDecoration(
+          labelText: label,
+          border: const OutlineInputBorder(),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final notes = controller.text.trim();
+            if (notes.length < 3) return;
+            Navigator.of(context).pop(notes);
+          },
+          child: const Text('Confirmar'),
+        ),
+      ],
+    ),
+  );
+  controller.dispose();
+  return result;
+}
+
 class _SummaryItem {
   const _SummaryItem(
     this.label,
@@ -2580,12 +2783,58 @@ String _clientLine(ServiceOrder order, Map<int, Client> clientById) {
   final clientName =
       clientById[order.clientId]?.name ?? 'Cliente #${order.clientId}';
   final waiting = order.waitingReason?.trim();
-  if (order.status == 'aguardando_aprovacao' &&
+  if ({
+        'aguardando_aprovacao',
+        'aguardando_retorno_cliente',
+      }.contains(order.status) &&
       waiting != null &&
       waiting.isNotEmpty) {
     return '$clientName - aguardando: $waiting';
   }
   return clientName;
+}
+
+String _serviceOrderEventTitle(ServiceOrderEvent event) {
+  return switch (event.eventType) {
+    'created' => 'OS criada',
+    'updated' => 'OS alterada',
+    'attended' => 'Atendimento assumido',
+    'waiting_customer' => 'Aguardando retorno do cliente',
+    'sale_created' => 'Venda gerada',
+    _ => 'Mudança registrada',
+  };
+}
+
+String _serviceOrderEventLine(ServiceOrderEvent event) {
+  final parts = <String>[_dateTimeText(event.createdAt)];
+  final user = event.userName?.trim();
+  if (user != null && user.isNotEmpty) {
+    parts.add(user);
+  } else if (event.userId != null) {
+    parts.add('Usuário #${event.userId}');
+  }
+  if (event.statusTo != null && event.statusTo!.isNotEmpty) {
+    final from = event.statusFrom == null || event.statusFrom == event.statusTo
+        ? null
+        : _statuses[event.statusFrom] ?? event.statusFrom;
+    final to = _statuses[event.statusTo] ?? event.statusTo;
+    parts.add(from == null ? 'Status: $to' : '$from > $to');
+  }
+  final assigned = event.assignedUserName?.trim();
+  final code = event.assignedUserCode?.trim();
+  if (assigned != null && assigned.isNotEmpty) {
+    parts.add(code != null && code.isNotEmpty ? '$assigned ($code)' : assigned);
+  } else if (event.assignedUserId != null) {
+    parts.add('Responsável #${event.assignedUserId}');
+  }
+  return parts.join(' | ');
+}
+
+String _dateTimeText(DateTime value) {
+  final local = value.toLocal();
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(local.day)}/${two(local.month)}/${local.year} '
+      '${two(local.hour)}:${two(local.minute)}';
 }
 
 Product? _findProduct(List<Product> products, int? id) {

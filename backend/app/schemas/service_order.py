@@ -8,6 +8,7 @@ ServiceOrderStatus = Literal[
     "aberta",
     "em_diagnostico",
     "aguardando_aprovacao",
+    "aguardando_retorno_cliente",
     "aguardando_retirada",
     "em_execucao",
     "concluida",
@@ -80,11 +81,35 @@ class ServiceOrderItemRead(ServiceOrderItemCreate):
 
 class ServiceOrderRead(ServiceOrderBase):
     id: int
+    opened_by_user_id: int | None = None
+    sold_by_user_id: int | None = None
     items_amount: Decimal
     total_amount: Decimal
     opened_at: datetime
     closed_at: datetime | None
     created_at: datetime
     items: list[ServiceOrderItemRead] = []
+    events: list["ServiceOrderEventRead"] = []
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ServiceOrderWorkflowAction(BaseModel):
+    notes: str | None = Field(default=None, max_length=500)
+
+
+class ServiceOrderEventRead(BaseModel):
+    id: int
+    service_order_id: int
+    user_id: int | None
+    user_name: str | None = None
+    event_type: str
+    status_from: str | None
+    status_to: str | None
+    assigned_user_id: int | None
+    assigned_user_name: str | None = None
+    assigned_user_code: str | None = None
+    notes: str | None
+    created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)

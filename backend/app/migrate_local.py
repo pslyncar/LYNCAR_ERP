@@ -62,6 +62,8 @@ EQUIPMENT_CURRENT_STATUS_COLUMNS = [
 SERVICE_ORDER_COLUMNS = [
     ("received_equipment", "VARCHAR(180)"),
     ("waiting_reason", "VARCHAR(220)"),
+    ("opened_by_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("sold_by_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
 ]
 
 PRODUCT_COLUMNS = [
@@ -327,6 +329,31 @@ def add_service_order_columns() -> None:
                 UPDATE service_orders
                 SET number = 'M' || id
                 WHERE number IS NULL OR trim(number) = ''
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS service_order_events (
+                    id SERIAL PRIMARY KEY,
+                    service_order_id INTEGER NOT NULL REFERENCES service_orders(id) ON DELETE CASCADE,
+                    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    event_type VARCHAR(40) NOT NULL,
+                    status_from VARCHAR(30),
+                    status_to VARCHAR(30),
+                    assigned_user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                    notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_service_order_events_order
+                ON service_order_events(service_order_id)
                 """
             )
         )
