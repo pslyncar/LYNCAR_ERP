@@ -615,6 +615,28 @@ class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
     }
   }
 
+  MarketplaceProduct? _findProduct(int? productId) {
+    if (productId == null) return null;
+    for (final product in widget.products) {
+      if (product.productId == productId) return product;
+    }
+    return null;
+  }
+
+  Future<void> _selectProduct(MercadoLivreImportItem item) async {
+    if (item.alreadyLinked) return;
+    final currentId = _selectedProducts[item.listingId] ?? item.localProductId;
+    final product = await showDialog<MarketplaceProduct>(
+      context: context,
+      builder: (context) => _MarketplaceProductSearchDialog(
+        products: widget.products,
+        initialProductId: currentId,
+      ),
+    );
+    if (product == null || !mounted) return;
+    setState(() => _selectedProducts[item.listingId] = product.productId);
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -658,6 +680,7 @@ class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
                   final item = items[index];
                   final selected =
                       _selectedProducts[item.listingId] ?? item.localProductId;
+                  final selectedProduct = _findProduct(selected);
                   final isLinking = _linking.contains(item.listingId);
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -703,40 +726,28 @@ class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
                         Row(
                           children: [
                             Expanded(
-                              child: DropdownButtonFormField<int>(
-                                initialValue: selected,
-                                isExpanded: true,
-                                decoration: const InputDecoration(
-                                  labelText: 'Produto do estoque Lyncar',
-                                ),
-                                items: [
-                                  for (final product in widget.products)
-                                    DropdownMenuItem(
-                                      value: product.productId,
-                                      child: Text(
-                                        [
-                                          product.name,
-                                          if (product.internalCode
-                                                  ?.trim()
-                                                  .isNotEmpty ==
-                                              true)
-                                            product.internalCode!,
-                                          if (product.barcode
-                                                  ?.trim()
-                                                  .isNotEmpty ==
-                                              true)
-                                            product.barcode!,
-                                        ].join(' | '),
-                                      ),
-                                    ),
-                                ],
-                                onChanged: item.alreadyLinked
+                              child: OutlinedButton.icon(
+                                onPressed: item.alreadyLinked
                                     ? null
-                                    : (value) => setState(
-                                        () =>
-                                            _selectedProducts[item.listingId] =
-                                                value,
-                                      ),
+                                    : () => _selectProduct(item),
+                                icon: const Icon(Icons.search),
+                                label: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Text(
+                                    selectedProduct == null
+                                        ? 'Pesquisar produto do estoque Lyncar'
+                                        : _productLabel(selectedProduct),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  alignment: Alignment.centerLeft,
+                                  minimumSize: const Size.fromHeight(56),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                  ),
+                                  textStyle: theme.textTheme.titleSmall,
+                                ),
                               ),
                             ),
                             const SizedBox(width: 12),
@@ -777,6 +788,144 @@ class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
       ],
     );
   }
+}
+
+class _MarketplaceProductSearchDialog extends StatefulWidget {
+  const _MarketplaceProductSearchDialog({
+    required this.products,
+    required this.initialProductId,
+  });
+
+  final List<MarketplaceProduct> products;
+  final int? initialProductId;
+
+  @override
+  State<_MarketplaceProductSearchDialog> createState() =>
+      _MarketplaceProductSearchDialogState();
+}
+
+class _MarketplaceProductSearchDialogState
+    extends State<_MarketplaceProductSearchDialog> {
+  final _searchController = TextEditingController();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  List<MarketplaceProduct> get _filteredProducts {
+    final query = _normalizeSearch(_searchController.text);
+    if (query.isEmpty) return widget.products.take(30).toList(growable: false);
+    return widget.products
+        .where((product) {
+          return _normalizeSearch(product.name).contains(query) ||
+              _normalizeSearch(product.internalCode ?? '').contains(query) ||
+              _normalizeSearch(product.barcode ?? '').contains(query);
+        })
+        .take(50)
+        .toList(growable: false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Pesquisar produto'),
+      content: SizedBox(
+        width: 760,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 520),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.search),
+                  labelText: 'Nome, codigo interno ou codigo de barras',
+                ),
+                onChanged: (_) => setState(() {}),
+              ),
+              const SizedBox(height: 12),
+              if (widget.products.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Text(
+                    'Nenhum produto cadastrado no estoque Lyncar para vincular.',
+                  ),
+                )
+              else
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: _filteredProducts.length,
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final product = _filteredProducts[index];
+                      final selected =
+                          product.productId == widget.initialProductId;
+                      return ListTile(
+                        selected: selected,
+                        leading: selected
+                            ? Icon(
+                                Icons.check_circle,
+                                color: theme.colorScheme.primary,
+                              )
+                            : const Icon(Icons.inventory_2_outlined),
+                        title: Text(product.name),
+                        subtitle: Text(_productDetails(product)),
+                        trailing: FilledButton(
+                          onPressed: () => Navigator.of(context).pop(product),
+                          child: const Text('Selecionar'),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+      ],
+    );
+  }
+}
+
+String _productLabel(MarketplaceProduct product) {
+  return [
+    product.name,
+    if (product.internalCode?.trim().isNotEmpty == true) product.internalCode!,
+    if (product.barcode?.trim().isNotEmpty == true) product.barcode!,
+  ].join(' | ');
+}
+
+String _productDetails(MarketplaceProduct product) {
+  return [
+    if (product.internalCode?.trim().isNotEmpty == true)
+      'Codigo ${product.internalCode}',
+    if (product.barcode?.trim().isNotEmpty == true) 'Barras ${product.barcode}',
+    'Estoque ${product.stockQuantity.toStringAsFixed(0)}',
+    _formatCurrency(product.salePrice),
+  ].join(' | ');
+}
+
+String _normalizeSearch(String value) {
+  return value
+      .toLowerCase()
+      .replaceAll(RegExp(r'[áàãâä]'), 'a')
+      .replaceAll(RegExp(r'[éèêë]'), 'e')
+      .replaceAll(RegExp(r'[íìîï]'), 'i')
+      .replaceAll(RegExp(r'[óòõôö]'), 'o')
+      .replaceAll(RegExp(r'[úùûü]'), 'u')
+      .replaceAll('ç', 'c');
 }
 
 String _formatCurrency(double value) {
