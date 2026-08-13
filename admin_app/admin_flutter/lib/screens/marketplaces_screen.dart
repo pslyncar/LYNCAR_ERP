@@ -58,45 +58,19 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
       final auth = await _api.getMercadoLivreAuthUrl(widget.session.token);
       await Clipboard.setData(ClipboardData(text: auth.authUrl));
       if (!mounted) return;
-      _showAuthDialog(auth.authUrl);
+      final opened = await launchUrl(
+        Uri.parse(auth.authUrl),
+        webOnlyWindowName: '_self',
+      );
+      if (!opened && mounted) {
+        _showMessage(
+          'Não foi possível abrir o Mercado Livre automaticamente. O link foi copiado; cole em uma nova aba.',
+        );
+      }
     } on ApiException catch (error) {
       if (!mounted) return;
       _showMessage(error.message);
     }
-  }
-
-  void _showAuthDialog(String authUrl) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Conectar Mercado Livre'),
-        content: const Text(
-          'Copiamos o link de autorização. Clique no botão abaixo para abrir o Mercado Livre. '
-          'Depois que autorizar, volte aqui e clique em Atualizar.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton.icon(
-            onPressed: () async {
-              final opened = await launchUrl(
-                Uri.parse(authUrl),
-                webOnlyWindowName: '_blank',
-              );
-              if (!opened && context.mounted) {
-                _showMessage(
-                  'Não foi possível abrir automaticamente. O link já foi copiado, cole em uma nova aba.',
-                );
-              }
-            },
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('Abrir Mercado Livre'),
-          ),
-        ],
-      ),
-    );
   }
 
   Future<void> _showImportDialog() async {
