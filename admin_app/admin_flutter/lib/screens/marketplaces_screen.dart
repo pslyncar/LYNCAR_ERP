@@ -844,7 +844,7 @@ class _MarketplaceProductSearchDialogState
                 autofocus: true,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search),
-                  labelText: 'Nome, codigo interno ou codigo de barras',
+                  labelText: 'Nome, código interno ou código de barras',
                 ),
                 onChanged: (_) => setState(() {}),
               ),
@@ -910,7 +910,7 @@ String _productLabel(MarketplaceProduct product) {
 String _productDetails(MarketplaceProduct product) {
   return [
     if (product.internalCode?.trim().isNotEmpty == true)
-      'Codigo ${product.internalCode}',
+      'Código ${product.internalCode}',
     if (product.barcode?.trim().isNotEmpty == true) 'Barras ${product.barcode}',
     'Estoque ${product.stockQuantity.toStringAsFixed(0)}',
     _formatCurrency(product.salePrice),
