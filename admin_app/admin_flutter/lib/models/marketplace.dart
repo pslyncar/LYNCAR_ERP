@@ -285,7 +285,7 @@ class MercadoLivreImportItem {
       title: json['title'] as String? ?? '',
       status: json['status'] as String?,
       price: json['price'] == null ? null : _toDouble(json['price']),
-      availableQuantity: json['available_quantity'] as int?,
+      availableQuantity: _toIntOrNull(json['available_quantity']),
       permalink: json['permalink'] as String?,
       thumbnail: json['thumbnail'] as String?,
       categoryId: json['category_id'] as String?,
@@ -302,6 +302,13 @@ class MercadoLivreImportItem {
 double _toDouble(Object? value) {
   if (value is num) return value.toDouble();
   return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+int? _toIntOrNull(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return double.tryParse(value.toString().replaceAll(',', '.'))?.toInt();
 }
 
 DateTime? _parseDate(Object? value) {

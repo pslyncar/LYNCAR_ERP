@@ -215,6 +215,22 @@ def _normalize_key(value: str | None) -> str:
     return "".join(ch for ch in (value or "").lower() if ch.isalnum())
 
 
+def _to_float_or_none(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def _to_int_or_none(value: object) -> int | None:
+    numeric_value = _to_float_or_none(value)
+    if numeric_value is None:
+        return None
+    return int(numeric_value)
+
+
 @router.get("/mercado-livre/status", response_model=MercadoLivreStatusRead)
 def mercado_livre_status(
     db: Session = Depends(get_db),
@@ -647,8 +663,8 @@ def preview_mercado_livre_listings(
                 listing_id=listing_id,
                 title=str(item.get("title") or ""),
                 status=item.get("status"),
-                price=item.get("price"),
-                available_quantity=item.get("available_quantity"),
+                price=_to_float_or_none(item.get("price")),
+                available_quantity=_to_int_or_none(item.get("available_quantity")),
                 permalink=item.get("permalink"),
                 thumbnail=item.get("thumbnail"),
                 category_id=item.get("category_id"),
