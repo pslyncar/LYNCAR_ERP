@@ -965,6 +965,28 @@ class ApiClient {
     return MercadoLivreAuthUrl.fromJson(_decodeResponse(response));
   }
 
+  Future<MercadoLivreAppConfig> getMasterMercadoLivreConfig(
+    String token,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/master/integrations/mercado-livre'),
+      headers: _authHeaders(token),
+    );
+    return MercadoLivreAppConfig.fromJson(_decodeResponse(response));
+  }
+
+  Future<MercadoLivreAppConfig> updateMasterMercadoLivreConfig(
+    String token,
+    MercadoLivreAppConfigInput input,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/master/integrations/mercado-livre'),
+      headers: _authHeaders(token),
+      body: jsonEncode(input.toJson()),
+    );
+    return MercadoLivreAppConfig.fromJson(_decodeResponse(response));
+  }
+
   Future<List<MarketplaceProduct>> listMercadoLivreProducts(
     String token,
   ) async {

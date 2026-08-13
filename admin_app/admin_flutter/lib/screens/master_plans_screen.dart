@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models/business_segment.dart';
+import '../models/marketplace.dart';
 import '../models/session.dart';
 import '../models/subscription_plan.dart';
 import '../services/api_client.dart';
@@ -49,9 +50,14 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
   late final _api = ApiClient(widget.session.apiBaseUrl);
   List<SubscriptionPlan> _plans = [];
   List<BusinessSegment> _segments = [];
+  MercadoLivreAppConfig? _mercadoLivreConfig;
   int _tabIndex = 0;
   bool _loading = true;
+  bool _mercadoLivreSaving = false;
   String? _error;
+
+  bool get _canManageIntegrations =>
+      widget.session.canMaster('master:integrations');
 
   @override
   void initState() {
@@ -65,13 +71,18 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
       _error = null;
     });
     try {
-      final results = await Future.wait([
+      final results = await Future.wait<Object>([
         _api.listMasterPlans(widget.session.token),
         _api.listMasterSegments(widget.session.token),
+        if (_canManageIntegrations)
+          _api.getMasterMercadoLivreConfig(widget.session.token),
       ]);
       setState(() {
         _plans = results[0] as List<SubscriptionPlan>;
         _segments = results[1] as List<BusinessSegment>;
+        _mercadoLivreConfig = _canManageIntegrations
+            ? results[2] as MercadoLivreAppConfig
+            : null;
       });
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -249,6 +260,34 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
     );
   }
 
+  Future<void> _openMercadoLivreConfig() async {
+    final input = await showDialog<MercadoLivreAppConfigInput>(
+      context: context,
+      builder: (context) =>
+          _MercadoLivreConfigDialog(config: _mercadoLivreConfig),
+    );
+    if (input == null) return;
+    setState(() {
+      _mercadoLivreSaving = true;
+      _error = null;
+    });
+    try {
+      final updated = await _api.updateMasterMercadoLivreConfig(
+        widget.session.token,
+        input,
+      );
+      setState(() => _mercadoLivreConfig = updated);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Configuracao Mercado Livre salva.')),
+      );
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _mercadoLivreSaving = false);
+    }
+  }
+
   String _storageLabel(int mb) {
     if (mb >= 1024) {
       final gb = mb / 1024;
@@ -328,6 +367,10 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
             if (_error != null) ...[
               ErrorPanel(message: _error!, onRetry: _load),
               const SizedBox(height: 12),
+            ],
+            if (_canManageIntegrations) ...[
+              _mercadoLivreConfigPanel(),
+              const SizedBox(height: 14),
             ],
             Expanded(
               child: _loading
@@ -454,6 +497,70 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
       ),
     );
   }
+
+  Widget _mercadoLivreConfigPanel() {
+    final config = _mercadoLivreConfig;
+    final configured = config?.configured == true;
+    final theme = Theme.of(context);
+    return AppCard(
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 12,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          CircleAvatar(
+            backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.1),
+            child: Icon(Icons.storefront, color: theme.colorScheme.primary),
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 260, maxWidth: 720),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Mercado Livre',
+                  style: theme.textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  configured
+                      ? 'Aplicacao oficial configurada para os clientes autorizados.'
+                      : 'Configure a aplicacao oficial antes de liberar aos clientes.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (config?.clientId?.isNotEmpty == true) ...[
+                  const SizedBox(height: 6),
+                  Text('Client ID: ${config!.clientId}'),
+                ],
+              ],
+            ),
+          ),
+          Chip(
+            avatar: Icon(
+              configured ? Icons.check_circle_outline : Icons.info_outline,
+              size: 18,
+            ),
+            label: Text(configured ? 'Configurado' : 'Pendente'),
+          ),
+          FilledButton.icon(
+            onPressed: _mercadoLivreSaving ? null : _openMercadoLivreConfig,
+            icon: _mercadoLivreSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.settings_outlined),
+            label: const Text('Configurar Mercado Livre'),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _DeleteDestination {
@@ -465,6 +572,126 @@ class _DeleteDestination {
 
 class _DeleteCancelled {
   static const value = '__cancelled__';
+}
+
+class _MercadoLivreConfigDialog extends StatefulWidget {
+  const _MercadoLivreConfigDialog({this.config});
+
+  final MercadoLivreAppConfig? config;
+
+  @override
+  State<_MercadoLivreConfigDialog> createState() =>
+      _MercadoLivreConfigDialogState();
+}
+
+class _MercadoLivreConfigDialogState extends State<_MercadoLivreConfigDialog> {
+  late final _clientId = TextEditingController(
+    text: widget.config?.clientId ?? '',
+  );
+  late final _clientSecret = TextEditingController();
+  late final _redirectUri = TextEditingController(
+    text:
+        widget.config?.redirectUri ??
+        'https://cliente.lyncar.com.br/marketplaces/mercado-livre/callback',
+  );
+  late final _webhookUrl = TextEditingController(
+    text:
+        widget.config?.webhookUrl ??
+        'https://cliente.lyncar.com.br/marketplaces/mercado-livre/notifications',
+  );
+  bool _showSecret = false;
+
+  @override
+  void dispose() {
+    _clientId.dispose();
+    _clientSecret.dispose();
+    _redirectUri.dispose();
+    _webhookUrl.dispose();
+    super.dispose();
+  }
+
+  String? _emptyToNull(TextEditingController controller) {
+    final text = controller.text.trim();
+    return text.isEmpty ? null : text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSecret = widget.config?.clientSecretConfigured == true;
+    return AlertDialog(
+      title: const Text('Configurar Mercado Livre'),
+      content: SizedBox(
+        width: 640,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: _clientId,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Client ID'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _clientSecret,
+                obscureText: !_showSecret,
+                decoration: InputDecoration(
+                  labelText: 'Client Secret',
+                  helperText: hasSecret
+                      ? 'Deixe vazio para manter o secret atual.'
+                      : null,
+                  suffixIcon: IconButton(
+                    tooltip: _showSecret ? 'Ocultar' : 'Mostrar',
+                    onPressed: () => setState(() => _showSecret = !_showSecret),
+                    icon: Icon(
+                      _showSecret
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _redirectUri,
+                decoration: const InputDecoration(labelText: 'URI de redirect'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _webhookUrl,
+                decoration: const InputDecoration(
+                  labelText: 'URL de notificacoes',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: () {
+            final clientId = _clientId.text.trim();
+            final redirectUri = _redirectUri.text.trim();
+            if (clientId.isEmpty || redirectUri.isEmpty) return;
+            Navigator.of(context).pop(
+              MercadoLivreAppConfigInput(
+                clientId: clientId,
+                clientSecret: _emptyToNull(_clientSecret),
+                redirectUri: redirectUri,
+                webhookUrl: _emptyToNull(_webhookUrl),
+              ),
+            );
+          },
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Salvar'),
+        ),
+      ],
+    );
+  }
 }
 
 class _PlanDialog extends StatefulWidget {

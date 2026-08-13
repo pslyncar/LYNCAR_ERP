@@ -233,9 +233,9 @@ def mercado_livre_status(
             ),
             pending_jobs=pending_jobs,
             message=(
-                "Credenciais do app Mercado Livre configuradas. Clique em conectar."
+                "Conecte a conta Mercado Livre para sincronizar produtos e anuncios."
                 if configured
-                else "Integração Mercado Livre em implantação. Fale com o suporte para liberar a conexão."
+                else "Mercado Livre sera liberado pela Lynkar quando estiver disponivel para esta empresa."
             ),
         )
     return MercadoLivreStatusRead(
@@ -266,7 +266,7 @@ def mercado_livre_auth_url(
     if not mercado_livre_credentials_configured():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Integração Mercado Livre em implantação. Fale com o suporte para liberar a conexão.",
+            detail="Mercado Livre sera liberado pela Lynkar quando estiver disponivel para esta empresa.",
         )
     state = f"{current_user.company_code}.{token_urlsafe(32)}"
     db.add(
@@ -290,7 +290,7 @@ def mercado_livre_callback(
     if not mercado_livre_credentials_configured():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Integração Mercado Livre em implantação. Fale com o suporte para liberar a conexão.",
+            detail="Mercado Livre sera liberado pela Lynkar quando estiver disponivel para esta empresa.",
         )
     if "." not in state:
         raise HTTPException(status_code=400, detail="Estado OAuth invalido.")

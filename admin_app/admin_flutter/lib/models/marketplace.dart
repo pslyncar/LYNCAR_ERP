@@ -59,6 +59,56 @@ class MercadoLivreAuthUrl {
   }
 }
 
+class MercadoLivreAppConfig {
+  const MercadoLivreAppConfig({
+    this.clientId,
+    this.redirectUri,
+    this.webhookUrl,
+    required this.configured,
+    required this.clientSecretConfigured,
+    required this.source,
+  });
+
+  final String? clientId;
+  final String? redirectUri;
+  final String? webhookUrl;
+  final bool configured;
+  final bool clientSecretConfigured;
+  final String source;
+
+  factory MercadoLivreAppConfig.fromJson(Map<String, dynamic> json) {
+    return MercadoLivreAppConfig(
+      clientId: json['client_id'] as String?,
+      redirectUri: json['redirect_uri'] as String?,
+      webhookUrl: json['webhook_url'] as String?,
+      configured: json['configured'] == true,
+      clientSecretConfigured: json['client_secret_configured'] == true,
+      source: json['source'] as String? ?? 'environment',
+    );
+  }
+}
+
+class MercadoLivreAppConfigInput {
+  const MercadoLivreAppConfigInput({
+    required this.clientId,
+    this.clientSecret,
+    required this.redirectUri,
+    this.webhookUrl,
+  });
+
+  final String clientId;
+  final String? clientSecret;
+  final String redirectUri;
+  final String? webhookUrl;
+
+  Map<String, dynamic> toJson() => {
+    'client_id': clientId,
+    'client_secret': clientSecret,
+    'redirect_uri': redirectUri,
+    'webhook_url': webhookUrl,
+  };
+}
+
 class MarketplaceProduct {
   const MarketplaceProduct({
     required this.productId,

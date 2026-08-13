@@ -263,11 +263,11 @@ class _StatusCard extends StatelessWidget {
     final theme = Theme.of(context);
     final connected = status?.connected == true;
     final configured = status?.configured == true;
-    final message =
-        status?.message ??
-        (configured
-            ? 'Clique em Conectar Mercado Livre para autorizar a conta da loja.'
-            : 'Integração Mercado Livre ainda não configurada no servidor.');
+    final message = configured
+        ? (status!.message.trim().isNotEmpty
+              ? status!.message
+              : 'Conecte a conta Mercado Livre para sincronizar produtos e anúncios.')
+        : 'Mercado Livre será liberado pela Lynkar quando estiver disponível para esta empresa.';
     return AppCard(
       child: Wrap(
         spacing: 18,

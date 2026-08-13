@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     mercado_livre_client_id: str | None = None
     mercado_livre_client_secret: str | None = None
     mercado_livre_redirect_uri: str | None = None
+    mercado_livre_webhook_url: str | None = None
     holiday_sync_enabled: bool = True
     feriados_api_token: str | None = None
     sefaz_tls_verify: bool = True

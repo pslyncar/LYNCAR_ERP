@@ -48,6 +48,12 @@ MASTER_PERMISSION_DEFINITIONS = [
         "module": "conteudo",
         "description": "Permite administrar avisos, certificados e loja.",
     },
+    {
+        "code": "master:integrations",
+        "label": "Integracoes",
+        "module": "integracoes",
+        "description": "Permite configurar credenciais globais de integracoes.",
+    },
 ]
 
 

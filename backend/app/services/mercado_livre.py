@@ -2,7 +2,7 @@ from urllib.parse import urlencode
 
 import requests
 
-from app.core.config import get_settings
+from app.services.master_integrations import get_mercado_livre_app_config
 
 PROVIDER = "mercado_livre"
 AUTH_URL = "https://auth.mercadolivre.com.br/authorization"
@@ -12,23 +12,18 @@ API_BASE_URL = "https://api.mercadolibre.com"
 
 
 def mercado_livre_credentials_configured() -> bool:
-    settings = get_settings()
-    return bool(
-        settings.mercado_livre_client_id
-        and settings.mercado_livre_client_secret
-        and settings.mercado_livre_redirect_uri
-    )
+    return get_mercado_livre_app_config().configured
 
 
 def build_authorization_url(state: str) -> str:
-    settings = get_settings()
-    if not settings.mercado_livre_client_id or not settings.mercado_livre_redirect_uri:
+    config = get_mercado_livre_app_config()
+    if not config.client_id or not config.redirect_uri:
         return ""
     query = urlencode(
         {
             "response_type": "code",
-            "client_id": settings.mercado_livre_client_id,
-            "redirect_uri": settings.mercado_livre_redirect_uri,
+            "client_id": config.client_id,
+            "redirect_uri": config.redirect_uri,
             "state": state,
         }
     )
@@ -36,15 +31,15 @@ def build_authorization_url(state: str) -> str:
 
 
 def exchange_authorization_code(code: str) -> dict:
-    settings = get_settings()
+    config = get_mercado_livre_app_config()
     response = requests.post(
         TOKEN_URL,
         data={
             "grant_type": "authorization_code",
-            "client_id": settings.mercado_livre_client_id,
-            "client_secret": settings.mercado_livre_client_secret,
+            "client_id": config.client_id,
+            "client_secret": config.client_secret,
             "code": code,
-            "redirect_uri": settings.mercado_livre_redirect_uri,
+            "redirect_uri": config.redirect_uri,
         },
         timeout=30,
     )
@@ -63,13 +58,13 @@ def fetch_current_user(access_token: str) -> dict:
 
 
 def refresh_access_token(refresh_token: str) -> dict:
-    settings = get_settings()
+    config = get_mercado_livre_app_config()
     response = requests.post(
         TOKEN_URL,
         data={
             "grant_type": "refresh_token",
-            "client_id": settings.mercado_livre_client_id,
-            "client_secret": settings.mercado_livre_client_secret,
+            "client_id": config.client_id,
+            "client_secret": config.client_secret,
             "refresh_token": refresh_token,
         },
         timeout=30,

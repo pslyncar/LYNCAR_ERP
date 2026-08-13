@@ -9,6 +9,7 @@ from app.models.company_billing import CompanyBilling  # noqa: F401
 from app.models.dashboard_content import DashboardContent  # noqa: F401
 from app.models.company_presence import CompanyPresence  # noqa: F401
 from app.models.master_user import MasterUser  # noqa: F401
+from app.models.master_integration_setting import MasterIntegrationSetting  # noqa: F401
 from app.models.master_support import MasterSupportTicket, MasterSupportMessage  # noqa: F401
 from app.models.master_user_index import MasterUserIndex  # noqa: F401
 from app.models.master_fiscal_reference import (  # noqa: F401
