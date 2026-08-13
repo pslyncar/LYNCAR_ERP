@@ -114,6 +114,13 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
     }
   }
 
+  void _selectWorkflowTab(String key) {
+    final index = _workflowTabs.indexWhere((tab) => tab.key == key);
+    if (index >= 0 && _selectedStageIndex != index) {
+      setState(() => _selectedStageIndex = index);
+    }
+  }
+
   Future<void> _openForm([ServiceOrder? order]) async {
     final changed = await showDialog<bool>(
       context: context,
@@ -182,6 +189,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
   Future<void> _attendOrder(ServiceOrder order) async {
     try {
       await _api.attendServiceOrder(widget.session.token, order.id);
+      _selectWorkflowTab('andamento');
       await _load();
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -202,6 +210,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
         order.id,
         notes: notes,
       );
+      _selectWorkflowTab('aguardando');
       await _load();
     } on ApiException catch (error) {
       if (!mounted) return;
@@ -223,6 +232,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
         order.id,
         notes: notes,
       );
+      _selectWorkflowTab('aguardando');
       await _load();
     } on ApiException catch (error) {
       if (!mounted) return;
