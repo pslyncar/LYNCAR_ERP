@@ -45,6 +45,7 @@ from app.services.mercado_livre import (
 from app.services.tenancy import session_for_company
 
 router = APIRouter()
+MERCADO_LIVRE_ITEMS_BATCH_SIZE = 20
 
 
 def _company_code_from_credentials(credentials) -> str:
@@ -455,6 +456,17 @@ def _complete_mercado_livre_callback(code: str, state: str) -> dict[str, object]
     }
 
 
+def _fetch_mercado_livre_items_in_batches(
+    access_token: str,
+    item_ids: list[str],
+) -> list[dict]:
+    items: list[dict] = []
+    for index in range(0, len(item_ids), MERCADO_LIVRE_ITEMS_BATCH_SIZE):
+        batch = item_ids[index : index + MERCADO_LIVRE_ITEMS_BATCH_SIZE]
+        items.extend(fetch_items(access_token, batch))
+    return items
+
+
 @router.post("/mercado-livre/notifications")
 def mercado_livre_notifications(
     payload: dict,
@@ -586,14 +598,19 @@ def preview_mercado_livre_listings(
             offset=offset,
         )
         item_ids = [str(item) for item in search_data.get("results") or [] if item]
-        items = fetch_items(connection.access_token or "", item_ids)
+        items = _fetch_mercado_livre_items_in_batches(
+            connection.access_token or "",
+            item_ids,
+        )
     except requests.HTTPError as exc:
-        detail = exc.response.text if exc.response is not None else str(exc)
-        raise HTTPException(status_code=400, detail=detail) from exc
+        raise HTTPException(
+            status_code=400,
+            detail="Falha ao consultar anúncios do Mercado Livre. Tente novamente em instantes.",
+        ) from exc
     except requests.RequestException as exc:
         raise HTTPException(
             status_code=400,
-            detail="Falha ao consultar anuncios do Mercado Livre.",
+            detail="Falha ao consultar anúncios do Mercado Livre.",
         ) from exc
 
     products = db.scalars(select(Product)).all()

@@ -175,7 +175,7 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Mercado Livre'),
-        content: Text(message),
+        content: Text(_friendlyMercadoLivreMessage(message)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -601,7 +601,7 @@ class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Mercado Livre'),
-          content: Text(error.message),
+          content: Text(_friendlyMercadoLivreMessage(error.message)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(),
@@ -634,7 +634,11 @@ class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
             if (snapshot.hasError) {
               return SizedBox(
                 height: 220,
-                child: Center(child: Text(snapshot.error.toString())),
+                child: Center(
+                  child: Text(
+                    _friendlyMercadoLivreMessage(snapshot.error.toString()),
+                  ),
+                ),
               );
             }
             final items = snapshot.data?.results ?? const [];
@@ -777,6 +781,13 @@ class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
 
 String _formatCurrency(double value) {
   return 'R\$ ${value.toStringAsFixed(2).replaceAll('.', ',')}';
+}
+
+String _friendlyMercadoLivreMessage(String message) {
+  if (message.contains('only allows 20 elements')) {
+    return 'O Mercado Livre limita algumas consultas em lotes. Tente novamente.';
+  }
+  return message;
 }
 
 String _formatDecimal(double value) {
