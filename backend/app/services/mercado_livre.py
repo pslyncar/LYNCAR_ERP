@@ -8,6 +8,7 @@ PROVIDER = "mercado_livre"
 AUTH_URL = "https://auth.mercadolivre.com.br/authorization"
 TOKEN_URL = "https://api.mercadolibre.com/oauth/token"
 ME_URL = "https://api.mercadolibre.com/users/me"
+API_BASE_URL = "https://api.mercadolibre.com"
 
 
 def mercado_livre_credentials_configured() -> bool:
@@ -59,3 +60,56 @@ def fetch_current_user(access_token: str) -> dict:
     )
     response.raise_for_status()
     return response.json()
+
+
+def refresh_access_token(refresh_token: str) -> dict:
+    settings = get_settings()
+    response = requests.post(
+        TOKEN_URL,
+        data={
+            "grant_type": "refresh_token",
+            "client_id": settings.mercado_livre_client_id,
+            "client_secret": settings.mercado_livre_client_secret,
+            "refresh_token": refresh_token,
+        },
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_user_item_ids(
+    access_token: str,
+    seller_id: str,
+    *,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    response = requests.get(
+        f"{API_BASE_URL}/users/{seller_id}/items/search",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"limit": limit, "offset": offset},
+        timeout=30,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def fetch_items(access_token: str, item_ids: list[str]) -> list[dict]:
+    if not item_ids:
+        return []
+    response = requests.get(
+        f"{API_BASE_URL}/items",
+        headers={"Authorization": f"Bearer {access_token}"},
+        params={"ids": ",".join(item_ids)},
+        timeout=30,
+    )
+    response.raise_for_status()
+    rows = response.json()
+    if not isinstance(rows, list):
+        return []
+    return [
+        row.get("body") or {}
+        for row in rows
+        if isinstance(row, dict) and int(row.get("code") or 0) < 400
+    ]

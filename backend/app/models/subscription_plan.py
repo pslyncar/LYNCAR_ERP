@@ -16,6 +16,7 @@ class SubscriptionPlan(MasterBase):
     database_limit_mb: Mapped[int] = mapped_column(Integer)
     file_limit_mb: Mapped[int] = mapped_column(Integer)
     multi_company_limit: Mapped[int | None] = mapped_column(Integer)
+    marketplace_listing_limit: Mapped[int | None] = mapped_column(Integer)
     api_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     priority_support: Mapped[bool] = mapped_column(Boolean, default=False)
     default_modules: Mapped[list[str]] = mapped_column(JSON, default=list)

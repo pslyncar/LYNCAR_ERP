@@ -9,6 +9,7 @@ class SubscriptionPlan {
     required this.databaseLimitMb,
     required this.fileLimitMb,
     this.multiCompanyLimit,
+    this.marketplaceListingLimit,
     required this.apiEnabled,
     required this.prioritySupport,
     required this.defaultModules,
@@ -25,6 +26,7 @@ class SubscriptionPlan {
   final int databaseLimitMb;
   final int fileLimitMb;
   final int? multiCompanyLimit;
+  final int? marketplaceListingLimit;
   final bool apiEnabled;
   final bool prioritySupport;
   final List<String> defaultModules;
@@ -42,6 +44,7 @@ class SubscriptionPlan {
       databaseLimitMb: json['database_limit_mb'] as int,
       fileLimitMb: json['file_limit_mb'] as int,
       multiCompanyLimit: json['multi_company_limit'] as int?,
+      marketplaceListingLimit: json['marketplace_listing_limit'] as int?,
       apiEnabled: json['api_enabled'] as bool? ?? false,
       prioritySupport: json['priority_support'] as bool? ?? false,
       defaultModules: (json['default_modules'] as List<dynamic>? ?? const [])
@@ -61,6 +64,7 @@ class SubscriptionPlan {
       'database_limit_mb': databaseLimitMb,
       'file_limit_mb': fileLimitMb,
       'multi_company_limit': multiCompanyLimit,
+      'marketplace_listing_limit': marketplaceListingLimit,
       'api_enabled': apiEnabled,
       'priority_support': prioritySupport,
       'default_modules': defaultModules,

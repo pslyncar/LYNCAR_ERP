@@ -11,6 +11,7 @@ class SubscriptionPlanRead(BaseModel):
     database_limit_mb: int
     file_limit_mb: int
     multi_company_limit: int | None
+    marketplace_listing_limit: int | None
     api_enabled: bool
     priority_support: bool
     default_modules: list[str] = []
@@ -28,6 +29,7 @@ class SubscriptionPlanUpdate(BaseModel):
     database_limit_mb: int = Field(ge=1)
     file_limit_mb: int = Field(ge=1)
     multi_company_limit: int | None = Field(default=None, ge=1)
+    marketplace_listing_limit: int | None = Field(default=None, ge=0)
     api_enabled: bool
     priority_support: bool
     default_modules: list[str] = []

@@ -114,3 +114,39 @@ class MarketplaceNotification(Base):
         server_default=func.now(),
         nullable=False,
     )
+
+
+class MarketplaceSyncJob(Base):
+    __tablename__ = "marketplace_sync_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    provider: Mapped[str] = mapped_column(String(40), nullable=False, default="mercado_livre")
+    job_type: Mapped[str] = mapped_column(String(60), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending", index=True)
+    product_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("products.id", ondelete="SET NULL"),
+        index=True,
+    )
+    listing_id: Mapped[Optional[str]] = mapped_column(String(80), index=True)
+    resource: Mapped[Optional[str]] = mapped_column(Text)
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    scheduled_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        index=True,
+    )
+    processed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )

@@ -356,6 +356,7 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
           DataColumn(label: Text('Usuarios')),
           DataColumn(label: Text('Dados')),
           DataColumn(label: Text('Arquivos')),
+          DataColumn(label: Text('Mercado Livre')),
           DataColumn(label: Text('Modulos')),
           DataColumn(label: Text('')),
         ],
@@ -378,6 +379,13 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
                 ),
                 DataCell(Text(_storageLabel(plan.databaseLimitMb))),
                 DataCell(Text(_storageLabel(plan.fileLimitMb))),
+                DataCell(
+                  Text(
+                    plan.marketplaceListingLimit == null
+                        ? 'Ilimitado'
+                        : '${plan.marketplaceListingLimit} anuncio(s)',
+                  ),
+                ),
                 DataCell(Text(_modulesLabel(plan.defaultModules))),
                 DataCell(
                   Row(
@@ -489,6 +497,9 @@ class _PlanDialogState extends State<_PlanDialog> {
   late final _multiCompany = TextEditingController(
     text: widget.plan?.multiCompanyLimit?.toString() ?? '1',
   );
+  late final _marketplaceListingLimit = TextEditingController(
+    text: widget.plan?.marketplaceListingLimit?.toString() ?? '',
+  );
   late final _sortOrder = TextEditingController(
     text: widget.plan?.sortOrder.toString() ?? '0',
   );
@@ -510,6 +521,7 @@ class _PlanDialogState extends State<_PlanDialog> {
     _database.dispose();
     _files.dispose();
     _multiCompany.dispose();
+    _marketplaceListingLimit.dispose();
     _sortOrder.dispose();
     super.dispose();
   }
@@ -622,10 +634,27 @@ class _PlanDialogState extends State<_PlanDialog> {
                 ],
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _sortOrder,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Ordem'),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _marketplaceListingLimit,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Limite de anuncios Mercado Livre',
+                        helperText: 'Deixe vazio para ilimitado',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _sortOrder,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(labelText: 'Ordem'),
+                    ),
+                  ),
+                ],
               ),
               SwitchListTile(
                 value: _api,
@@ -690,6 +719,7 @@ class _PlanDialogState extends State<_PlanDialog> {
                   widget.plan?.fileLimitMb ?? 1536,
                 ),
                 multiCompanyLimit: _intOrNull(_multiCompany),
+                marketplaceListingLimit: _intOrNull(_marketplaceListingLimit),
                 apiEnabled: _api,
                 prioritySupport: _support,
                 defaultModules: _modules.toList()..sort(),

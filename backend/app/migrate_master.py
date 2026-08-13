@@ -107,6 +107,7 @@ MASTER_SUPPORT_TICKET_COLUMNS = [
 
 SUBSCRIPTION_PLAN_COLUMNS = [
     ("default_modules", "JSON NOT NULL DEFAULT '[]'"),
+    ("marketplace_listing_limit", "INTEGER"),
 ]
 
 BUSINESS_SEGMENT_COLUMNS = [

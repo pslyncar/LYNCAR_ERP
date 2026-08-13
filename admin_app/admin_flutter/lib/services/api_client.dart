@@ -993,6 +993,46 @@ class ApiClient {
     return ProductMarketplaceListing.fromJson(_decodeResponse(response));
   }
 
+  Future<MercadoLivreImportPreview> previewMercadoLivreListings(
+    String token, {
+    int limit = 30,
+    int offset = 0,
+  }) async {
+    final uri =
+        Uri.parse(
+          '$baseUrl/marketplaces/mercado-livre/listings/import-preview',
+        ).replace(
+          queryParameters: {
+            'limit': limit.toString(),
+            'offset': offset.toString(),
+          },
+        );
+    final response = await http.get(uri, headers: _authHeaders(token));
+    return MercadoLivreImportPreview.fromJson(_decodeResponse(response));
+  }
+
+  Future<ProductMarketplaceListing> linkMercadoLivreListing(
+    String token, {
+    required int productId,
+    required String listingId,
+    bool enabled = true,
+    bool syncStock = true,
+    bool syncPrice = true,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/marketplaces/mercado-livre/listings/link'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'product_id': productId,
+        'listing_id': listingId,
+        'enabled': enabled,
+        'sync_stock': syncStock,
+        'sync_price': syncPrice,
+      }),
+    );
+    return ProductMarketplaceListing.fromJson(_decodeResponse(response));
+  }
+
   Future<FiscalAssistantResponse> getFiscalAssistantProductSuggestions(
     String token, {
     int? productId,

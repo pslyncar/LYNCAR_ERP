@@ -63,6 +63,18 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
     }
   }
 
+  Future<void> _showImportDialog() async {
+    final linked = await showDialog<bool>(
+      context: context,
+      builder: (context) => _MercadoLivreImportDialog(
+        api: _api,
+        token: widget.session.token,
+        products: _products,
+      ),
+    );
+    if (linked == true) await _load();
+  }
+
   Future<void> _updateProduct(
     MarketplaceProduct product,
     Map<String, dynamic> payload,
@@ -156,7 +168,11 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
               ),
             )
           else ...[
-            _StatusCard(status: _status, onConnect: _copyAuthUrl),
+            _StatusCard(
+              status: _status,
+              onConnect: _copyAuthUrl,
+              onImport: _status?.connected == true ? _showImportDialog : null,
+            ),
             const SizedBox(height: 16),
             AppCard(
               child: Column(
@@ -209,10 +225,15 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.status, required this.onConnect});
+  const _StatusCard({
+    required this.status,
+    required this.onConnect,
+    required this.onImport,
+  });
 
   final MercadoLivreStatus? status;
   final VoidCallback onConnect;
+  final VoidCallback? onImport;
 
   @override
   Widget build(BuildContext context) {
@@ -247,7 +268,7 @@ class _StatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  status?.message ?? 'Carregando configuracao.',
+                  status?.message ?? 'Carregando configuração.',
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -256,6 +277,22 @@ class _StatusCard extends StatelessWidget {
                   const SizedBox(height: 8),
                   Text('Conta: ${status!.nickname}'),
                 ],
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    Chip(
+                      label: Text(
+                        status?.listingLimit == null
+                            ? 'Anúncios: ilimitado'
+                            : 'Anúncios: ${status!.enabledListings}/${status!.listingLimit}',
+                      ),
+                    ),
+                    if ((status?.pendingJobs ?? 0) > 0)
+                      Chip(label: Text('${status!.pendingJobs} pendente(s)')),
+                  ],
+                ),
               ],
             ),
           ),
@@ -270,6 +307,11 @@ class _StatusCard extends StatelessWidget {
             onPressed: configured ? onConnect : null,
             icon: const Icon(Icons.link),
             label: const Text('Copiar link de conexão'),
+          ),
+          OutlinedButton.icon(
+            onPressed: onImport,
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('Importar anúncios existentes'),
           ),
         ],
       ),
@@ -394,6 +436,225 @@ class _ProductInfo extends StatelessWidget {
           style: theme.textTheme.bodyMedium?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MercadoLivreImportDialog extends StatefulWidget {
+  const _MercadoLivreImportDialog({
+    required this.api,
+    required this.token,
+    required this.products,
+  });
+
+  final ApiClient api;
+  final String token;
+  final List<MarketplaceProduct> products;
+
+  @override
+  State<_MercadoLivreImportDialog> createState() =>
+      _MercadoLivreImportDialogState();
+}
+
+class _MercadoLivreImportDialogState extends State<_MercadoLivreImportDialog> {
+  late Future<MercadoLivreImportPreview> _future;
+  final Map<String, int?> _selectedProducts = {};
+  final Set<String> _linking = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.api.previewMercadoLivreListings(widget.token);
+  }
+
+  Future<void> _link(MercadoLivreImportItem item) async {
+    final productId = _selectedProducts[item.listingId] ?? item.localProductId;
+    if (productId == null) return;
+    setState(() => _linking.add(item.listingId));
+    try {
+      await widget.api.linkMercadoLivreListing(
+        widget.token,
+        productId: productId,
+        listingId: item.listingId,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Mercado Livre'),
+          content: Text(error.message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _linking.remove(item.listingId));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('Importar anúncios existentes'),
+      content: SizedBox(
+        width: 820,
+        child: FutureBuilder<MercadoLivreImportPreview>(
+          future: _future,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState != ConnectionState.done) {
+              return const SizedBox(
+                height: 220,
+                child: Center(child: CircularProgressIndicator()),
+              );
+            }
+            if (snapshot.hasError) {
+              return SizedBox(
+                height: 220,
+                child: Center(child: Text(snapshot.error.toString())),
+              );
+            }
+            final items = snapshot.data?.results ?? const [];
+            if (items.isEmpty) {
+              return const SizedBox(
+                height: 180,
+                child: Center(child: Text('Nenhum anúncio encontrado.')),
+              );
+            }
+            return ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 520),
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: items.length,
+                separatorBuilder: (context, index) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final selected =
+                      _selectedProducts[item.listingId] ?? item.localProductId;
+                  final isLinking = _linking.contains(item.listingId);
+                  return Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    item.title,
+                                    style: theme.textTheme.titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    [
+                                      item.listingId,
+                                      if (item.status != null) item.status!,
+                                      if (item.price != null)
+                                        _formatCurrency(item.price!),
+                                      if (item.availableQuantity != null)
+                                        'Estoque ${item.availableQuantity}',
+                                      if (item.sellerCustomField != null)
+                                        'Código ML ${item.sellerCustomField}',
+                                    ].join(' | '),
+                                    style: theme.textTheme.bodyMedium?.copyWith(
+                                      color: theme.colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            if (item.alreadyLinked)
+                              const Chip(label: Text('Já vinculado')),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: DropdownButtonFormField<int>(
+                                initialValue: selected,
+                                isExpanded: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Produto do estoque Lyncar',
+                                ),
+                                items: [
+                                  for (final product in widget.products)
+                                    DropdownMenuItem(
+                                      value: product.productId,
+                                      child: Text(
+                                        [
+                                          product.name,
+                                          if (product.internalCode
+                                                  ?.trim()
+                                                  .isNotEmpty ==
+                                              true)
+                                            product.internalCode!,
+                                          if (product.barcode
+                                                  ?.trim()
+                                                  .isNotEmpty ==
+                                              true)
+                                            product.barcode!,
+                                        ].join(' | '),
+                                      ),
+                                    ),
+                                ],
+                                onChanged: item.alreadyLinked
+                                    ? null
+                                    : (value) => setState(
+                                        () =>
+                                            _selectedProducts[item.listingId] =
+                                                value,
+                                      ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton.icon(
+                              onPressed:
+                                  item.alreadyLinked ||
+                                      selected == null ||
+                                      isLinking
+                                  ? null
+                                  : () => _link(item),
+                              icon: isLinking
+                                  ? const SizedBox(
+                                      width: 16,
+                                      height: 16,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Icon(Icons.link),
+                              label: const Text('Vincular'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(false),
+          child: const Text('Fechar'),
         ),
       ],
     );

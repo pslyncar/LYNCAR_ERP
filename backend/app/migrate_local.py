@@ -571,6 +571,68 @@ def add_marketplace_tables(bind_engine=engine) -> None:
                 """
             )
         )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS marketplace_sync_jobs (
+                    id SERIAL PRIMARY KEY,
+                    provider VARCHAR(40) NOT NULL DEFAULT 'mercado_livre',
+                    job_type VARCHAR(60) NOT NULL,
+                    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+                    product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+                    listing_id VARCHAR(80),
+                    resource TEXT,
+                    payload JSON NOT NULL DEFAULT '{}',
+                    attempts INTEGER NOT NULL DEFAULT 0,
+                    last_error TEXT,
+                    scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                    processed_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_sync_jobs_status
+                ON marketplace_sync_jobs(status)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_sync_jobs_job_type
+                ON marketplace_sync_jobs(job_type)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_sync_jobs_product_id
+                ON marketplace_sync_jobs(product_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_sync_jobs_listing_id
+                ON marketplace_sync_jobs(listing_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_sync_jobs_scheduled_at
+                ON marketplace_sync_jobs(scheduled_at)
+                """
+            )
+        )
 
 
 def add_stock_entry_columns(bind_engine=engine) -> None:

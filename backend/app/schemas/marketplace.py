@@ -13,6 +13,10 @@ class MercadoLivreStatusRead(BaseModel):
     site_id: str | None = None
     expires_at: datetime | None = None
     last_sync_at: datetime | None = None
+    listing_limit: int | None = None
+    enabled_listings: int = 0
+    remaining_listings: int | None = None
+    pending_jobs: int = 0
 
 
 class MercadoLivreAuthUrlRead(BaseModel):
@@ -54,3 +58,35 @@ class MarketplaceProductRead(BaseModel):
     stock_quantity: Decimal
     active: bool
     listing: ProductMarketplaceListingRead
+
+
+class MercadoLivreListingImportItem(BaseModel):
+    listing_id: str
+    title: str
+    status: str | None = None
+    price: Decimal | None = None
+    available_quantity: Decimal | None = None
+    permalink: str | None = None
+    thumbnail: str | None = None
+    category_id: str | None = None
+    listing_type_id: str | None = None
+    condition: str | None = None
+    seller_custom_field: str | None = None
+    local_product_id: int | None = None
+    local_product_name: str | None = None
+    already_linked: bool = False
+
+
+class MercadoLivreImportPreviewRead(BaseModel):
+    total: int
+    offset: int
+    limit: int
+    results: list[MercadoLivreListingImportItem]
+
+
+class MercadoLivreListingLink(BaseModel):
+    product_id: int
+    listing_id: str = Field(min_length=3, max_length=80)
+    enabled: bool = True
+    sync_stock: bool = True
+    sync_price: bool = True

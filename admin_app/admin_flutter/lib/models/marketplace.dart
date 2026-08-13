@@ -8,6 +8,10 @@ class MercadoLivreStatus {
     this.siteId,
     this.expiresAt,
     this.lastSyncAt,
+    this.listingLimit,
+    required this.enabledListings,
+    this.remainingListings,
+    required this.pendingJobs,
   });
 
   final bool configured;
@@ -18,6 +22,10 @@ class MercadoLivreStatus {
   final String? siteId;
   final DateTime? expiresAt;
   final DateTime? lastSyncAt;
+  final int? listingLimit;
+  final int enabledListings;
+  final int? remainingListings;
+  final int pendingJobs;
 
   factory MercadoLivreStatus.fromJson(Map<String, dynamic> json) {
     return MercadoLivreStatus(
@@ -29,6 +37,10 @@ class MercadoLivreStatus {
       siteId: json['site_id'] as String?,
       expiresAt: _parseDate(json['expires_at']),
       lastSyncAt: _parseDate(json['last_sync_at']),
+      listingLimit: json['listing_limit'] as int?,
+      enabledListings: json['enabled_listings'] as int? ?? 0,
+      remainingListings: json['remaining_listings'] as int?,
+      pendingJobs: json['pending_jobs'] as int? ?? 0,
     );
   }
 }
@@ -153,6 +165,87 @@ class ProductMarketplaceListing {
       'listing_type_id': listingTypeId,
       'condition': condition,
     };
+  }
+}
+
+class MercadoLivreImportPreview {
+  const MercadoLivreImportPreview({
+    required this.total,
+    required this.offset,
+    required this.limit,
+    required this.results,
+  });
+
+  final int total;
+  final int offset;
+  final int limit;
+  final List<MercadoLivreImportItem> results;
+
+  factory MercadoLivreImportPreview.fromJson(Map<String, dynamic> json) {
+    return MercadoLivreImportPreview(
+      total: json['total'] as int? ?? 0,
+      offset: json['offset'] as int? ?? 0,
+      limit: json['limit'] as int? ?? 0,
+      results: (json['results'] as List<dynamic>? ?? const [])
+          .map(
+            (item) =>
+                MercadoLivreImportItem.fromJson(item as Map<String, dynamic>),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class MercadoLivreImportItem {
+  const MercadoLivreImportItem({
+    required this.listingId,
+    required this.title,
+    required this.price,
+    required this.alreadyLinked,
+    this.status,
+    this.availableQuantity,
+    this.permalink,
+    this.thumbnail,
+    this.categoryId,
+    this.listingTypeId,
+    this.condition,
+    this.sellerCustomField,
+    this.localProductId,
+    this.localProductName,
+  });
+
+  final String listingId;
+  final String title;
+  final String? status;
+  final double? price;
+  final int? availableQuantity;
+  final String? permalink;
+  final String? thumbnail;
+  final String? categoryId;
+  final String? listingTypeId;
+  final String? condition;
+  final String? sellerCustomField;
+  final int? localProductId;
+  final String? localProductName;
+  final bool alreadyLinked;
+
+  factory MercadoLivreImportItem.fromJson(Map<String, dynamic> json) {
+    return MercadoLivreImportItem(
+      listingId: json['listing_id'] as String? ?? '',
+      title: json['title'] as String? ?? '',
+      status: json['status'] as String?,
+      price: json['price'] == null ? null : _toDouble(json['price']),
+      availableQuantity: json['available_quantity'] as int?,
+      permalink: json['permalink'] as String?,
+      thumbnail: json['thumbnail'] as String?,
+      categoryId: json['category_id'] as String?,
+      listingTypeId: json['listing_type_id'] as String?,
+      condition: json['condition'] as String?,
+      sellerCustomField: json['seller_custom_field'] as String?,
+      localProductId: json['local_product_id'] as int?,
+      localProductName: json['local_product_name'] as String?,
+      alreadyLinked: json['already_linked'] == true,
+    );
   }
 }
 
