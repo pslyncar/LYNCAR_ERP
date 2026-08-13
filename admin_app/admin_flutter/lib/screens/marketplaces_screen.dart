@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/marketplace.dart';
 import '../models/session.dart';
@@ -36,13 +37,14 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
       _error = null;
     });
     try {
-      final results = await Future.wait([
-        _api.getMercadoLivreStatus(widget.session.token),
-        _api.listMercadoLivreProducts(widget.session.token),
-      ]);
+      final status = await _api.getMercadoLivreStatus(widget.session.token);
+      final products = widget.session.can('marketplaces:products')
+          ? await _api.listMercadoLivreProducts(widget.session.token)
+          : <MarketplaceProduct>[];
+      if (!mounted) return;
       setState(() {
-        _status = results[0] as MercadoLivreStatus;
-        _products = results[1] as List<MarketplaceProduct>;
+        _status = status;
+        _products = products;
       });
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -51,12 +53,16 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
     }
   }
 
-  Future<void> _copyAuthUrl() async {
+  Future<void> _connectMercadoLivre() async {
     try {
       final auth = await _api.getMercadoLivreAuthUrl(widget.session.token);
       await Clipboard.setData(ClipboardData(text: auth.authUrl));
+      await launchUrl(Uri.parse(auth.authUrl), webOnlyWindowName: '_blank');
       if (!mounted) return;
-      _showMessage('Link de conexão copiado.');
+      _showMessage(
+        'Abrimos a autorização do Mercado Livre em uma nova aba e copiamos o link. '
+        'Depois que autorizar, volte aqui e clique em Atualizar.',
+      );
     } on ApiException catch (error) {
       if (!mounted) return;
       _showMessage(error.message);
@@ -128,6 +134,8 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final canConnect = widget.session.can('marketplaces:connect');
+    final canManageProducts = widget.session.can('marketplaces:products');
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -170,8 +178,12 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
           else ...[
             _StatusCard(
               status: _status,
-              onConnect: _copyAuthUrl,
-              onImport: _status?.connected == true ? _showImportDialog : null,
+              canConnect: canConnect,
+              canManageProducts: canManageProducts,
+              onConnect: canConnect ? _connectMercadoLivre : null,
+              onImport: _status?.connected == true && canManageProducts
+                  ? _showImportDialog
+                  : null,
             ),
             const SizedBox(height: 16),
             AppCard(
@@ -192,7 +204,14 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  if (_products.isEmpty)
+                  if (!canManageProducts)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: Text(
+                        'Seu perfil pode visualizar a conexão, mas não pode gerenciar produtos do Mercado Livre.',
+                      ),
+                    )
+                  else if (_products.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 24),
                       child: Text('Nenhum produto encontrado.'),
@@ -227,12 +246,16 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
 class _StatusCard extends StatelessWidget {
   const _StatusCard({
     required this.status,
+    required this.canConnect,
+    required this.canManageProducts,
     required this.onConnect,
     required this.onImport,
   });
 
   final MercadoLivreStatus? status;
-  final VoidCallback onConnect;
+  final bool canConnect;
+  final bool canManageProducts;
+  final VoidCallback? onConnect;
   final VoidCallback? onImport;
 
   @override
@@ -240,6 +263,11 @@ class _StatusCard extends StatelessWidget {
     final theme = Theme.of(context);
     final connected = status?.connected == true;
     final configured = status?.configured == true;
+    final message =
+        status?.message ??
+        (configured
+            ? 'Clique em Conectar Mercado Livre para autorizar a conta da loja.'
+            : 'Integração Mercado Livre ainda não configurada no servidor.');
     return AppCard(
       child: Wrap(
         spacing: 18,
@@ -268,7 +296,7 @@ class _StatusCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  status?.message ?? 'Carregando configuração.',
+                  message,
                   style: theme.textTheme.bodyMedium?.copyWith(
                     color: theme.colorScheme.onSurfaceVariant,
                   ),
@@ -304,15 +332,31 @@ class _StatusCard extends StatelessWidget {
             label: Text(connected ? 'Conectado' : 'Não conectado'),
           ),
           FilledButton.icon(
-            onPressed: configured ? onConnect : null,
-            icon: const Icon(Icons.link),
-            label: const Text('Copiar link de conexão'),
+            onPressed: configured && canConnect ? onConnect : null,
+            icon: const Icon(Icons.login),
+            label: Text(
+              connected ? 'Reconectar Mercado Livre' : 'Conectar Mercado Livre',
+            ),
           ),
           OutlinedButton.icon(
             onPressed: onImport,
             icon: const Icon(Icons.download_outlined),
             label: const Text('Importar anúncios existentes'),
           ),
+          if (!canConnect)
+            Text(
+              'Seu perfil não pode conectar contas.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          if (connected && !canManageProducts)
+            Text(
+              'Seu perfil não pode importar ou vincular produtos.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
         ],
       ),
     );

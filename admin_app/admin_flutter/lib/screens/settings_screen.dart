@@ -155,9 +155,10 @@ const _permissionUsageHints = {
   'fiscal:emit': 'Permite preparar/emissão fiscal quando disponível.',
   'fiscal:documents:view': 'Permite consultar documentos fiscais/XMLs.',
   'marketplaces:view': 'Mostra o menu Marketplaces.',
-  'marketplaces:connect': 'Permite copiar o link de conexao com Mercado Livre.',
+  'marketplaces:connect':
+      'Permite conectar ou reconectar a conta do Mercado Livre.',
   'marketplaces:products':
-      'Permite escolher quais produtos serao publicados e sincronizados.',
+      'Permite importar anúncios e escolher quais produtos sincronizam estoque e preço.',
   'reports:view': 'Mostra Relatórios.',
   'users:manage': 'Mostra Usuários e permite criar/alterar usuários.',
   'permissions:manage': 'Permite criar e alterar perfis de acesso.',
