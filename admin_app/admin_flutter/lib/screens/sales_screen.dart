@@ -134,14 +134,19 @@ class _SalesScreenState extends State<SalesScreen> {
       _error = null;
     });
     try {
+      final canCreateSale = widget.session.can('sales:create');
       final clients = await _api.listClients(widget.session.token);
       final products = await _api.listProducts(
         widget.session.token,
         active: true,
       );
       final sales = await _api.listSales(widget.session.token);
-      final operators = await _api.listPdvOperators(widget.session.token);
-      final sellers = await _api.listSaleSellers(widget.session.token);
+      final operators = canCreateSale
+          ? await _api.listPdvOperators(widget.session.token)
+          : <PdvOperator>[];
+      final sellers = canCreateSale
+          ? await _api.listSaleSellers(widget.session.token)
+          : <SaleSeller>[];
       final settings = await _api.getSalesSettings(widget.session.token);
       setState(() {
         _clients = clients;

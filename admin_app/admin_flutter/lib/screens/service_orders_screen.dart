@@ -92,7 +92,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
         _api.listClients(widget.session.token),
         _api.listEquipments(widget.session.token),
         _api.listProducts(widget.session.token),
-        if (widget.session.can('sales:create') ||
+        if (widget.session.can('sales:create') &&
             widget.session.can('service_orders:sell'))
           _api.listSaleSellers(widget.session.token)
         else
