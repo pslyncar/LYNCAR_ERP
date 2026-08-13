@@ -441,6 +441,35 @@ def wait_customer_service_order(
     return get_service_order_or_404(db, service_order.id)
 
 
+@router.post("/{service_order_id}/finish-attendance", response_model=ServiceOrderRead)
+def finish_attendance_service_order(
+    service_order_id: int,
+    action: ServiceOrderWorkflowAction | None = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("service_orders:attend")),
+) -> ServiceOrder:
+    ensure_technician_user(current_user)
+    service_order = get_service_order_or_404(db, service_order_id)
+    previous_status = service_order.status
+    service_order.assigned_user_id = current_user.id
+    service_order.status = "aguardando_retirada"
+    service_order.waiting_reason = None
+    apply_service_order_closed_at(service_order, service_order.status)
+    apply_service_order_waiting_rule(service_order)
+    add_service_order_event(
+        db,
+        service_order,
+        current_user,
+        "attendance_finished",
+        status_from=previous_status,
+        status_to=service_order.status,
+        assigned_user_id=current_user.id,
+        notes=action.notes if action else None,
+    )
+    db.commit()
+    return get_service_order_or_404(db, service_order.id)
+
+
 @router.get("/{service_order_id}/events", response_model=list[ServiceOrderEventRead])
 def list_service_order_events(
     service_order_id: int,

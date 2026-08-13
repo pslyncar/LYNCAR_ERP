@@ -209,6 +209,27 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
     }
   }
 
+  Future<void> _finishAttendance(ServiceOrder order) async {
+    final notes = await _askWorkflowNotes(
+      context,
+      title: 'Finalizar atendimento',
+      label: 'Observação',
+      isRequired: false,
+    );
+    if (notes == null) return;
+    try {
+      await _api.finishAttendanceServiceOrder(
+        widget.session.token,
+        order.id,
+        notes: notes,
+      );
+      await _load();
+    } on ApiException catch (error) {
+      if (!mounted) return;
+      await _showCenterMessage(context, error.message);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final clientById = {for (final client in _clients) client.id: client};
@@ -267,6 +288,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
                         onDelete: _deleteOrder,
                         onAttend: _attendOrder,
                         onWaitCustomer: _waitCustomer,
+                        onFinishAttendance: _finishAttendance,
                         onSendToSales: _openServiceOrderSale,
                       ),
               ),
@@ -571,6 +593,7 @@ class _ServiceOrdersTable extends StatelessWidget {
     required this.onDelete,
     required this.onAttend,
     required this.onWaitCustomer,
+    required this.onFinishAttendance,
     required this.onSendToSales,
   });
 
@@ -585,6 +608,7 @@ class _ServiceOrdersTable extends StatelessWidget {
   final ValueChanged<ServiceOrder> onDelete;
   final ValueChanged<ServiceOrder> onAttend;
   final ValueChanged<ServiceOrder> onWaitCustomer;
+  final ValueChanged<ServiceOrder> onFinishAttendance;
   final ValueChanged<ServiceOrder> onSendToSales;
 
   @override
@@ -674,7 +698,7 @@ class _ServiceOrdersTable extends StatelessWidget {
                               'aguardando_retorno_cliente',
                             }.contains(order.status))
                           IconButton(
-                            tooltip: 'Atender / assumir OS',
+                            tooltip: 'Atender OS',
                             onPressed: () => onAttend(order),
                             icon: const Icon(Icons.engineering_outlined),
                           ),
@@ -687,6 +711,16 @@ class _ServiceOrdersTable extends StatelessWidget {
                             tooltip: 'Aguardar retorno do cliente',
                             onPressed: () => onWaitCustomer(order),
                             icon: const Icon(Icons.support_agent_outlined),
+                          ),
+                        if (canAttend &&
+                            {
+                              'em_execucao',
+                              'em_diagnostico',
+                            }.contains(order.status))
+                          IconButton(
+                            tooltip: 'Finalizar atendimento',
+                            onPressed: () => onFinishAttendance(order),
+                            icon: const Icon(Icons.task_alt_outlined),
                           ),
                         if (canSendToSales &&
                             order.status == 'aguardando_retirada')
@@ -2697,6 +2731,7 @@ Future<String?> _askWorkflowNotes(
   BuildContext context, {
   required String title,
   required String label,
+  bool isRequired = true,
 }) async {
   final controller = TextEditingController();
   final result = await showDialog<String>(
@@ -2721,7 +2756,7 @@ Future<String?> _askWorkflowNotes(
         FilledButton(
           onPressed: () {
             final notes = controller.text.trim();
-            if (notes.length < 3) return;
+            if (isRequired && notes.length < 3) return;
             Navigator.of(context).pop(notes);
           },
           child: const Text('Confirmar'),
@@ -2798,8 +2833,9 @@ String _serviceOrderEventTitle(ServiceOrderEvent event) {
   return switch (event.eventType) {
     'created' => 'OS criada',
     'updated' => 'OS alterada',
-    'attended' => 'Atendimento assumido',
+    'attended' => 'Atendimento iniciado',
     'waiting_customer' => 'Aguardando retorno do cliente',
+    'attendance_finished' => 'Atendimento finalizado',
     'sale_created' => 'Venda gerada',
     _ => 'Mudança registrada',
   };

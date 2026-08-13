@@ -2595,6 +2595,21 @@ class ApiClient {
     return ServiceOrder.fromJson(_decodeResponse(response));
   }
 
+  Future<ServiceOrder> finishAttendanceServiceOrder(
+    String token,
+    int serviceOrderId, {
+    String? notes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/service-orders/$serviceOrderId/finish-attendance'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'notes': notes?.trim().isEmpty == true ? null : notes?.trim(),
+      }),
+    );
+    return ServiceOrder.fromJson(_decodeResponse(response));
+  }
+
   Future<ServiceOrderItem> addServiceOrderItem(
     String token,
     int serviceOrderId,
