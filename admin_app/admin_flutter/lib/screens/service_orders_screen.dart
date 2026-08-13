@@ -222,7 +222,7 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
                         clientById: clientById,
                         equipmentById: equipmentById,
                         canUpdate: widget.session.can('service_orders:update'),
-                        canDelete: widget.session.can('service_orders:finish'),
+                        canDelete: widget.session.can('service_orders:delete'),
                         canSendToSales: widget.session.can('sales:create'),
                         onOpen: _openForm,
                         onDelete: _deleteOrder,

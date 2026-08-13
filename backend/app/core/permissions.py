@@ -119,6 +119,7 @@ PERMISSIONS = [
     PermissionDefinition("service_orders:create", "Criar OS", "service_orders", "Abrir ordens de serviço."),
     PermissionDefinition("service_orders:update", "Editar OS", "service_orders", "Alterar ordens de serviço."),
     PermissionDefinition("service_orders:finish", "Finalizar OS", "service_orders", "Concluir ou cancelar OS."),
+    PermissionDefinition("service_orders:delete", "Excluir OS", "service_orders", "Excluir ordens de serviço."),
     PermissionDefinition("monitoring:view", "Ver monitoramento", "monitoring", "Visualizar monitoramento."),
     PermissionDefinition("monitoring:write", "Enviar monitoramento", "monitoring", "Registrar dados do agente."),
     PermissionDefinition("dashboard:view", "Ver dashboard", "dashboard", "Visualizar dashboard."),

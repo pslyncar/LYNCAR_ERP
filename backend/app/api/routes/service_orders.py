@@ -406,7 +406,7 @@ def delete_service_order_item(
 def delete_service_order(
     service_order_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_permission("service_orders:finish")),
+    current_user: User = Depends(require_permission("service_orders:delete")),
 ) -> None:
     service_order = get_service_order_or_404(db, service_order_id)
     db.delete(service_order)
