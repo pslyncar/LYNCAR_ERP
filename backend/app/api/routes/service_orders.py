@@ -222,6 +222,9 @@ def get_service_order_or_404(db: Session, service_order_id: int) -> ServiceOrder
             selectinload(ServiceOrder.events),
             selectinload(ServiceOrder.client),
             selectinload(ServiceOrder.equipment),
+            selectinload(ServiceOrder.opened_by_user),
+            selectinload(ServiceOrder.assigned_user),
+            selectinload(ServiceOrder.sold_by_user),
         )
         .where(ServiceOrder.id == service_order_id)
     )
@@ -312,7 +315,13 @@ def list_service_orders(
 ) -> list[ServiceOrder]:
     query = (
         select(ServiceOrder)
-        .options(selectinload(ServiceOrder.items), selectinload(ServiceOrder.events))
+        .options(
+            selectinload(ServiceOrder.items),
+            selectinload(ServiceOrder.events),
+            selectinload(ServiceOrder.opened_by_user),
+            selectinload(ServiceOrder.assigned_user),
+            selectinload(ServiceOrder.sold_by_user),
+        )
         .order_by(ServiceOrder.opened_at.desc())
     )
     if client_id is not None:

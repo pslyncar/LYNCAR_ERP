@@ -87,6 +87,36 @@ class ServiceOrder(Base):
         order_by="ServiceOrderEvent.created_at.desc()",
     )
 
+    @property
+    def opened_by_user_name(self) -> str | None:
+        return self.opened_by_user.name if self.opened_by_user else None
+
+    @property
+    def opened_by_user_code(self) -> str | None:
+        if self.opened_by_user is None:
+            return None
+        return self.opened_by_user.seller_code or self.opened_by_user.technician_code
+
+    @property
+    def assigned_user_name(self) -> str | None:
+        return self.assigned_user.name if self.assigned_user else None
+
+    @property
+    def assigned_user_code(self) -> str | None:
+        if self.assigned_user is None:
+            return None
+        return self.assigned_user.technician_code or self.assigned_user.seller_code
+
+    @property
+    def sold_by_user_name(self) -> str | None:
+        return self.sold_by_user.name if self.sold_by_user else None
+
+    @property
+    def sold_by_user_code(self) -> str | None:
+        if self.sold_by_user is None:
+            return None
+        return self.sold_by_user.seller_code or self.sold_by_user.technician_code
+
 
 class ServiceOrderEvent(Base):
     __tablename__ = "service_order_events"

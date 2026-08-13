@@ -1866,6 +1866,10 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                       ),
                     ),
                   ] else ...[
+                    if (order != null) ...[
+                      _ServiceOrderPeopleSummary(order: order),
+                      const SizedBox(height: 12),
+                    ],
                     _ResponsiveFields(
                       children: [
                         DropdownButtonFormField<int>(
@@ -2750,6 +2754,118 @@ class _ServiceOrderHistory extends StatelessWidget {
                     ),
                   ),
                 ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ServiceOrderPeopleSummary extends StatelessWidget {
+  const _ServiceOrderPeopleSummary({required this.order});
+
+  final ServiceOrder order;
+
+  @override
+  Widget build(BuildContext context) {
+    final openedBy = _personLabel(
+      order.openedByUserName,
+      order.openedByUserCode,
+      fallbackId: order.openedByUserId,
+    );
+    final assignedTo = _personLabel(
+      order.assignedUserName,
+      order.assignedUserCode,
+      fallbackId: order.assignedUserId,
+    );
+    final soldBy = _personLabel(
+      order.soldByUserName,
+      order.soldByUserCode,
+      fallbackId: order.soldByUserId,
+    );
+
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _PeopleChip(
+          icon: Icons.storefront_outlined,
+          label: 'Vendedor que abriu',
+          value: openedBy,
+        ),
+        _PeopleChip(
+          icon: Icons.engineering_outlined,
+          label: 'Tecnico responsavel',
+          value: assignedTo,
+        ),
+        if (soldBy != null)
+          _PeopleChip(
+            icon: Icons.point_of_sale_outlined,
+            label: 'Vendedor da venda',
+            value: soldBy,
+          ),
+      ],
+    );
+  }
+
+  static String? _personLabel(String? name, String? code, {int? fallbackId}) {
+    final cleanName = name?.trim();
+    final cleanCode = code?.trim();
+    if (cleanName != null && cleanName.isNotEmpty) {
+      return cleanCode != null && cleanCode.isNotEmpty
+          ? '$cleanCode - $cleanName'
+          : cleanName;
+    }
+    if (fallbackId != null) return '#$fallbackId';
+    return null;
+  }
+}
+
+class _PeopleChip extends StatelessWidget {
+  const _PeopleChip({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FBFF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFD8E3F1)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 20, color: const Color(0xFF2563EB)),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                label,
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: const Color(0xFF64748B),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              Text(
+                value ?? 'Nao informado',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                  color: const Color(0xFF0F172A),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );

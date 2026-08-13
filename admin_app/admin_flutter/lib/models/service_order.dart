@@ -19,6 +19,12 @@ class ServiceOrder {
     this.assignedUserId,
     this.openedByUserId,
     this.soldByUserId,
+    this.openedByUserName,
+    this.openedByUserCode,
+    this.assignedUserName,
+    this.assignedUserCode,
+    this.soldByUserName,
+    this.soldByUserCode,
     this.number,
     this.serviceType,
     this.receivedEquipment,
@@ -37,6 +43,12 @@ class ServiceOrder {
   final int? assignedUserId;
   final int? openedByUserId;
   final int? soldByUserId;
+  final String? openedByUserName;
+  final String? openedByUserCode;
+  final String? assignedUserName;
+  final String? assignedUserCode;
+  final String? soldByUserName;
+  final String? soldByUserCode;
   final String? number;
   final String title;
   final String status;
@@ -68,6 +80,12 @@ class ServiceOrder {
       assignedUserId: json['assigned_user_id'] as int?,
       openedByUserId: json['opened_by_user_id'] as int?,
       soldByUserId: json['sold_by_user_id'] as int?,
+      openedByUserName: json['opened_by_user_name'] as String?,
+      openedByUserCode: json['opened_by_user_code'] as String?,
+      assignedUserName: json['assigned_user_name'] as String?,
+      assignedUserCode: json['assigned_user_code'] as String?,
+      soldByUserName: json['sold_by_user_name'] as String?,
+      soldByUserCode: json['sold_by_user_code'] as String?,
       number: json['number'] as String?,
       title: json['title'] as String,
       status: json['status'] as String,

@@ -82,7 +82,13 @@ class ServiceOrderItemRead(ServiceOrderItemCreate):
 class ServiceOrderRead(ServiceOrderBase):
     id: int
     opened_by_user_id: int | None = None
+    opened_by_user_name: str | None = None
+    opened_by_user_code: str | None = None
     sold_by_user_id: int | None = None
+    sold_by_user_name: str | None = None
+    sold_by_user_code: str | None = None
+    assigned_user_name: str | None = None
+    assigned_user_code: str | None = None
     items_amount: Decimal
     total_amount: Decimal
     opened_at: datetime
