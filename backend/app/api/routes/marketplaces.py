@@ -235,7 +235,7 @@ def mercado_livre_status(
             message=(
                 "Credenciais do app Mercado Livre configuradas. Clique em conectar."
                 if configured
-                else "Configure CLIENT_ID, CLIENT_SECRET e REDIRECT_URI do Mercado Livre no servidor."
+                else "Integração Mercado Livre em implantação. Fale com o suporte para liberar a conexão."
             ),
         )
     return MercadoLivreStatusRead(
