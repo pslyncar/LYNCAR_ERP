@@ -6,9 +6,10 @@ import requests
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import require_permission
+from app.api.dependencies import bearer_scheme, require_permission
 from app.core.database import get_db
 from app.core.master_database import MasterSessionLocal
+from app.core.security import decode_access_token
 from app.models.company import Company
 from app.models.marketplace import (
     MarketplaceConnection,
@@ -43,6 +44,14 @@ from app.services.mercado_livre import (
 from app.services.tenancy import session_for_company
 
 router = APIRouter()
+
+
+def _company_code_from_credentials(credentials) -> str:
+    payload = decode_access_token(credentials.credentials)
+    company_code = payload.get("company_code")
+    if not isinstance(company_code, str) or not company_code.strip():
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token sem empresa.")
+    return company_code
 
 
 def _parse_ml_datetime(value: object) -> datetime | None:
@@ -207,11 +216,13 @@ def _normalize_key(value: str | None) -> str:
 @router.get("/mercado-livre/status", response_model=MercadoLivreStatusRead)
 def mercado_livre_status(
     db: Session = Depends(get_db),
+    credentials=Depends(bearer_scheme),
     current_user: User = Depends(require_permission("marketplaces:view")),
 ) -> MercadoLivreStatusRead:
+    company_code = _company_code_from_credentials(credentials)
     configured = mercado_livre_credentials_configured()
     connection = _current_connection(db)
-    listing_limit = _marketplace_listing_limit(current_user.company_code)
+    listing_limit = _marketplace_listing_limit(company_code)
     enabled_listings = _enabled_listing_count(db)
     pending_jobs = int(
         db.scalar(
@@ -261,6 +272,7 @@ def mercado_livre_status(
 @router.get("/mercado-livre/auth-url", response_model=MercadoLivreAuthUrlRead)
 def mercado_livre_auth_url(
     db: Session = Depends(get_db),
+    credentials=Depends(bearer_scheme),
     current_user: User = Depends(require_permission("marketplaces:connect")),
 ) -> MercadoLivreAuthUrlRead:
     if not mercado_livre_credentials_configured():
@@ -268,12 +280,13 @@ def mercado_livre_auth_url(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Mercado Livre sera liberado pela Lynkar quando estiver disponivel para esta empresa.",
         )
-    state = f"{current_user.company_code}.{token_urlsafe(32)}"
+    company_code = _company_code_from_credentials(credentials)
+    state = f"{company_code}.{token_urlsafe(32)}"
     db.add(
         MarketplaceOAuthState(
             provider=PROVIDER,
             state=state,
-            tenant_code=current_user.company_code,
+            tenant_code=company_code,
             created_by_user_id=current_user.id,
             expires_at=datetime.now(UTC) + timedelta(minutes=15),
         )
@@ -439,14 +452,16 @@ def update_mercado_livre_product(
     product_id: int,
     payload: ProductMarketplaceListingUpdate,
     db: Session = Depends(get_db),
+    credentials=Depends(bearer_scheme),
     current_user: User = Depends(require_permission("marketplaces:products")),
 ) -> ProductMarketplaceListingRead:
+    company_code = _company_code_from_credentials(credentials)
     product = db.get(Product, product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Produto nao encontrado.")
     _enforce_listing_limit(
         db,
-        current_user.company_code,
+        company_code,
         product_id=product_id,
         enabled=payload.enabled,
     )
@@ -574,14 +589,16 @@ def preview_mercado_livre_listings(
 def link_mercado_livre_listing(
     payload: MercadoLivreListingLink,
     db: Session = Depends(get_db),
+    credentials=Depends(bearer_scheme),
     current_user: User = Depends(require_permission("marketplaces:products")),
 ) -> ProductMarketplaceListingRead:
+    company_code = _company_code_from_credentials(credentials)
     product = db.get(Product, payload.product_id)
     if product is None:
         raise HTTPException(status_code=404, detail="Produto nao encontrado.")
     _enforce_listing_limit(
         db,
-        current_user.company_code,
+        company_code,
         product_id=payload.product_id,
         enabled=payload.enabled,
     )
