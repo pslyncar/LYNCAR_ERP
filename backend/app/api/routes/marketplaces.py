@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+﻿from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -177,7 +177,7 @@ def _as_utc(value: datetime | None) -> datetime | None:
 def _ensure_valid_connection(db: Session) -> MarketplaceConnection:
     connection = _current_connection(db)
     if connection is None or connection.status != "connected" or not connection.access_token:
-        raise HTTPException(status_code=400, detail="Mercado Livre nao conectado.")
+        raise HTTPException(status_code=400, detail="Mercado Livre não conectado.")
     expires_at = _as_utc(connection.expires_at)
     if (
         connection.refresh_token
@@ -193,7 +193,7 @@ def _ensure_valid_connection(db: Session) -> MarketplaceConnection:
             ) from exc
         access_token = token_data.get("access_token")
         if not access_token:
-            raise HTTPException(status_code=400, detail="Mercado Livre nao retornou access_token.")
+            raise HTTPException(status_code=400, detail="Mercado Livre não retornou access_token.")
         expires_in = token_data.get("expires_in")
         connection.access_token = access_token
         connection.refresh_token = token_data.get("refresh_token") or connection.refresh_token
@@ -245,9 +245,9 @@ def mercado_livre_status(
             ),
             pending_jobs=pending_jobs,
             message=(
-                "Conecte a conta Mercado Livre para sincronizar produtos e anuncios."
+                "Conecte a conta Mercado Livre para sincronizar produtos e anúncios."
                 if configured
-                else "Mercado Livre sera liberado pela Lynkar quando estiver disponivel para esta empresa."
+                else "Mercado Livre será liberado pela LYNCAR quando estiver disponível para esta empresa."
             ),
         )
     return MercadoLivreStatusRead(
@@ -255,7 +255,7 @@ def mercado_livre_status(
         connected=bool(connection.access_token and connection.status == "connected"),
         message="Conta Mercado Livre conectada."
         if connection.status == "connected"
-        else "Conexao pendente.",
+        else "Conexão pendente.",
         account_id=connection.account_id,
         nickname=connection.nickname,
         site_id=connection.site_id,
@@ -279,7 +279,7 @@ def mercado_livre_auth_url(
     if not mercado_livre_credentials_configured():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mercado Livre sera liberado pela Lynkar quando estiver disponivel para esta empresa.",
+            detail="Mercado Livre será liberado pela LYNCAR quando estiver disponível para esta empresa.",
         )
     company_code = _company_code_from_credentials(credentials)
     state = f"{company_code}.{token_urlsafe(32)}"
@@ -307,84 +307,7 @@ def mercado_livre_callback(
     code: str,
     state: str,
 ) -> HTMLResponse:
-    if not mercado_livre_credentials_configured():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Mercado Livre sera liberado pela Lynkar quando estiver disponivel para esta empresa.",
-        )
-    if "." not in state:
-        raise HTTPException(status_code=400, detail="Estado OAuth invalido.")
-    tenant_code = state.split(".", 1)[0]
-    with session_for_company(tenant_code) as state_db:
-        oauth_state = state_db.scalar(
-            select(MarketplaceOAuthState).where(
-                MarketplaceOAuthState.provider == PROVIDER,
-                MarketplaceOAuthState.state == state,
-            )
-        )
-        if oauth_state is None:
-            raise HTTPException(status_code=400, detail="Estado OAuth invalido.")
-        if oauth_state.used_at is not None:
-            raise HTTPException(status_code=400, detail="Estado OAuth ja utilizado.")
-        oauth_state_expires_at = _as_utc(oauth_state.expires_at)
-        if oauth_state_expires_at is None or oauth_state_expires_at < datetime.now(UTC):
-            raise HTTPException(status_code=400, detail="Estado OAuth expirado.")
-        tenant_code = oauth_state.tenant_code
-
-    try:
-        token_data = exchange_authorization_code(code)
-        access_token = token_data.get("access_token")
-        if not access_token:
-            raise HTTPException(
-                status_code=400,
-                detail="Mercado Livre nao retornou access_token.",
-            )
-        account = fetch_current_user(access_token)
-    except requests.HTTPError as exc:
-        detail = exc.response.text if exc.response is not None else str(exc)
-        raise HTTPException(status_code=400, detail=detail) from exc
-    except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=400,
-            detail="Falha ao comunicar com Mercado Livre.",
-        ) from exc
-
-    with session_for_company(tenant_code) as tenant_db:
-        oauth_state = tenant_db.scalar(
-            select(MarketplaceOAuthState).where(
-                MarketplaceOAuthState.provider == PROVIDER,
-                MarketplaceOAuthState.state == state,
-            )
-        )
-        if oauth_state is None or oauth_state.used_at is not None:
-            raise HTTPException(status_code=400, detail="Estado OAuth invalido.")
-        account_id = str(account.get("id") or token_data.get("user_id") or "")
-        connection = tenant_db.scalar(
-            select(MarketplaceConnection).where(
-                MarketplaceConnection.provider == PROVIDER,
-                MarketplaceConnection.account_id == account_id,
-            )
-        )
-        if connection is None:
-            connection = MarketplaceConnection(provider=PROVIDER, account_id=account_id)
-            tenant_db.add(connection)
-        expires_in = token_data.get("expires_in")
-        connection.nickname = account.get("nickname")
-        connection.site_id = account.get("site_id")
-        connection.status = "connected"
-        connection.access_token = access_token
-        connection.refresh_token = token_data.get("refresh_token")
-        connection.token_type = token_data.get("token_type")
-        connection.scopes = token_data.get("scope", "").split()
-        connection.raw_account = account
-        connection.expires_at = (
-            datetime.now(UTC) + timedelta(seconds=int(expires_in))
-            if expires_in
-            else None
-        )
-        connection.last_sync_at = datetime.now(UTC)
-        oauth_state.used_at = datetime.now(UTC)
-        tenant_db.commit()
+    _complete_mercado_livre_callback(code, state)
     return HTMLResponse(
         """
         <!doctype html>
@@ -429,7 +352,7 @@ def mercado_livre_callback(
           <body>
             <main>
               <h1>Mercado Livre conectado</h1>
-              <p>Volte para a aba do Lyncar e atualize a tela de Marketplaces.</p>
+              <p>Volte para a aba do LYNCAR. A tela de Marketplaces será atualizada automaticamente.</p>
               <button onclick="window.close()">Fechar esta aba</button>
             </main>
           </body>
@@ -437,6 +360,99 @@ def mercado_livre_callback(
         """,
         status_code=status.HTTP_200_OK,
     )
+
+
+@router.get("/mercado-livre/callback/finalize")
+def mercado_livre_callback_finalize(code: str, state: str) -> dict[str, object]:
+    return _complete_mercado_livre_callback(code, state)
+
+
+def _complete_mercado_livre_callback(code: str, state: str) -> dict[str, object]:
+    if not mercado_livre_credentials_configured():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Mercado Livre será liberado pela LYNCAR quando estiver disponível para esta empresa.",
+        )
+    if "." not in state:
+        raise HTTPException(status_code=400, detail="Estado OAuth inválido.")
+    tenant_code = state.split(".", 1)[0]
+    with session_for_company(tenant_code) as state_db:
+        oauth_state = state_db.scalar(
+            select(MarketplaceOAuthState).where(
+                MarketplaceOAuthState.provider == PROVIDER,
+                MarketplaceOAuthState.state == state,
+            )
+        )
+        if oauth_state is None:
+            raise HTTPException(status_code=400, detail="Estado OAuth inválido.")
+        if oauth_state.used_at is not None:
+            raise HTTPException(status_code=400, detail="Estado OAuth já utilizado.")
+        oauth_state_expires_at = _as_utc(oauth_state.expires_at)
+        if oauth_state_expires_at is None or oauth_state_expires_at < datetime.now(UTC):
+            raise HTTPException(status_code=400, detail="Estado OAuth expirado.")
+        tenant_code = oauth_state.tenant_code
+
+    try:
+        token_data = exchange_authorization_code(code)
+        access_token = token_data.get("access_token")
+        if not access_token:
+            raise HTTPException(
+                status_code=400,
+                detail="Mercado Livre não retornou access_token.",
+            )
+        account = fetch_current_user(access_token)
+    except requests.HTTPError as exc:
+        detail = exc.response.text if exc.response is not None else str(exc)
+        raise HTTPException(status_code=400, detail=detail) from exc
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="Falha ao comunicar com Mercado Livre.",
+        ) from exc
+
+    with session_for_company(tenant_code) as tenant_db:
+        oauth_state = tenant_db.scalar(
+            select(MarketplaceOAuthState).where(
+                MarketplaceOAuthState.provider == PROVIDER,
+                MarketplaceOAuthState.state == state,
+            )
+        )
+        if oauth_state is None or oauth_state.used_at is not None:
+            raise HTTPException(status_code=400, detail="Estado OAuth inválido.")
+        account_id = str(account.get("id") or token_data.get("user_id") or "")
+        connection = tenant_db.scalar(
+            select(MarketplaceConnection).where(
+                MarketplaceConnection.provider == PROVIDER,
+                MarketplaceConnection.account_id == account_id,
+            )
+        )
+        if connection is None:
+            connection = MarketplaceConnection(provider=PROVIDER, account_id=account_id)
+            tenant_db.add(connection)
+        expires_in = token_data.get("expires_in")
+        connection.nickname = account.get("nickname")
+        connection.site_id = account.get("site_id")
+        connection.status = "connected"
+        connection.access_token = access_token
+        connection.refresh_token = token_data.get("refresh_token")
+        connection.token_type = token_data.get("token_type")
+        connection.scopes = token_data.get("scope", "").split()
+        connection.raw_account = account
+        connection.expires_at = (
+            datetime.now(UTC) + timedelta(seconds=int(expires_in))
+            if expires_in
+            else None
+        )
+        connection.last_sync_at = datetime.now(UTC)
+        oauth_state.used_at = datetime.now(UTC)
+        tenant_db.commit()
+    return {
+        "connected": True,
+        "tenant_code": tenant_code,
+        "account_id": account_id,
+        "nickname": account.get("nickname"),
+        "site_id": account.get("site_id"),
+    }
 
 
 @router.post("/mercado-livre/notifications")
@@ -513,7 +529,7 @@ def update_mercado_livre_product(
     company_code = _company_code_from_credentials(credentials)
     product = db.get(Product, product_id)
     if product is None:
-        raise HTTPException(status_code=404, detail="Produto nao encontrado.")
+        raise HTTPException(status_code=404, detail="Produto não encontrado.")
     _enforce_listing_limit(
         db,
         company_code,
@@ -650,7 +666,7 @@ def link_mercado_livre_listing(
     company_code = _company_code_from_credentials(credentials)
     product = db.get(Product, payload.product_id)
     if product is None:
-        raise HTTPException(status_code=404, detail="Produto nao encontrado.")
+        raise HTTPException(status_code=404, detail="Produto não encontrado.")
     _enforce_listing_limit(
         db,
         company_code,

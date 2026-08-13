@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:web/web.dart' as web;
@@ -23,7 +25,9 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
   MercadoLivreStatus? _status;
   List<MarketplaceProduct> _products = [];
   bool _loading = true;
+  bool _connectingMercadoLivre = false;
   String? _error;
+  Timer? _mercadoLivrePollingTimer;
 
   @override
   void initState() {
@@ -53,11 +57,52 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
     }
   }
 
+  Future<bool> _refreshMercadoLivreStatusSilently() async {
+    try {
+      final status = await _api.getMercadoLivreStatus(widget.session.token);
+      final products = widget.session.can('marketplaces:products')
+          ? await _api.listMercadoLivreProducts(widget.session.token)
+          : <MarketplaceProduct>[];
+      if (!mounted) return false;
+      setState(() {
+        _status = status;
+        _products = products;
+        _error = null;
+      });
+      return status.connected;
+    } on ApiException {
+      return false;
+    }
+  }
+
+  void _startMercadoLivrePolling() {
+    _mercadoLivrePollingTimer?.cancel();
+    var attempts = 0;
+    _mercadoLivrePollingTimer = Timer.periodic(const Duration(seconds: 3), (
+      timer,
+    ) async {
+      attempts += 1;
+      final connected = await _refreshMercadoLivreStatusSilently();
+      if (connected || attempts >= 60) {
+        timer.cancel();
+        if (!mounted) return;
+        setState(() => _connectingMercadoLivre = false);
+        if (connected) {
+          _showMessage('Mercado Livre conectado com sucesso.');
+        }
+      }
+    });
+  }
+
   Future<void> _connectMercadoLivre() async {
     try {
+      setState(() => _connectingMercadoLivre = true);
       final auth = await _api.getMercadoLivreAuthUrl(widget.session.token);
       final authUrl = auth.authUrl.trim();
       if (authUrl.isEmpty) {
+        if (mounted) {
+          setState(() => _connectingMercadoLivre = false);
+        }
         _showMessage(
           'Não foi possível gerar o link de conexão do Mercado Livre.',
         );
@@ -65,10 +110,18 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
       }
       await Clipboard.setData(ClipboardData(text: auth.authUrl));
       web.window.open(authUrl, '_blank', 'noopener,noreferrer');
+      _startMercadoLivrePolling();
     } on ApiException catch (error) {
       if (!mounted) return;
+      setState(() => _connectingMercadoLivre = false);
       _showMessage(error.message);
     }
+  }
+
+  @override
+  void dispose() {
+    _mercadoLivrePollingTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _showImportDialog() async {
@@ -180,6 +233,7 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
           else ...[
             _StatusCard(
               status: _status,
+              connecting: _connectingMercadoLivre,
               canConnect: canConnect,
               canManageProducts: canManageProducts,
               onConnect: canConnect ? _connectMercadoLivre : null,
@@ -248,6 +302,7 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
 class _StatusCard extends StatelessWidget {
   const _StatusCard({
     required this.status,
+    required this.connecting,
     required this.canConnect,
     required this.canManageProducts,
     required this.onConnect,
@@ -255,6 +310,7 @@ class _StatusCard extends StatelessWidget {
   });
 
   final MercadoLivreStatus? status;
+  final bool connecting;
   final bool canConnect;
   final bool canManageProducts;
   final VoidCallback? onConnect;
@@ -269,7 +325,7 @@ class _StatusCard extends StatelessWidget {
         ? (status!.message.trim().isNotEmpty
               ? status!.message
               : 'Conecte a conta Mercado Livre para sincronizar produtos e anúncios.')
-        : 'Mercado Livre será liberado pela Lynkar quando estiver disponível para esta empresa.';
+        : 'Mercado Livre será liberado pela LYNCAR quando estiver disponível para esta empresa.';
     return AppCard(
       child: Wrap(
         spacing: 18,
@@ -334,10 +390,22 @@ class _StatusCard extends StatelessWidget {
             label: Text(connected ? 'Conectado' : 'Não conectado'),
           ),
           FilledButton.icon(
-            onPressed: configured && canConnect ? onConnect : null,
-            icon: const Icon(Icons.login),
+            onPressed: configured && canConnect && !connecting
+                ? onConnect
+                : null,
+            icon: connecting
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.login),
             label: Text(
-              connected ? 'Reconectar Mercado Livre' : 'Conectar Mercado Livre',
+              connecting
+                  ? 'Aguardando autorização'
+                  : connected
+                  ? 'Reconectar Mercado Livre'
+                  : 'Conectar Mercado Livre',
             ),
           ),
           OutlinedButton.icon(
