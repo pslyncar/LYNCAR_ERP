@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 from secrets import token_urlsafe
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 import requests
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -305,7 +306,7 @@ def mercado_livre_auth_url(
 def mercado_livre_callback(
     code: str,
     state: str,
-) -> dict[str, str]:
+) -> HTMLResponse:
     if not mercado_livre_credentials_configured():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -384,10 +385,58 @@ def mercado_livre_callback(
         connection.last_sync_at = datetime.now(UTC)
         oauth_state.used_at = datetime.now(UTC)
         tenant_db.commit()
-    return {
-        "status": "connected",
-        "message": "Mercado Livre conectado. Volte ao Lyncar e atualize a tela.",
-    }
+    return HTMLResponse(
+        """
+        <!doctype html>
+        <html lang="pt-BR">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1">
+            <title>Mercado Livre conectado</title>
+            <style>
+              body {
+                margin: 0;
+                min-height: 100vh;
+                display: grid;
+                place-items: center;
+                background: #f3f7fb;
+                color: #132033;
+                font-family: Arial, sans-serif;
+              }
+              main {
+                width: min(520px, calc(100vw - 32px));
+                padding: 36px;
+                border: 1px solid #d7e3f0;
+                border-radius: 12px;
+                background: white;
+                box-shadow: 0 18px 42px rgba(19, 32, 51, 0.12);
+                text-align: center;
+              }
+              h1 { margin: 0 0 12px; font-size: 28px; }
+              p { margin: 0 0 24px; color: #60708a; font-size: 18px; }
+              button {
+                border: 0;
+                border-radius: 8px;
+                background: #12627a;
+                color: white;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: 700;
+                padding: 14px 22px;
+              }
+            </style>
+          </head>
+          <body>
+            <main>
+              <h1>Mercado Livre conectado</h1>
+              <p>Volte para a aba do Lyncar e atualize a tela de Marketplaces.</p>
+              <button onclick="window.close()">Fechar esta aba</button>
+            </main>
+          </body>
+        </html>
+        """,
+        status_code=status.HTTP_200_OK,
+    )
 
 
 @router.post("/mercado-livre/notifications")

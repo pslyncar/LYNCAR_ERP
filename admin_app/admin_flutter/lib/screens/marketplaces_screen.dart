@@ -64,7 +64,7 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
         return;
       }
       await Clipboard.setData(ClipboardData(text: auth.authUrl));
-      web.window.location.assign(authUrl);
+      web.window.open(authUrl, '_blank', 'noopener,noreferrer');
     } on ApiException catch (error) {
       if (!mounted) return;
       _showMessage(error.message);
