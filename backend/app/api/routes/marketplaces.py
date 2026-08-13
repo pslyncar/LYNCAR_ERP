@@ -266,7 +266,7 @@ def mercado_livre_auth_url(
     if not mercado_livre_credentials_configured():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Credenciais do Mercado Livre nao configuradas no servidor.",
+            detail="Integração Mercado Livre em implantação. Fale com o suporte para liberar a conexão.",
         )
     state = f"{current_user.company_code}.{token_urlsafe(32)}"
     db.add(
@@ -290,7 +290,7 @@ def mercado_livre_callback(
     if not mercado_livre_credentials_configured():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Credenciais do Mercado Livre nao configuradas no servidor.",
+            detail="Integração Mercado Livre em implantação. Fale com o suporte para liberar a conexão.",
         )
     if "." not in state:
         raise HTTPException(status_code=400, detail="Estado OAuth invalido.")
