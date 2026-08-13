@@ -122,6 +122,9 @@ class _ServiceOrdersScreenState extends State<ServiceOrdersScreen> {
         clients: _clients,
         equipments: _equipments,
         products: _products,
+        hasMonitoring:
+            widget.session.hasModule('monitoring') ||
+            widget.session.hasModule('equipments'),
       ),
     );
     if (changed == true) await _load();
@@ -1352,6 +1355,7 @@ class _ServiceOrderDialog extends StatefulWidget {
     required this.clients,
     required this.equipments,
     required this.products,
+    required this.hasMonitoring,
     this.order,
   });
 
@@ -1362,6 +1366,7 @@ class _ServiceOrderDialog extends StatefulWidget {
   final List<Client> clients;
   final List<Equipment> equipments;
   final List<Product> products;
+  final bool hasMonitoring;
 
   @override
   State<_ServiceOrderDialog> createState() => _ServiceOrderDialogState();
@@ -1463,8 +1468,8 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
     try {
       final payload = ServiceOrderPayload(
         clientId: _clientId!,
-        equipmentId: _equipmentId,
-        number: _number.text,
+        equipmentId: widget.hasMonitoring ? _equipmentId : null,
+        number: _current?.number ?? '',
         title: _title.text,
         status: _status,
         priority: _priority,
@@ -1738,31 +1743,27 @@ class _ServiceOrderDialogState extends State<_ServiceOrderDialog> {
                         validator: (value) =>
                             value == null ? 'Selecione o cliente.' : null,
                       ),
-                      DropdownButtonFormField<int?>(
-                        initialValue: _equipmentId,
-                        decoration: const InputDecoration(
-                          labelText: 'Maquina monitorada, se existir',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          const DropdownMenuItem(
-                            value: null,
-                            child: Text('Sem equipamento'),
+                      if (widget.hasMonitoring)
+                        DropdownButtonFormField<int?>(
+                          initialValue: _equipmentId,
+                          decoration: const InputDecoration(
+                            labelText: 'Maquina monitorada, se existir',
+                            border: OutlineInputBorder(),
                           ),
-                          for (final equipment in filteredEquipments)
-                            DropdownMenuItem(
-                              value: equipment.id,
-                              child: Text(equipment.hostname),
+                          items: [
+                            const DropdownMenuItem(
+                              value: null,
+                              child: Text('Sem equipamento'),
                             ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _equipmentId = value),
-                      ),
-                      _field(
-                        _number,
-                        'Código da OS',
-                        hintText: 'Automatico: M1, M2...',
-                      ),
+                            for (final equipment in filteredEquipments)
+                              DropdownMenuItem(
+                                value: equipment.id,
+                                child: Text(equipment.hostname),
+                              ),
+                          ],
+                          onChanged: (value) =>
+                              setState(() => _equipmentId = value),
+                        ),
                       _field(_title, 'Titulo', required: true),
                       TextFormField(
                         controller: _receivedEquipment,

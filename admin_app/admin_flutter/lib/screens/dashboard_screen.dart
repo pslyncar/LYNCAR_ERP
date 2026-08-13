@@ -73,6 +73,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final summary = _summary;
+    final showMonitoringDashboard =
+        widget.session.hasModule('monitoring') ||
+        widget.session.hasModule('equipments');
 
     return ColoredBox(
       color: const Color(0xFFF4F7FB),
@@ -93,7 +96,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               else if (_error != null)
                 ErrorPanel(message: _error!, onRetry: _loadDashboard)
               else if (summary != null) ...[
-                if (summary.isTechnical) ...[
+                if (summary.isTechnical && showMonitoringDashboard) ...[
                   _MetricGrid(summary: summary),
                   const SizedBox(height: 18),
                   _DashboardBody(summary: summary),
