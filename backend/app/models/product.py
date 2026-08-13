@@ -94,3 +94,8 @@ class Product(Base):
         back_populates="component_product",
         foreign_keys="ProductCompositionItem.component_product_id",
     )
+    marketplace_listings = relationship(
+        "ProductMarketplaceListing",
+        back_populates="product",
+        cascade="all, delete-orphan",
+    )

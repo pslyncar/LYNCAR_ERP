@@ -5,7 +5,7 @@ from sqlalchemy import text
 from app.core.database import Base, engine
 from app.core.master_database import MasterSessionLocal
 from app.models.company import Company
-from app.models import access_control, cash_closing, client, company, equipment, equipment_status, fiscal, fiscal_assistant, monitoring, payable, pdv_cash_session, pdv_operator, pdv_terminal, product, product_batch, product_composition, production_order, receivable, sale, service_contract, service_order, stock_entry, stock_movement, supplier, ticket, user, xml_inbox  # noqa: F401
+from app.models import access_control, cash_closing, client, company, equipment, equipment_status, fiscal, fiscal_assistant, marketplace, monitoring, payable, pdv_cash_session, pdv_operator, pdv_terminal, product, product_batch, product_composition, production_order, receivable, sale, service_contract, service_order, stock_entry, stock_movement, supplier, ticket, user, xml_inbox  # noqa: F401
 from app.services.access_control import seed_default_access_control
 from app.migrate_master import main as migrate_master
 from app.services.master_user_index import upsert_user_index
@@ -433,6 +433,141 @@ def add_product_columns(bind_engine=engine) -> None:
                 UPDATE products
                 SET stock_value = COALESCE(stock_quantity, 0) * COALESCE(average_cost, 0)
                 WHERE stock_value IS NULL OR stock_value = 0
+                """
+            )
+        )
+
+
+def add_marketplace_tables(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS marketplace_connections (
+                    id SERIAL PRIMARY KEY,
+                    provider VARCHAR(40) NOT NULL DEFAULT 'mercado_livre',
+                    account_id VARCHAR(80),
+                    nickname VARCHAR(160),
+                    site_id VARCHAR(10),
+                    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+                    access_token TEXT,
+                    refresh_token TEXT,
+                    token_type VARCHAR(40),
+                    expires_at TIMESTAMP WITH TIME ZONE,
+                    scopes JSON NOT NULL DEFAULT '[]',
+                    raw_account JSON NOT NULL DEFAULT '{}',
+                    last_sync_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_marketplace_connection_account
+                ON marketplace_connections(provider, account_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS product_marketplace_listings (
+                    id SERIAL PRIMARY KEY,
+                    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                    provider VARCHAR(40) NOT NULL DEFAULT 'mercado_livre',
+                    listing_id VARCHAR(80),
+                    enabled BOOLEAN NOT NULL DEFAULT false,
+                    sync_stock BOOLEAN NOT NULL DEFAULT true,
+                    sync_price BOOLEAN NOT NULL DEFAULT true,
+                    status VARCHAR(30) NOT NULL DEFAULT 'draft',
+                    title VARCHAR(180),
+                    permalink TEXT,
+                    category_id VARCHAR(60),
+                    listing_type_id VARCHAR(60),
+                    condition VARCHAR(20) NOT NULL DEFAULT 'new',
+                    last_error TEXT,
+                    last_synced_at TIMESTAMP WITH TIME ZONE,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
+                    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_product_marketplace_provider
+                ON product_marketplace_listings(product_id, provider)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_product_marketplace_listing_id
+                ON product_marketplace_listings(listing_id)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS marketplace_oauth_states (
+                    id SERIAL PRIMARY KEY,
+                    provider VARCHAR(40) NOT NULL DEFAULT 'mercado_livre',
+                    state VARCHAR(120) NOT NULL UNIQUE,
+                    tenant_code VARCHAR(120) NOT NULL,
+                    created_by_user_id INTEGER,
+                    used_at TIMESTAMP WITH TIME ZONE,
+                    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_oauth_state
+                ON marketplace_oauth_states(state)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS marketplace_notifications (
+                    id SERIAL PRIMARY KEY,
+                    provider VARCHAR(40) NOT NULL DEFAULT 'mercado_livre',
+                    topic VARCHAR(80),
+                    resource TEXT,
+                    external_user_id VARCHAR(80),
+                    application_id VARCHAR(80),
+                    attempts INTEGER,
+                    sent_at TIMESTAMP WITH TIME ZONE,
+                    status VARCHAR(30) NOT NULL DEFAULT 'received',
+                    payload JSON NOT NULL DEFAULT '{}',
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_notifications_topic
+                ON marketplace_notifications(topic)
+                """
+            )
+        )
+        connection.execute(
+            text(
+                """
+                CREATE INDEX IF NOT EXISTS idx_marketplace_notifications_external_user
+                ON marketplace_notifications(external_user_id)
                 """
             )
         )
@@ -911,6 +1046,7 @@ def migrate_registered_tenants() -> None:
                     },
                 )
             add_production_order_columns(tenant_engine)
+            add_marketplace_tables(tenant_engine)
             backfill_product_batches(tenant_engine)
             TenantSessionLocal = sessionmaker(
                 bind=tenant_engine,
@@ -976,6 +1112,7 @@ def main() -> None:
     add_equipment_current_status_columns()
     add_service_order_columns()
     add_product_columns()
+    add_marketplace_tables()
     add_stock_entry_columns()
     add_cash_closing_audit_columns()
     add_sale_columns()

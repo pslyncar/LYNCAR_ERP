@@ -34,6 +34,7 @@ const _moduleLabels = {
   'reports': 'Relatórios',
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
+  'marketplaces': 'Marketplaces',
   'support': 'Suporte',
   'settings': 'Configuracoes',
   'users': 'Usuários',
@@ -53,6 +54,8 @@ const _moduleDescriptions = {
   'pdv': 'PDV Web/caixa, operadores, fiscais e autorizações.',
   'finance': 'Contas a pagar, contas a receber e baixas.',
   'fiscal': 'Certificado, NFC-e/NF-e e documentos fiscais.',
+  'marketplaces':
+      'Mercado Livre e outros canais de venda integrados ao estoque.',
   'support': 'Abertura e acompanhamento de chamados com o suporte.',
   'settings': 'Configuracoes',
   'dashboard': 'Tela inicial, avisos e indicadores.',
@@ -82,6 +85,8 @@ const _moduleQuickGuides = {
       'Libera contas a receber, contas a pagar, crediário e baixas financeiras.',
   'fiscal':
       'Libera configurações fiscais, certificados e documentos NFC-e/NF-e quando contratado.',
+  'marketplaces':
+      'Libera Mercado Livre e escolha dos produtos sincronizados com estoque.',
   'users':
       'Libera criar e alterar usuários. Normalmente fica só para dono/gerente.',
   'permissions':
@@ -149,6 +154,10 @@ const _permissionUsageHints = {
   'fiscal:settings': 'Permite alterar certificado e configuração fiscal.',
   'fiscal:emit': 'Permite preparar/emissão fiscal quando disponível.',
   'fiscal:documents:view': 'Permite consultar documentos fiscais/XMLs.',
+  'marketplaces:view': 'Mostra o menu Marketplaces.',
+  'marketplaces:connect': 'Permite copiar o link de conexao com Mercado Livre.',
+  'marketplaces:products':
+      'Permite escolher quais produtos serao publicados e sincronizados.',
   'reports:view': 'Mostra Relatórios.',
   'users:manage': 'Mostra Usuários e permite criar/alterar usuários.',
   'permissions:manage': 'Permite criar e alterar perfis de acesso.',
@@ -433,9 +442,7 @@ class _SalesSettingsPanelState extends State<SalesSettingsPanel> {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Não foi possível carregar as configurações.',
-        );
+        setState(() => _error = 'Não foi possível carregar as configurações.');
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -470,9 +477,7 @@ class _SalesSettingsPanelState extends State<SalesSettingsPanel> {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
       if (mounted) {
-        setState(
-          () => _error = 'Não foi possível salvar as configurações.',
-        );
+        setState(() => _error = 'Não foi possível salvar as configurações.');
       }
     } finally {
       if (mounted) setState(() => _saving = false);

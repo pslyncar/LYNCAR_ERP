@@ -23,6 +23,7 @@ from app.api.routes import (
     master_segments,
     master_staff,
     master_support,
+    marketplaces,
     payables,
     pdv_operators,
     pdv_cash_sessions,
@@ -78,6 +79,7 @@ api_router.include_router(pdv_cash_sessions.router, prefix="/pdv", tags=["pdv"])
 api_router.include_router(pdv_terminals.router, prefix="/pdv", tags=["pdv"])
 api_router.include_router(cash_closings.router, prefix="/pdv", tags=["pdv"])
 api_router.include_router(sales.router, prefix="/sales", tags=["sales"])
+api_router.include_router(marketplaces.router, prefix="/marketplaces", tags=["marketplaces"])
 api_router.include_router(
     service_contracts.router,
     prefix="/service-contracts",

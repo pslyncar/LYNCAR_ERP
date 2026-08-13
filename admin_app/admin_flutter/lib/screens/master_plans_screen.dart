@@ -29,6 +29,7 @@ const _planModuleLabels = {
   'reports': 'Relatorios',
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
+  'marketplaces': 'Marketplaces',
   'support': 'Suporte',
   'settings': 'Configuracoes',
   'users': 'Usuarios',

@@ -21,6 +21,9 @@ class Settings(BaseSettings):
     mercado_pago_public_key: str | None = "TEST-7407e8bb-8ef1-4e68-a91c-4f0f11a1af19"
     mercado_pago_access_token: str | None = None
     mercado_pago_webhook_url: str | None = None
+    mercado_livre_client_id: str | None = None
+    mercado_livre_client_secret: str | None = None
+    mercado_livre_redirect_uri: str | None = None
     holiday_sync_enabled: bool = True
     feriados_api_token: str | None = None
     sefaz_tls_verify: bool = True

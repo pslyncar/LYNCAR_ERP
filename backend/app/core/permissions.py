@@ -157,6 +157,9 @@ PERMISSIONS = [
     PermissionDefinition("fiscal:emit", "Preparar/emitar fiscal", "fiscal", "Preparar emissão de NFC-e/NF-e."),
     PermissionDefinition("fiscal:cancel", "Cancelar documento fiscal", "fiscal", "Transmitir evento real de cancelamento para a SEFAZ."),
     PermissionDefinition("fiscal:documents:view", "Ver documentos fiscais", "fiscal", "Visualizar documentos fiscais e XMLs."),
+    PermissionDefinition("marketplaces:view", "Ver marketplaces", "marketplaces", "Visualizar integracoes de marketplace."),
+    PermissionDefinition("marketplaces:connect", "Conectar marketplace", "marketplaces", "Autorizar contas externas como Mercado Livre."),
+    PermissionDefinition("marketplaces:products", "Gerenciar produtos no marketplace", "marketplaces", "Escolher produtos e sincronizacao com marketplace."),
     PermissionDefinition("users:manage", "Administrar usuários", "users", "Criar e alterar usuários."),
     PermissionDefinition("permissions:manage", "Administrar permissões", "permissions", "Gerenciar permissões."),
 ]

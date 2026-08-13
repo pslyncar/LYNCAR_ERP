@@ -18,6 +18,7 @@ import 'master_pdv_terminals_screen.dart';
 import 'master_plans_screen.dart';
 import 'master_staff_screen.dart';
 import 'master_website_contacts_screen.dart';
+import 'marketplaces_screen.dart';
 import 'pdv_operators_screen.dart';
 import 'pdv_screen.dart';
 import 'pdv_terminals_screen.dart';
@@ -247,6 +248,14 @@ class _AppShellState extends State<AppShell> {
             icon: Icons.inventory_2_outlined,
             selectedIcon: Icons.inventory_2,
             screen: ProductsScreen(session: widget.session),
+          ),
+        if (widget.session.hasModule('marketplaces') &&
+            widget.session.can('marketplaces:view'))
+          _Destination(
+            label: 'Marketplaces',
+            icon: Icons.storefront_outlined,
+            selectedIcon: Icons.storefront,
+            screen: MarketplacesScreen(session: widget.session),
           ),
         if (widget.session.hasModule('stock_withdrawals') &&
             widget.session.can('stock:withdraw'))

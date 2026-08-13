@@ -16,6 +16,7 @@ import '../models/fiscal.dart';
 import '../models/fiscal_assistant.dart';
 import '../models/master_access_status.dart';
 import '../models/master_staff.dart';
+import '../models/marketplace.dart';
 import '../models/monitoring_snapshot.dart';
 import '../models/payable.dart';
 import '../models/payment_setting.dart';
@@ -946,6 +947,50 @@ class ApiClient {
       body: jsonEncode(payload.toJson()),
     );
     return Product.fromJson(_decodeResponse(response));
+  }
+
+  Future<MercadoLivreStatus> getMercadoLivreStatus(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/marketplaces/mercado-livre/status'),
+      headers: _authHeaders(token),
+    );
+    return MercadoLivreStatus.fromJson(_decodeResponse(response));
+  }
+
+  Future<MercadoLivreAuthUrl> getMercadoLivreAuthUrl(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/marketplaces/mercado-livre/auth-url'),
+      headers: _authHeaders(token),
+    );
+    return MercadoLivreAuthUrl.fromJson(_decodeResponse(response));
+  }
+
+  Future<List<MarketplaceProduct>> listMercadoLivreProducts(
+    String token,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/marketplaces/mercado-livre/products'),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeListResponse(response);
+    return data
+        .map(
+          (item) => MarketplaceProduct.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  Future<ProductMarketplaceListing> updateMercadoLivreProduct(
+    String token,
+    int productId,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/marketplaces/mercado-livre/products/$productId'),
+      headers: _authHeaders(token),
+      body: jsonEncode(payload),
+    );
+    return ProductMarketplaceListing.fromJson(_decodeResponse(response));
   }
 
   Future<FiscalAssistantResponse> getFiscalAssistantProductSuggestions(
