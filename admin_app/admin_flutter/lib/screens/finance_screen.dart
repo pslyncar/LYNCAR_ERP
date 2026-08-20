@@ -30,6 +30,19 @@ class _FinanceScreenState extends State<FinanceScreen> {
   bool _loading = true;
   String? _error;
   int _tab = 0;
+  bool _showAllAmounts = false;
+  final Set<String> _revealedAmounts = {};
+
+  bool _amountVisible(String key) =>
+      _showAllAmounts || _revealedAmounts.contains(key);
+
+  void _toggleAmount(String key) => setState(() {
+    if (_revealedAmounts.contains(key)) {
+      _revealedAmounts.remove(key);
+    } else {
+      _revealedAmounts.add(key);
+    }
+  });
 
   @override
   void initState() {
@@ -150,6 +163,19 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   onPressed: _load,
                   icon: const Icon(Icons.refresh),
                 ),
+                const SizedBox(width: 8),
+                IconButton.outlined(
+                  tooltip: _showAllAmounts
+                      ? 'Ocultar todos os valores'
+                      : 'Mostrar todos os valores',
+                  onPressed: () =>
+                      setState(() => _showAllAmounts = !_showAllAmounts),
+                  icon: Icon(
+                    _showAllAmounts
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                ),
                 if (widget.session.can('finance:receivables:pay')) ...[
                   const SizedBox(width: 8),
                   FilledButton.icon(
@@ -170,6 +196,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     openBalance,
                     Icons.account_balance_wallet_outlined,
                     money: true,
+                    amountKey: 'summary-open',
                   ),
                   _Summary(
                     'Clientes com saldo',
@@ -181,6 +208,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     paidAmount,
                     Icons.payments_outlined,
                     money: true,
+                    amountKey: 'summary-paid',
                   ),
                   _Summary('Vencidos', overdue, Icons.warning_amber_outlined),
                 ];
@@ -194,8 +222,13 @@ class _FinanceScreenState extends State<FinanceScreen> {
                     crossAxisSpacing: 12,
                     mainAxisSpacing: 12,
                   ),
-                  itemBuilder: (context, index) =>
-                      _SummaryTile(summary: cards[index]),
+                  itemBuilder: (context, index) => _SummaryTile(
+                    summary: cards[index],
+                    visible: _amountVisible(cards[index].amountKey ?? ''),
+                    onToggle: cards[index].money
+                        ? () => _toggleAmount(cards[index].amountKey!)
+                        : null,
+                  ),
                 );
               },
             ),
@@ -242,7 +275,12 @@ class _FinanceScreenState extends State<FinanceScreen> {
             else if (_error != null)
               ErrorPanel(message: _error!, onRetry: _load)
             else if (_tab == 0)
-              _ReceivablesByClient(accounts: accounts, onOpen: _openStatement)
+              _ReceivablesByClient(
+                accounts: accounts,
+                onOpen: _openStatement,
+                amountVisible: _amountVisible,
+                onToggleAmount: _toggleAmount,
+              )
             else
               _PayablesPanel(
                 payables: _filteredPayables(),
@@ -566,10 +604,17 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
 }
 
 class _ReceivablesByClient extends StatelessWidget {
-  const _ReceivablesByClient({required this.accounts, required this.onOpen});
+  const _ReceivablesByClient({
+    required this.accounts,
+    required this.onOpen,
+    required this.amountVisible,
+    required this.onToggleAmount,
+  });
 
   final List<_ClientReceivables> accounts;
   final ValueChanged<_ClientReceivables> onOpen;
+  final bool Function(String key) amountVisible;
+  final ValueChanged<String> onToggleAmount;
 
   @override
   Widget build(BuildContext context) {
@@ -623,15 +668,45 @@ class _ReceivablesByClient extends StatelessWidget {
                           ),
                         ),
                         DataCell(Text('${account.openCount} aberto(s)')),
-                        DataCell(Text(_money(account.original))),
-                        DataCell(Text(_money(account.paid))),
                         DataCell(
-                          Text(
-                            _money(account.balance),
-                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          _AmountWithEye(
+                            value: account.original,
+                            visible: amountVisible(
+                              'original-${account.clientId}',
+                            ),
+                            onToggle: () =>
+                                onToggleAmount('original-${account.clientId}'),
                           ),
                         ),
-                        DataCell(Text(_creditLabel(account.client))),
+                        DataCell(
+                          _AmountWithEye(
+                            value: account.paid,
+                            visible: amountVisible('paid-${account.clientId}'),
+                            onToggle: () =>
+                                onToggleAmount('paid-${account.clientId}'),
+                          ),
+                        ),
+                        DataCell(
+                          _AmountWithEye(
+                            value: account.balance,
+                            visible: amountVisible(
+                              'balance-${account.clientId}',
+                            ),
+                            strong: true,
+                            onToggle: () =>
+                                onToggleAmount('balance-${account.clientId}'),
+                          ),
+                        ),
+                        DataCell(
+                          _CreditWithEye(
+                            client: account.client,
+                            visible: amountVisible(
+                              'credit-${account.clientId}',
+                            ),
+                            onToggle: () =>
+                                onToggleAmount('credit-${account.clientId}'),
+                          ),
+                        ),
                         DataCell(
                           IconButton(
                             tooltip: 'Abrir extrato',
@@ -2210,6 +2285,8 @@ class _ClientReceivables {
   final List<Receivable> receivables;
 
   String get name => client?.name ?? fallbackName ?? 'Cliente sem cadastro';
+  String get clientId =>
+      client?.id.toString() ?? fallbackName ?? 'without-client';
   int get openCount =>
       receivables.where((item) => item.balanceAmount > 0.009).length;
   double get original =>
@@ -2220,16 +2297,29 @@ class _ClientReceivables {
 }
 
 class _Summary {
-  const _Summary(this.label, this.value, this.icon, {this.money = false});
+  const _Summary(
+    this.label,
+    this.value,
+    this.icon, {
+    this.money = false,
+    this.amountKey,
+  });
   final String label;
   final Object value;
   final IconData icon;
   final bool money;
+  final String? amountKey;
 }
 
 class _SummaryTile extends StatelessWidget {
-  const _SummaryTile({required this.summary});
+  const _SummaryTile({
+    required this.summary,
+    required this.visible,
+    this.onToggle,
+  });
   final _Summary summary;
+  final bool visible;
+  final VoidCallback? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -2249,16 +2339,34 @@ class _SummaryTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: Color(0xFF64748B)),
                 ),
-                Text(
-                  summary.money
-                      ? _money(summary.value as double)
-                      : '${summary.value}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        summary.money
+                            ? (visible
+                                  ? _money(summary.value as double)
+                                  : 'R\$ •••••')
+                            : '${summary.value}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (summary.money)
+                      IconButton(
+                        tooltip: visible ? 'Ocultar valor' : 'Mostrar valor',
+                        onPressed: onToggle,
+                        icon: Icon(
+                          visible
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                        ),
+                      ),
+                  ],
                 ),
               ],
             ),
@@ -2267,6 +2375,70 @@ class _SummaryTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AmountWithEye extends StatelessWidget {
+  const _AmountWithEye({
+    required this.value,
+    required this.visible,
+    required this.onToggle,
+    this.strong = false,
+  });
+  final double value;
+  final bool visible;
+  final VoidCallback onToggle;
+  final bool strong;
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        visible ? _money(value) : 'R\$ •••••',
+        style: TextStyle(
+          fontWeight: strong ? FontWeight.w900 : FontWeight.w500,
+        ),
+      ),
+      IconButton(
+        tooltip: visible ? 'Ocultar valor' : 'Mostrar valor',
+        visualDensity: VisualDensity.compact,
+        onPressed: onToggle,
+        icon: Icon(
+          visible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+          size: 18,
+        ),
+      ),
+    ],
+  );
+}
+
+class _CreditWithEye extends StatelessWidget {
+  const _CreditWithEye({
+    required this.client,
+    required this.visible,
+    required this.onToggle,
+  });
+  final Client? client;
+  final bool visible;
+  final VoidCallback onToggle;
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(
+        visible ? _creditLabel(client) : '••••••',
+        overflow: TextOverflow.ellipsis,
+      ),
+      IconButton(
+        tooltip: visible ? 'Ocultar crédito' : 'Mostrar crédito',
+        visualDensity: VisualDensity.compact,
+        onPressed: onToggle,
+        icon: Icon(
+          visible ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+          size: 18,
+        ),
+      ),
+    ],
+  );
 }
 
 class _ReviewLine extends StatelessWidget {
