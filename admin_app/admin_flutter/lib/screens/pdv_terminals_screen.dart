@@ -21,6 +21,7 @@ class _PdvTerminalsScreenState extends State<PdvTerminalsScreen> {
   final _search = TextEditingController();
   List<PdvTerminal> _terminals = [];
   bool _loading = true;
+  bool _forcingSync = false;
   int _cutoffMinutes = 180;
   String? _error;
 
@@ -89,6 +90,36 @@ class _PdvTerminalsScreenState extends State<PdvTerminalsScreen> {
     }
   }
 
+  Future<void> _forceCatalogReload([PdvTerminal? terminal]) async {
+    final targets = terminal == null ? _terminals : [terminal];
+    if (targets.isEmpty || _forcingSync) return;
+    setState(() => _forcingSync = true);
+    try {
+      for (final target in targets) {
+        await _api.createPdvTerminalCommand(
+          widget.session.token,
+          target.id,
+          'reload_catalog',
+          message: 'Forçar carga completa de produtos, clientes e ofertas',
+        );
+      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            terminal == null
+                ? 'Carga completa enviada para ${targets.length} PDV(s).'
+                : 'Carga completa enviada para o Caixa ${terminal.cashRegisterNumber}.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _forcingSync = false);
+    }
+  }
+
   List<PdvTerminal> get _filteredTerminals {
     final query = _search.text.trim().toLowerCase();
     if (query.isEmpty) return _terminals;
@@ -139,6 +170,16 @@ class _PdvTerminalsScreenState extends State<PdvTerminalsScreen> {
                   label: Text('Dia comercial: ${_time(_cutoffMinutes)}'),
                 ),
                 const Gap(10),
+                OutlinedButton.icon(
+                  onPressed:
+                      widget.session.can('pdv_operators:manage') &&
+                          !_forcingSync
+                      ? () => _forceCatalogReload()
+                      : null,
+                  icon: const Icon(Icons.sync_outlined),
+                  label: const Text('Forçar carga completa'),
+                ),
+                const Gap(10),
                 IconButton.outlined(
                   onPressed: _loading ? null : _load,
                   icon: const Icon(Icons.refresh),
@@ -174,7 +215,12 @@ class _PdvTerminalsScreenState extends State<PdvTerminalsScreen> {
                         separatorBuilder: (_, _) => const Gap(10),
                         itemBuilder: (context, index) {
                           final terminal = terminals[index];
-                          return _TerminalCard(terminal: terminal);
+                          return _TerminalCard(
+                            terminal: terminal,
+                            onReload: widget.session.can('pdv_operators:manage')
+                                ? () => _forceCatalogReload(terminal)
+                                : null,
+                          );
                         },
                       ),
               ),
@@ -301,9 +347,10 @@ class _SummaryCard extends StatelessWidget {
 }
 
 class _TerminalCard extends StatelessWidget {
-  const _TerminalCard({required this.terminal});
+  const _TerminalCard({required this.terminal, this.onReload});
 
   final PdvTerminal terminal;
+  final VoidCallback? onReload;
 
   @override
   Widget build(BuildContext context) {
@@ -359,6 +406,12 @@ class _TerminalCard extends StatelessWidget {
                   ),
                 ),
                 _StatusChip(label: status, color: color),
+                const Gap(8),
+                IconButton.outlined(
+                  tooltip: 'Forçar carga completa neste PDV',
+                  onPressed: onReload,
+                  icon: const Icon(Icons.sync_outlined),
+                ),
                 if (terminal.crossedBusinessDay) ...[
                   const Gap(8),
                   const _StatusChip(

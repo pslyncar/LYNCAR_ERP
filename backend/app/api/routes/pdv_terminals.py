@@ -19,6 +19,7 @@ from app.models.sale import Sale
 from app.models.user import User
 from app.schemas.pdv_terminal import (
     PdvTerminalCommandAck,
+    PdvTerminalCommandCreate,
     PdvTerminalCommandRead,
     PdvTerminalActivationCodeRead,
     PdvTerminalActivationCreate,
@@ -285,6 +286,37 @@ def list_pdv_terminal_commands(
         for command in commands:
             db.refresh(command)
     return [_command_read(command) for command in commands]
+
+
+@router.post(
+    "/terminals/{terminal_id}/commands",
+    response_model=PdvTerminalCommandRead,
+)
+def create_pdv_terminal_command(
+    terminal_id: int,
+    payload: PdvTerminalCommandCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_permission("pdv_operators:manage")),
+) -> PdvTerminalCommandRead:
+    del current_user
+    _ensure_command_table(db)
+    terminal = db.get(PdvTerminal, terminal_id)
+    if terminal is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Terminal PDV nao encontrado.",
+        )
+    command = PdvTerminalCommand(
+        terminal_id=terminal.id,
+        action=payload.action,
+        status="pending",
+        message=payload.message,
+        payload_json=json.dumps(payload.payload) if payload.payload else None,
+    )
+    db.add(command)
+    db.commit()
+    db.refresh(command)
+    return _command_read(command)
 
 
 @router.post("/terminals/commands/{command_id}/ack", response_model=PdvTerminalCommandRead)

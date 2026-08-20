@@ -7,6 +7,7 @@ from app.models import equipment  # noqa: F401
 from app.models import equipment_status  # noqa: F401
 from app.models import monitoring  # noqa: F401
 from app.models import product  # noqa: F401
+from app.models import pdv_sync_event  # noqa: F401
 from app.models import sale  # noqa: F401
 from app.models import service_order  # noqa: F401
 from app.models import ticket  # noqa: F401

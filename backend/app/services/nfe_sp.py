@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from random import randint
@@ -47,10 +48,49 @@ NFE_SP_URLS = {
     },
 }
 
+_DUPLICATE_NFE_KEY_PATTERN = re.compile(r"chNFe\s*:\s*(\d{44})")
+
+
+def _duplicate_nfe_key(message: str | None) -> str | None:
+    match = _DUPLICATE_NFE_KEY_PATTERN.search(message or "")
+    return match.group(1) if match else None
+
 
 def _weight(value: Decimal | int | float | None) -> str:
     amount = Decimal(value or 0).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
     return f"{amount:.3f}"
+
+
+def _allocate_line_amounts(
+    total: Decimal | int | float | None,
+    weights: list[Decimal],
+) -> list[Decimal]:
+    """Rateia um total monetario garantindo que os centavos fechem exatamente."""
+    if not weights:
+        return []
+    amount = max(Decimal(total or 0), Decimal("0")).quantize(
+        Decimal("0.01"),
+        rounding=ROUND_HALF_UP,
+    )
+    if amount == 0:
+        return [Decimal("0.00") for _ in weights]
+    normalized = [max(Decimal(weight or 0), Decimal("0")) for weight in weights]
+    weight_total = sum(normalized, Decimal("0"))
+    if weight_total == 0:
+        normalized = [Decimal("1") for _ in weights]
+        weight_total = Decimal(len(weights))
+    total_cents = int(amount * 100)
+    raw_cents = [Decimal(total_cents) * weight / weight_total for weight in normalized]
+    allocated_cents = [int(value) for value in raw_cents]
+    remaining = total_cents - sum(allocated_cents)
+    priority = sorted(
+        range(len(raw_cents)),
+        key=lambda index: (raw_cents[index] - allocated_cents[index], -index),
+        reverse=True,
+    )
+    for index in priority[:remaining]:
+        allocated_cents[index] += 1
+    return [Decimal(cents) / Decimal("100") for cents in allocated_cents]
 
 
 def _require_setting(setting: CompanyFiscalSetting) -> None:
@@ -285,10 +325,21 @@ def build_nfe_xml(
     if client.email:
         _text(dest, "email", client.email)
 
+    sale_items = list(sale.items)
+    allocation_weights = [
+        max(Decimal(item.quantity or 0) * Decimal(item.unit_price or 0), Decimal("0"))
+        for item in sale_items
+    ]
+    freight_by_item = _allocate_line_amounts(document.freight_amount, allocation_weights)
+    insurance_by_item = _allocate_line_amounts(document.insurance_amount, allocation_weights)
+    other_expenses_by_item = _allocate_line_amounts(
+        document.other_expenses_amount,
+        allocation_weights,
+    )
     total_products = Decimal("0")
     total_discount = Decimal("0")
     rtc_totals = RtcTaxTotals()
-    for index, item in enumerate(sale.items, start=1):
+    for index, item in enumerate(sale_items, start=1):
         product = item.product
         quantity = Decimal(item.quantity or 0)
         unit_price = Decimal(item.unit_price or 0)
@@ -320,6 +371,15 @@ def build_nfe_xml(
                 else item.description,
             ),
             ("NCM", _digits(getattr(item, "ncm", None) or (product.ncm if product else ""))),
+        ]:
+            _text(prod, tag, value)
+        cest = _digits(getattr(item, "cest", None) or (getattr(product, "cest", None) if product else ""))
+        if cest:
+            _text(prod, "CEST", cest)
+        cbenef = getattr(item, "cbenef", None)
+        if cbenef:
+            _text(prod, "cBenef", cbenef)
+        for tag, value in [
             ("CFOP", tax_profile.cfop if product else ""),
             ("uCom", (item.unit or "UN").upper()[:6]),
             ("qCom", _quantity(quantity)),
@@ -331,14 +391,14 @@ def build_nfe_xml(
             ("vUnTrib", _money(unit_price)),
         ]:
             _text(prod, tag, value)
-        cest = _digits(getattr(item, "cest", None) or (getattr(product, "cest", None) if product else ""))
-        if cest:
-            _text(prod, "CEST", cest)
-        cbenef = getattr(item, "cbenef", None)
-        if cbenef:
-            _text(prod, "cBenef", cbenef)
+        if freight_by_item[index - 1] > 0:
+            _text(prod, "vFrete", _money(freight_by_item[index - 1]))
+        if insurance_by_item[index - 1] > 0:
+            _text(prod, "vSeg", _money(insurance_by_item[index - 1]))
         if Decimal(item.discount_amount or 0) > 0:
             _text(prod, "vDesc", _money(item.discount_amount))
+        if other_expenses_by_item[index - 1] > 0:
+            _text(prod, "vOutro", _money(other_expenses_by_item[index - 1]))
         _text(prod, "indTot", "1")
 
         imposto = etree.SubElement(det, f"{{{NFE_NS}}}imposto")
@@ -427,7 +487,13 @@ def build_nfe_xml(
         _text(vol, "pesoL", _weight(document.net_weight or 0))
         _text(vol, "pesoB", _weight(document.gross_weight or 0))
     pag = etree.SubElement(inf, f"{{{NFE_NS}}}pag")
-    for payment in sale.payments:
+    payments = list(sale.payments)
+    fiscal_additions = (
+        Decimal(document.freight_amount or 0)
+        + Decimal(document.insurance_amount or 0)
+        + Decimal(document.other_expenses_amount or 0)
+    )
+    for payment_index, payment in enumerate(payments):
         det_pag = etree.SubElement(pag, f"{{{NFE_NS}}}detPag")
         method = {
             "dinheiro": "01",
@@ -444,8 +510,13 @@ def build_nfe_xml(
         _text(det_pag, "tPag", method)
         if method == "99":
             _text(det_pag, "xPag", (payment.method or "OUTROS").upper()[:60])
-        _text(det_pag, "vPag", _money(payment.amount))
+        payment_amount = Decimal(payment.amount or 0)
+        if payment_index == len(payments) - 1:
+            payment_amount += fiscal_additions
+        _text(det_pag, "vPag", _money(payment_amount))
         _append_card_group(det_pag, method, payment.authorization_code)
+    if Decimal(getattr(sale, "change_amount", 0) or 0) > 0:
+        _text(pag, "vTroco", _money(sale.change_amount))
 
     inf_adic = etree.SubElement(inf, f"{{{NFE_NS}}}infAdic")
     _text(

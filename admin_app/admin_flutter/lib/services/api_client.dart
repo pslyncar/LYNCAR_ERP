@@ -21,6 +21,7 @@ import '../models/monitoring_snapshot.dart';
 import '../models/payable.dart';
 import '../models/payment_setting.dart';
 import '../models/pdv_operator.dart';
+import '../models/pdv_sync.dart';
 import '../models/pdv_terminal.dart';
 import '../models/product.dart';
 import '../models/product_batch.dart';
@@ -1748,12 +1749,86 @@ class ApiClient {
     String token,
     PdvTerminalHeartbeatPayload payload,
   ) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/pdv/terminals/heartbeat'),
-      headers: _authHeaders(token),
-      body: jsonEncode(payload.toJson()),
-    );
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/pdv/terminals/heartbeat'),
+          headers: _authHeaders(token),
+          body: jsonEncode(payload.toJson()),
+        )
+        .timeout(const Duration(seconds: 8));
     return PdvTerminal.fromJson(_decodeResponse(response));
+  }
+
+  Future<PdvSyncBatch> getPdvSyncSnapshot(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/pdv/sync/snapshot'),
+      headers: _authHeaders(token),
+    );
+    return PdvSyncBatch.fromJson(_decodeResponse(response));
+  }
+
+  Future<PdvSyncBatch> getPdvSyncChanges(
+    String token, {
+    required int after,
+  }) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/pdv/sync/changes',
+      ).replace(queryParameters: {'after': '$after'}),
+      headers: _authHeaders(token),
+    );
+    return PdvSyncBatch.fromJson(_decodeResponse(response));
+  }
+
+  Future<List<PdvTerminalCommand>> listPdvTerminalCommands(
+    String token,
+    String terminalKey,
+  ) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/pdv/terminals/commands',
+      ).replace(queryParameters: {'terminal_key': terminalKey}),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeListResponse(response);
+    return data
+        .map(
+          (item) => PdvTerminalCommand.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  Future<PdvTerminalCommand> acknowledgePdvTerminalCommand(
+    String token,
+    String terminalKey,
+    int commandId, {
+    required String status,
+    String? resultMessage,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/pdv/terminals/commands/$commandId/ack'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'terminal_key': terminalKey,
+        'status': status,
+        'result_message': resultMessage,
+      }),
+    );
+    return PdvTerminalCommand.fromJson(_decodeResponse(response));
+  }
+
+  Future<PdvTerminalCommand> createPdvTerminalCommand(
+    String token,
+    int terminalId,
+    String action, {
+    String? message,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/pdv/terminals/$terminalId/commands'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'action': action, 'message': message}),
+    );
+    return PdvTerminalCommand.fromJson(_decodeResponse(response));
   }
 
   Future<List<PdvTerminal>> listPdvTerminals(String token) async {

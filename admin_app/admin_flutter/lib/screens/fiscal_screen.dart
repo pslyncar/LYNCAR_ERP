@@ -1068,6 +1068,8 @@ class _SettingsCard extends StatelessWidget {
               ),
               _ChipLine('Série NFC-e', '${item?.nfceSeries ?? 1}'),
               _ChipLine('Proxima NFC-e', '${item?.nfceNextNumber ?? 1}'),
+              _ChipLine('Série NF-e', '${item?.nfeSeries ?? 1}'),
+              _ChipLine('Proxima NF-e', '${item?.nfeNextNumber ?? 1}'),
               _ChipLine(
                 'CSC NFC-e',
                 item?.hasNfceCsc == true ? 'cadastrado' : 'pendente',
@@ -1158,7 +1160,7 @@ class _SettingsCard extends StatelessWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.sync),
-                  label: const Text('Sincronizar com a SEFAZ'),
+                  label: const Text('Sincronizar NFC-e com a SEFAZ'),
                 ),
                 OutlinedButton.icon(
                   onPressed:

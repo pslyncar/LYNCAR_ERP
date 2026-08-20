@@ -57,7 +57,7 @@ from app.services.nfce_sp import (
 )
 from app.services.nfce_listagem_chaves_sp import sync_nfce_next_number_from_sefaz
 from app.services.fiscal_recovery import RecoveredFiscalDocument, recover_fiscal_documents
-from app.services.nfe_sp import authorize_nfe
+from app.services.nfe_sp import _duplicate_nfe_key, authorize_nfe
 from app.services.fiscal_output_rules import effective_crt, resolve_output_rule, resolve_output_tax_profile
 from app.services.rtc_compliance import (
     RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
@@ -1783,11 +1783,52 @@ def authorize_fiscal_document(
             if document.sale is not None
             else _manual_fiscal_sale_view(document)
         )
-        result = (
-            authorize_nfce(setting, document, fiscal_sale)
-            if document.document_type == "nfce"
-            else authorize_nfe(setting, document, fiscal_sale)
-        )
+        if document.document_type == "nfce":
+            result = authorize_nfce(setting, document, fiscal_sale)
+        else:
+            # Em homologacao pode haver numeros autorizados fora deste banco.
+            # A rejeicao 539 traz a chave conflitante; avancamos somente quando
+            # a propria SEFAZ comprova a duplicidade externa.
+            for _ in range(10):
+                result = authorize_nfe(setting, document, fiscal_sale)
+                duplicate_key = (
+                    _duplicate_nfe_key(result.message)
+                    if result.status_code == "539"
+                    and setting.environment == "homologacao"
+                    else None
+                )
+                if duplicate_key is None or duplicate_key[20:22] != "55":
+                    break
+                duplicate_series = int(duplicate_key[22:25])
+                duplicate_number = int(duplicate_key[25:34])
+                if duplicate_series != int(document.series or setting.nfe_series or 1):
+                    break
+                setting.nfe_next_number = max(
+                    int(setting.nfe_next_number or 1),
+                    duplicate_number + 1,
+                )
+                document.number = None
+                document.access_key = None
+                document.xml_generated = None
+                document.xml_signed = None
+                document.xml_authorized = None
+                db.flush()
+                document.number = _next_available_fiscal_number(
+                    db,
+                    environment=document.environment,
+                    document_type="nfe",
+                    series=int(document.series),
+                    configured_next_number=int(setting.nfe_next_number),
+                )
+                setting.nfe_next_number = max(
+                    int(setting.nfe_next_number),
+                    int(document.number) + 1,
+                )
+            else:
+                raise NfceValidationError(
+                    "A SEFAZ informou dez numeros de NF-e consecutivos ja utilizados. "
+                    "Confira a numeracao fiscal antes de continuar."
+                )
     except (NfceValidationError, RtcComplianceError) as exc:
         document.status = "rejected"
         document.sefaz_status_code = "VALIDACAO"

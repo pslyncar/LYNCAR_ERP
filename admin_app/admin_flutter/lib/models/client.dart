@@ -109,6 +109,45 @@ class Client {
       notes: json['notes'] as String?,
     );
   }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'person_type': personType,
+      'trade_name': tradeName,
+      'document_number': documentNumber,
+      'state_registration': stateRegistration,
+      'municipal_registration': municipalRegistration,
+      'tax_contributor_type': taxContributorType,
+      'city_code': cityCode,
+      'country_code': countryCode,
+      'country_name': countryName,
+      'suframa': suframa,
+      'contact_person': contactPerson,
+      'phone': phone,
+      'mobile_phone': mobilePhone,
+      'email': email,
+      'address': address,
+      'address_number': addressNumber,
+      'address_complement': addressComplement,
+      'neighborhood': neighborhood,
+      'city': city,
+      'state': state,
+      'zip_code': zipCode,
+      'contract_type': contractType,
+      'monthly_fee': monthlyFee,
+      'monthly_due_day': monthlyDueDay,
+      'allow_credit': allowCredit,
+      'credit_limit': creditLimit,
+      'credit_status': creditStatus,
+      'payment_terms': paymentTerms,
+      'billing_notes': billingNotes,
+      'notes': notes,
+      'active': active,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
 }
 
 double _toDouble(Object? value) {

@@ -30,6 +30,7 @@ from app.schemas.sale import (
 from app.services.access_control import user_has_configured_permission
 from app.services.product_batches import apply_batch_out, return_to_batch
 from app.services.product_costs import apply_stock_in, apply_stock_out
+from app.services.pdv_pricing import effective_product_sale_price
 
 router = APIRouter()
 
@@ -528,6 +529,51 @@ def create_sale(
             and cash_session.cash_register_number != sale_in.cash_register_number
         ):
             raise HTTPException(status_code=409, detail="Sessão de caixa pertence a outro caixa.")
+
+    if (
+        sale_in.source == "pdv"
+        and sale_in.status == "finalizada"
+        and offline_client_id is None
+    ):
+        price_changes: list[dict[str, object]] = []
+        for item_in in sale_in.items:
+            if item_in.product_id is None:
+                continue
+            product = db.get(Product, item_in.product_id)
+            if product is None or not product.active:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "PRODUCT_UNAVAILABLE",
+                        "message": (
+                            f"O produto {item_in.description} não está mais disponível. "
+                            "Atualize o PDV antes de continuar."
+                        ),
+                        "product_id": item_in.product_id,
+                    },
+                )
+            expected_price = effective_product_sale_price(product)
+            if abs(expected_price - item_in.unit_price) > Decimal("0.0001"):
+                price_changes.append(
+                    {
+                        "product_id": product.id,
+                        "description": product.name,
+                        "previous_price": str(item_in.unit_price),
+                        "current_price": str(expected_price),
+                    }
+                )
+        if price_changes:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "PRICE_CHANGED",
+                    "message": (
+                        "Um ou mais preços mudaram. O carrinho foi atualizado; "
+                        "revise o total antes de cobrar."
+                    ),
+                    "changes": price_changes,
+                },
+            )
 
     sale = Sale(
         client_id=sale_in.client_id,

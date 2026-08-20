@@ -1119,6 +1119,10 @@ class _MasterTerminalCard extends StatelessWidget {
                       value: 'sync_offline_sales',
                       child: Text('Sincronizar pendências'),
                     ),
+                    PopupMenuItem(
+                      value: 'reload_catalog',
+                      child: Text('Forçar carga completa'),
+                    ),
                     PopupMenuDivider(),
                     PopupMenuItem(
                       value: 'clear_local_queue',
@@ -1264,6 +1268,7 @@ String _terminalCommandLabel(String action) {
   return switch (action) {
     'force_reconnect' => 'Forçar reconexão',
     'sync_offline_sales' => 'Sincronizar pendências',
+    'reload_catalog' => 'Forçar carga completa',
     'clear_local_queue' => 'Limpar fila local',
     'block_terminal' => 'Bloquear terminal',
     'unblock_terminal' => 'Desbloquear terminal',

@@ -28,6 +28,7 @@ from app.api.routes import (
     payables,
     pdv_operators,
     pdv_cash_sessions,
+    pdv_sync,
     pdv_terminals,
     products,
     production_orders,
@@ -78,6 +79,7 @@ api_router.include_router(
 )
 api_router.include_router(pdv_operators.router, prefix="/pdv", tags=["pdv"])
 api_router.include_router(pdv_cash_sessions.router, prefix="/pdv", tags=["pdv"])
+api_router.include_router(pdv_sync.router, prefix="/pdv", tags=["pdv-sync"])
 api_router.include_router(pdv_terminals.router, prefix="/pdv", tags=["pdv"])
 api_router.include_router(cash_closings.router, prefix="/pdv", tags=["pdv"])
 api_router.include_router(sales.router, prefix="/sales", tags=["sales"])

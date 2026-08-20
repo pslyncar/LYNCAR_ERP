@@ -183,6 +183,7 @@ class PdvTerminalCommandCreate(BaseModel):
             "unblock_terminal",
             "reset_terminal_link",
             "request_update",
+            "reload_catalog",
         }:
             raise ValueError("Comando do terminal invalido.")
         return value

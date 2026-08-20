@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 from app.core.config import get_settings
 from app.core.database import Base
 from app.core.security import hash_password
-from app.models import access_control, cash_closing, client, equipment, equipment_status, fiscal, fiscal_assistant, monitoring, payable, pdv_cash_session, pdv_operator, pdv_terminal, product, product_batch, product_composition, production_order, receivable, sale, service_contract, service_order, stock_entry, stock_movement, supplier, ticket, user, xml_inbox  # noqa: F401
+from app.models import access_control, cash_closing, client, equipment, equipment_status, fiscal, fiscal_assistant, monitoring, payable, pdv_cash_session, pdv_operator, pdv_sync_event, pdv_terminal, product, product_batch, product_composition, production_order, receivable, sale, service_contract, service_order, stock_entry, stock_movement, supplier, ticket, user, xml_inbox  # noqa: F401
 from app.models.user import User
 from app.services.access_control import seed_default_access_control
 from app.services.tenancy import normalize_company_code

@@ -12,6 +12,7 @@ import '../models/cash_closing.dart';
 import '../models/client.dart';
 import '../models/fiscal.dart';
 import '../models/pdv_operator.dart';
+import '../models/pdv_sync.dart';
 import '../models/pdv_terminal.dart';
 import '../models/product.dart';
 import '../models/sale.dart';
@@ -19,6 +20,8 @@ import '../models/session.dart';
 import '../services/api_client.dart';
 import '../services/app_session_storage.dart';
 import '../services/fiscal_print.dart' as fiscal_print;
+import '../services/pdv_sync_channel.dart';
+import '../services/pdv_connectivity.dart';
 import '../services/receipt_print.dart' as receipt_print;
 import '../utils/input_formatters.dart';
 import '../widgets/app_card.dart';
@@ -87,9 +90,11 @@ class PdvScreen extends StatefulWidget {
   State<PdvScreen> createState() => _PdvScreenState();
 }
 
-class _PdvScreenState extends State<PdvScreen> {
+class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
   static const _pdvCashSessionKey = 'papezzosync.pdv.cashSession';
   static const _pdvProductCacheKey = 'papezzosync.pdv.productCache';
+  static const _pdvClientCacheKey = 'papezzosync.pdv.clientCache';
+  static const _pdvSyncCursorKey = 'papezzosync.pdv.syncCursor';
   static const _pdvFiscalSettingsCacheKey = 'papezzosync.pdv.fiscalSettings';
   static const _pdvOfflineSalesKey = 'papezzosync.pdv.offlineSales';
   static const _pdvDrawerPulseKey = 'papezzosync.pdv.drawerPulseProfile';
@@ -153,6 +158,14 @@ class _PdvScreenState extends State<PdvScreen> {
   OverlayEntry? _pdvNoticeOverlay;
   Timer? _pdvNoticeTimer;
   Timer? _terminalHeartbeatTimer;
+  Timer? _catalogSyncTimer;
+  PdvSyncChannel? _catalogSyncChannel;
+  bool _catalogSyncInProgress = false;
+  bool _processingTerminalCommands = false;
+  bool _terminalHeartbeatInProgress = false;
+  final PdvConnectivity _connectivity = PdvConnectivity();
+  int _catalogSyncCursor = 0;
+  DateTime? _lastFullCatalogSync;
 
   bool get _usesFixedTerminal =>
       widget.pdvMode && widget.windowsAppMode && !kIsWeb;
@@ -186,17 +199,17 @@ class _PdvScreenState extends State<PdvScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handleGlobalPdvKey);
     _discount.addListener(_persistOpenCashSession);
     _paymentAmount.addListener(_persistOpenCashSession);
     _notes.addListener(_persistOpenCashSession);
     unawaited(_restoreTerminalIdentification());
     unawaited(_restoreOpenCashSession());
-    unawaited(_loadCachedPdvProducts());
     unawaited(_loadCachedFiscalSettings());
     unawaited(_loadDrawerPulseProfile());
     unawaited(_refreshPrinterStatus());
-    _load();
+    unawaited(_initializePdvData());
   }
 
   Future<void> _refreshPrinterStatus() async {
@@ -222,7 +235,10 @@ class _PdvScreenState extends State<PdvScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _terminalHeartbeatTimer?.cancel();
+    _catalogSyncTimer?.cancel();
+    unawaited(_catalogSyncChannel?.dispose());
     _pdvNoticeTimer?.cancel();
     _pdvNoticeOverlay?.remove();
     _discount.removeListener(_persistOpenCashSession);
@@ -244,23 +260,183 @@ class _PdvScreenState extends State<PdvScreen> {
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_syncPdvCatalogSilently());
+      unawaited(_syncPendingOfflineSales());
+    }
+  }
+
+  Future<void> _initializePdvData() async {
+    await Future.wait([
+      _loadCachedPdvProducts(),
+      _loadCachedPdvClients(),
+      _loadCachedPdvSyncCursor(),
+    ]);
+    await _load();
+    _startCatalogSynchronization();
+  }
+
+  void _startCatalogSynchronization() {
+    if (!widget.pdvMode || _catalogSyncTimer != null) return;
+    _catalogSyncTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      final lastFull = _lastFullCatalogSync;
+      final needsFull =
+          lastFull == null ||
+          DateTime.now().difference(lastFull) >= const Duration(hours: 6);
+      unawaited(_syncPdvCatalogSilently(forceFull: needsFull));
+    });
+    _catalogSyncChannel = PdvSyncChannel(
+      baseUrl: _api.baseUrl,
+      token: widget.session.token,
+      onCursor: (cursor) {
+        if (cursor > _catalogSyncCursor) {
+          unawaited(_syncPdvCatalogSilently());
+        }
+      },
+      onConnectionChanged: _handlePdvConnectionChanged,
+    )..connect();
+  }
+
+  void _handlePdvConnectionChanged(bool connected) {
+    if (!_usesFixedTerminal || !mounted) return;
+    final change = _connectivity.report(online: connected);
+    if (change == PdvConnectivityChange.unchanged) return;
+    setState(() {});
+    if (change == PdvConnectivityChange.recovered) {
+      _showPdvNotice('Conexão restabelecida. PDV operando online.');
+      unawaited(_syncPdvCatalogSilently());
+      unawaited(_syncPendingOfflineSales());
+    }
+  }
+
+  Future<void> _syncPdvCatalog({bool forceFull = false}) async {
+    if (_catalogSyncInProgress) {
+      if (!forceFull) return;
+      for (
+        var attempt = 0;
+        attempt < 100 && _catalogSyncInProgress;
+        attempt++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      }
+      if (_catalogSyncInProgress) {
+        throw StateError('Outra sincronização do catálogo ainda está ativa.');
+      }
+    }
+    _catalogSyncInProgress = true;
+    try {
+      var batch = forceFull || _catalogSyncCursor <= 0
+          ? await _api.getPdvSyncSnapshot(widget.session.token)
+          : await _api.getPdvSyncChanges(
+              widget.session.token,
+              after: _catalogSyncCursor,
+            );
+      var replace = forceFull || _catalogSyncCursor <= 0;
+      if (batch.resetRequired) {
+        batch = await _api.getPdvSyncSnapshot(widget.session.token);
+        replace = true;
+      }
+      if (!mounted) return;
+      final current = PdvCatalogState(
+        cursor: _catalogSyncCursor,
+        products: _products,
+        clients: _clients,
+      );
+      var updated = current.apply(batch, replace: replace);
+      var page = 1;
+      while (batch.hasMore && page < 20) {
+        page += 1;
+        batch = await _api.getPdvSyncChanges(
+          widget.session.token,
+          after: updated.cursor,
+        );
+        if (batch.resetRequired) {
+          batch = await _api.getPdvSyncSnapshot(widget.session.token);
+          updated = current.apply(batch, replace: true);
+          replace = true;
+          break;
+        }
+        updated = updated.apply(batch, replace: false);
+      }
+      var cartPriceChanged = false;
+      final productsById = {
+        for (final product in updated.products) product.id: product,
+      };
+      setState(() {
+        _catalogSyncCursor = updated.cursor;
+        _products = updated.products;
+        _clients = updated.clients;
+        _productsLoadError = null;
+        for (final item in _cart) {
+          final currentProduct = productsById[item.product.id];
+          if (currentProduct == null) continue;
+          item.product = currentProduct;
+          final currentPrice = currentProduct.effectiveSalePrice;
+          if (_moneyToCents(item.unitPrice) != _moneyToCents(currentPrice)) {
+            item.unitPrice = currentPrice;
+            cartPriceChanged = true;
+          }
+        }
+      });
+      if (replace) _lastFullCatalogSync = DateTime.now();
+      await Future.wait([
+        _persistPdvProductsCache(updated.products),
+        _persistPdvClientsCache(updated.clients),
+        _storage.write(_pdvSyncCursorStorageKey, '${updated.cursor}'),
+      ]);
+      if (cartPriceChanged) {
+        _persistOpenCashSession();
+        _showPdvNotice(
+          'Os preços do carrinho foram atualizados. Revise o total.',
+        );
+      }
+    } finally {
+      _catalogSyncInProgress = false;
+    }
+  }
+
+  Future<void> _syncPdvCatalogSilently({bool forceFull = false}) async {
+    try {
+      await _syncPdvCatalog(forceFull: forceFull);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _productsLoadError = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _productsLoadError = 'Sincronização automática indisponível.',
+        );
+      }
+    }
+  }
+
   Future<void> _load() async {
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final clients = await _api.listClients(widget.session.token);
-      final products = await _api.listProducts(
-        widget.session.token,
-        active: true,
-      );
-      unawaited(_persistPdvProductsCache(products));
-      if (mounted) {
-        setState(() {
-          _products = products;
-          _productsLoadError = null;
-        });
+      try {
+        await _syncPdvCatalog(forceFull: true);
+      } catch (_) {
+        final results = await Future.wait([
+          _api.listClients(widget.session.token),
+          _api.listProducts(widget.session.token, active: true),
+        ]);
+        final clients = results[0] as List<Client>;
+        final products = results[1] as List<Product>;
+        await Future.wait([
+          _persistPdvProductsCache(products),
+          _persistPdvClientsCache(clients),
+        ]);
+        if (mounted) {
+          setState(() {
+            _clients = clients;
+            _products = products;
+            _productsLoadError = null;
+          });
+        }
       }
       final sales = widget.session.can('sales:view')
           ? await _api.listSales(widget.session.token)
@@ -274,7 +450,6 @@ class _PdvScreenState extends State<PdvScreen> {
         unawaited(_persistFiscalSettingsCache(fiscalSettings));
       }
       setState(() {
-        _clients = clients;
         _sales = sales;
         _operators = operators;
         _sellers = sellers;
@@ -960,13 +1135,43 @@ class _PdvScreenState extends State<PdvScreen> {
   }
 
   Future<void> _persistPdvProductsCache(List<Product> products) async {
-    if (!widget.pdvMode || products.isEmpty) return;
+    if (!widget.pdvMode) return;
     await _storage.write(
       _pdvProductCacheStorageKey,
       jsonEncode([
         for (final product in products) _productToStorageJson(product),
       ]),
     );
+  }
+
+  Future<void> _loadCachedPdvClients() async {
+    final raw = await _storage.read(_pdvClientCacheStorageKey);
+    if (raw == null) return;
+    try {
+      final data = jsonDecode(raw) as List<dynamic>;
+      final clients = data
+          .map((item) => Client.fromJson(item as Map<String, dynamic>))
+          .toList();
+      if (!mounted || clients.isEmpty) return;
+      setState(() {
+        if (_clients.isEmpty) _clients = clients;
+      });
+    } catch (_) {
+      unawaited(_storage.remove(_pdvClientCacheStorageKey));
+    }
+  }
+
+  Future<void> _persistPdvClientsCache(List<Client> clients) async {
+    if (!widget.pdvMode) return;
+    await _storage.write(
+      _pdvClientCacheStorageKey,
+      jsonEncode([for (final client in clients) client.toJson()]),
+    );
+  }
+
+  Future<void> _loadCachedPdvSyncCursor() async {
+    final raw = await _storage.read(_pdvSyncCursorStorageKey);
+    _catalogSyncCursor = int.tryParse(raw ?? '') ?? 0;
   }
 
   Future<void> _loadCachedFiscalSettings() async {
@@ -1642,9 +1847,13 @@ class _PdvScreenState extends State<PdvScreen> {
 
   Future<void> _sendTerminalHeartbeat() async {
     final terminalKey = _terminalKey;
-    if (!_usesFixedTerminal || terminalKey == null || terminalKey.isEmpty) {
+    if (!_usesFixedTerminal ||
+        terminalKey == null ||
+        terminalKey.isEmpty ||
+        _terminalHeartbeatInProgress) {
       return;
     }
+    _terminalHeartbeatInProgress = true;
     try {
       final terminal = await _api.sendPdvTerminalHeartbeat(
         widget.session.token,
@@ -1658,6 +1867,7 @@ class _PdvScreenState extends State<PdvScreen> {
           currentSessionTotalAmount: _pdvSessionTotal,
         ),
       );
+      _handlePdvConnectionChanged(true);
       if (terminal.cashRegisterNumber != _cashRegisterNumber) {
         await _storage.write(
           _pdvCashRegisterNumberStorageKey,
@@ -1669,8 +1879,17 @@ class _PdvScreenState extends State<PdvScreen> {
           _cashRegisterNumber = terminal.cashRegisterNumber;
         }
       }
+      unawaited(_processTerminalCommands());
+    } on ApiException catch (error) {
+      if (error.statusCode == null || (error.statusCode ?? 0) >= 500) {
+        _handlePdvConnectionChanged(false);
+      }
+      // Erros de autenticacao/permissao nao significam falta de conexao.
     } catch (_) {
+      _handlePdvConnectionChanged(false);
       // Heartbeat nao bloqueia o PDV. Se a internet cair, tenta novamente.
+    } finally {
+      _terminalHeartbeatInProgress = false;
     }
   }
 
@@ -1779,6 +1998,14 @@ class _PdvScreenState extends State<PdvScreen> {
 
   String get _pdvProductCacheStorageKey {
     return '$_pdvProductCacheKey.${widget.session.companyCode}';
+  }
+
+  String get _pdvClientCacheStorageKey {
+    return '$_pdvClientCacheKey.${widget.session.companyCode}';
+  }
+
+  String get _pdvSyncCursorStorageKey {
+    return '$_pdvSyncCursorKey.${widget.session.companyCode}';
   }
 
   String get _pdvFiscalSettingsStorageKey {
@@ -3460,6 +3687,7 @@ class _PdvScreenState extends State<PdvScreen> {
       );
       _barcodeFocus.requestFocus();
     } on ApiException catch (error) {
+      if (await _handlePdvCatalogConflict(error)) return;
       if (widget.pdvMode && error.message.toLowerCase().contains('conex')) {
         await _queueOfflineSale(
           payload: payload,
@@ -3484,6 +3712,116 @@ class _PdvScreenState extends State<PdvScreen> {
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  Future<void> _processTerminalCommands() async {
+    final terminalKey = _terminalKey;
+    if (!_usesFixedTerminal ||
+        terminalKey == null ||
+        terminalKey.isEmpty ||
+        _processingTerminalCommands) {
+      return;
+    }
+    _processingTerminalCommands = true;
+    try {
+      final commands = await _api.listPdvTerminalCommands(
+        widget.session.token,
+        terminalKey,
+      );
+      for (final command in commands) {
+        var status = 'done';
+        var result = 'Comando concluído pelo PDV.';
+        try {
+          switch (command.action) {
+            case 'reload_catalog':
+              await _syncPdvCatalog(forceFull: true);
+              result =
+                  'Carga completa concluída: ${_products.length} produtos e ${_clients.length} clientes.';
+              break;
+            case 'sync_offline_sales':
+              await _syncPendingOfflineSales();
+              result = 'Fila de vendas offline processada.';
+              break;
+            case 'force_reconnect':
+              await _catalogSyncChannel?.dispose();
+              _catalogSyncChannel = PdvSyncChannel(
+                baseUrl: _api.baseUrl,
+                token: widget.session.token,
+                onCursor: (cursor) {
+                  if (cursor > _catalogSyncCursor) {
+                    unawaited(_syncPdvCatalogSilently());
+                  }
+                },
+                onConnectionChanged: _handlePdvConnectionChanged,
+              )..connect();
+              await _syncPdvCatalog();
+              result = 'Conexão de sincronização refeita.';
+              break;
+            case 'request_update':
+              result = 'PDV está na versão $_pdvScreenAppVersion.';
+              break;
+            case 'block_terminal':
+            case 'unblock_terminal':
+              result = 'Estado do terminal recebido e confirmado.';
+              break;
+            default:
+              status = 'failed';
+              result = 'Comando ${command.action} exige ação local manual.';
+              break;
+          }
+        } catch (error) {
+          status = 'failed';
+          result = 'Falha ao executar ${command.action}: $error';
+        }
+        await _api.acknowledgePdvTerminalCommand(
+          widget.session.token,
+          terminalKey,
+          command.id,
+          status: status,
+          resultMessage: result,
+        );
+      }
+    } catch (_) {
+      // Nova tentativa ocorre no proximo heartbeat.
+    } finally {
+      _processingTerminalCommands = false;
+    }
+  }
+
+  Future<bool> _handlePdvCatalogConflict(ApiException error) async {
+    if (!widget.pdvMode || error.statusCode != 409) return false;
+    final detail = error.data?['detail'];
+    if (detail is! Map<String, dynamic>) return false;
+    final code = detail['code']?.toString();
+    if (code != 'PRICE_CHANGED' && code != 'PRODUCT_UNAVAILABLE') return false;
+    try {
+      await _syncPdvCatalog(forceFull: true);
+    } catch (_) {
+      // A mensagem original continua sendo a informacao mais importante.
+    }
+    if (!mounted) return true;
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: Icon(
+          code == 'PRICE_CHANGED'
+              ? Icons.price_change_outlined
+              : Icons.inventory_2_outlined,
+          color: const Color(0xFFB45309),
+        ),
+        title: Text(
+          code == 'PRICE_CHANGED' ? 'Preço atualizado' : 'Produto indisponível',
+        ),
+        content: Text(detail['message']?.toString() ?? error.message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Revisar carrinho'),
+          ),
+        ],
+      ),
+    );
+    return true;
   }
 
   Future<void> _cancelSale(Sale sale) async {
@@ -3829,6 +4167,7 @@ class _PdvScreenState extends State<PdvScreen> {
             onPauseCash: _pauseCash,
             onCloseCash: _showCloseCashDialog,
           ),
+          if (_connectivity.inContingency) const _PdvContingencyBanner(),
           if (_loading) const LinearProgressIndicator(minHeight: 3),
           Expanded(
             child: LayoutBuilder(
@@ -4102,6 +4441,36 @@ class _PdvScreenState extends State<PdvScreen> {
                 }
                 return pdvBody;
               },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PdvContingencyBanner extends StatelessWidget {
+  const _PdvContingencyBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+      color: const Color(0xFFF59E0B),
+      child: const Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.cloud_off_outlined, color: Color(0xFF422006), size: 21),
+          SizedBox(width: 10),
+          Flexible(
+            child: Text(
+              'MODO CONTINGÊNCIA — servidor indisponível. O PDV tenta reconectar automaticamente.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF422006),
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ],
@@ -6817,9 +7186,9 @@ class _CartItem {
     );
   }
 
-  final Product product;
+  Product product;
   double quantity;
-  final double unitPrice;
+  double unitPrice;
 
   Map<String, dynamic> toStorageJson() {
     return {
