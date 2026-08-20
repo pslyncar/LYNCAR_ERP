@@ -303,23 +303,44 @@ def normalize_existing_company_modules() -> None:
 
 def _ensure_sidebar_modules_in_existing_records(db) -> None:
     new_modules = {
+        "product_promotions",
         "stock_entries",
         "stock_withdrawals",
         "cash_closings",
         "support",
         "settings",
     }
+    changed = False
+    plans = list(db.scalars(select(SubscriptionPlan)).all())
+    # Promoções é padrão apenas do plano Pro. Não é injetado em segmentos ou
+    # empresas já existentes: o Master decide essas liberações explicitamente.
+    for plan in plans:
+        if plan.code == "pro" and "product_promotions" not in (plan.default_modules or []):
+            plan.default_modules = sorted(set(plan.default_modules or []) | {"product_promotions"})
+            changed = True
+    if changed:
+        db.commit()
     current_plan_modules = set()
-    for plan in db.scalars(select(SubscriptionPlan)).all():
+    for plan in plans:
         current_plan_modules.update(plan.default_modules or [])
     if current_plan_modules & new_modules:
+        # Empresas já criadas guardam uma seleção própria. Para o recurso que
+        # é padrão de plano, sincroniza somente as empresas Pro.
+        changed = False
+        for company in db.scalars(select(Company).where(Company.plan == "pro")).all():
+            modules = set(company.enabled_modules or [])
+            if "product_promotions" not in modules:
+                company.enabled_modules = sorted(modules | {"product_promotions"})
+                changed = True
+        if changed:
+            db.commit()
         return
     additions_by_base = {
         "stock": {"stock_entries", "stock_withdrawals"},
+        "products": {"product_promotions"},
         "sales": {"cash_closings"},
     }
     always_on = {"support", "settings"}
-    changed = False
     for plan in db.scalars(select(SubscriptionPlan)).all():
         modules = set(plan.default_modules or [])
         for base, additions in additions_by_base.items():

@@ -144,6 +144,12 @@ class ProductUpdate(BaseModel):
     notes: str | None = None
 
 
+class ProductPromotionUpdate(BaseModel):
+    offer_price: Decimal | None = Field(default=None, ge=0)
+    offer_start_at: datetime | None = None
+    offer_end_at: datetime | None = None
+
+
 class ProductRead(ProductBase):
     id: int
     average_cost: Decimal | None

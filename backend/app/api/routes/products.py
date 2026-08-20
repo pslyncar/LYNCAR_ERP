@@ -14,7 +14,12 @@ from app.models.product_batch import ProductBatch
 from app.models.stock_entry import StockEntry, StockEntryItem
 from app.models.stock_movement import StockMovement
 from app.models.user import User
-from app.schemas.product import ProductCreate, ProductRead, ProductUpdate
+from app.schemas.product import (
+    ProductCreate,
+    ProductPromotionUpdate,
+    ProductRead,
+    ProductUpdate,
+)
 from app.schemas.product_composition import (
     ProductCompositionItemCreate,
     ProductCompositionItemRead,
@@ -22,6 +27,7 @@ from app.schemas.product_composition import (
 )
 from app.schemas.product_batch import ProductBatchRead
 from app.schemas.stock_movement import (
+    StockAdjustmentCreate,
     StockMovementRead,
     StockWithdrawalCreate,
     StockWithdrawalRead,
@@ -48,6 +54,11 @@ STOCK_WITHDRAWAL_REASON_LABELS = {
     "theft": "Furto ou desaparecimento",
     "inventory_adjustment": "Ajuste de inventario",
     "other": "Outros",
+}
+STOCK_ADJUSTMENT_REASON_LABELS = {
+    "inventory_count": "Recontagem de inventario",
+    "data_correction": "Correcao de saldo",
+    "other": "Outro ajuste de estoque",
 }
 
 
@@ -399,6 +410,51 @@ def list_product_stock_movements(
 
 
 @router.post(
+    "/{product_id}/stock-adjustments",
+    response_model=StockMovementRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_stock_adjustment(
+    product_id: int,
+    adjustment_in: StockAdjustmentCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("stock:move")),
+) -> StockMovement:
+    product = db.scalar(
+        select(Product).where(Product.id == product_id).with_for_update()
+    )
+    if product is None:
+        raise HTTPException(status_code=404, detail="Produto nao encontrado.")
+    if product.product_type == "servico":
+        raise HTTPException(status_code=400, detail="Servicos nao possuem saldo de estoque.")
+
+    quantity_before = product.stock_quantity
+    product.stock_quantity = adjustment_in.counted_quantity
+    refresh_inventory_value(product)
+    movement = StockMovement(
+        product_id=product.id,
+        user_id=current_user.id,
+        movement_type="manual_adjustment",
+        source_type="stock_adjustment",
+        quantity_delta=product.stock_quantity - quantity_before,
+        quantity_before=quantity_before,
+        quantity_after=product.stock_quantity,
+        unit=product.unit,
+        unit_price=base_unit_cost(product),
+        total_value=product.stock_value,
+        reason=STOCK_ADJUSTMENT_REASON_LABELS[adjustment_in.reason_code],
+        notes=adjustment_in.notes,
+    )
+    db.add(movement)
+    db.flush()
+    movement.source_id = movement.id
+    movement.source_number = f"A{movement.id}"
+    db.commit()
+    db.refresh(movement)
+    return movement
+
+
+@router.post(
     "/{product_id}/stock-withdrawals",
     response_model=StockMovementRead,
     status_code=status.HTTP_201_CREATED,
@@ -633,6 +689,14 @@ def update_product(
         raise HTTPException(status_code=404, detail="Produto/servico nao encontrado.")
 
     update_data = product_in.model_dump(exclude_unset=True)
+    if "stock_quantity" in update_data:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "O saldo nao pode ser alterado ao editar o cadastro. "
+                "Use o ajuste de estoque para registrar a recontagem."
+            ),
+        )
     old_image_url = product.image_url
     if "barcode" in update_data:
         update_data["barcode"] = _normalize_gtin(update_data.get("barcode"))
@@ -667,14 +731,32 @@ def update_product(
         refresh_inventory_value(product)
     elif purchase_cost_changed or purchase_quantity_changed:
         refresh_inventory_value(product, force_from_purchase=True)
-    elif "stock_quantity" in update_data:
-        refresh_inventory_value(product)
 
     learn_from_product(db, product)
     ensure_initial_product_batch(db, product)
     db.commit()
     if "image_url" in update_data and old_image_url != product.image_url:
         _delete_product_image_if_orphan(db, old_image_url, product.id, credentials)
+    db.refresh(product)
+    return product
+
+
+@router.put("/{product_id}/promotion", response_model=ProductRead)
+def update_product_promotion(
+    product_id: int,
+    promotion_in: ProductPromotionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("products:promotions")),
+) -> Product:
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Produto/servico nao encontrado.")
+    data = promotion_in.model_dump()
+    _validate_offer_period(data)
+    product.offer_price = data["offer_price"]
+    product.offer_start_at = data["offer_start_at"]
+    product.offer_end_at = data["offer_end_at"]
+    db.commit()
     db.refresh(product)
     return product
 

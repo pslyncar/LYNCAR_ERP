@@ -1,5 +1,13 @@
 # Registro de Decisoes Tecnicas
 
+## 2026-08-20 - Saldo de estoque alterado somente por movimento
+
+- Status: aprovado e implementado localmente.
+- Contexto: o cadastro de produto misturava saldo, fiscal e preco; uma edicao fiscal podia reenviar o saldo e inverter estoque negativo.
+- Decisao: `PUT /products/{id}` nao aceita alteracao de `stock_quantity`. Recontagem/correcao usa `POST /products/{id}/stock-adjustments`, que grava um `StockMovement` auditavel. Ofertas ficam no menu separado **Precos e promocoes**.
+- Consequencias: edicoes fiscais e cadastrais nao mudam saldo. Todo ajuste tem usuario, motivo, observacao e valores antes/depois. Integracoes que alteravam saldo pelo endpoint generico devem usar entradas, baixas ou o novo ajuste.
+- Alternativa rejeitada: apenas preservar o sinal negativo no campo livre; isso manteria o risco de alterar saldo sem motivo ou historico.
+
 ## Decisoes iniciais consolidadas
 
 ### DT-001 - Backend com FastAPI

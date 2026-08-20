@@ -18,6 +18,7 @@ const _moduleLabels = {
   'equipments': 'Equipamentos',
   'tickets': 'Chamados',
   'products': 'Produtos',
+  'product_promotions': 'Preços e promoções',
   'stock': 'Estoque',
   'stock_entries': 'Entradas',
   'stock_withdrawals': 'Baixas',
@@ -44,6 +45,7 @@ const _moduleLabels = {
 const _moduleDescriptions = {
   'clients': 'Cadastro de clientes, dados de contato e crediário.',
   'products': 'Produtos, preços, estoque e códigos de barras.',
+  'product_promotions': 'Ofertas programadas e preços promocionais.',
   'stock': 'Estoque, produtos e lotes/validade.',
   'stock_entries': 'Entradas, XML de compra e conferência de mercadoria.',
   'stock_withdrawals': 'Baixas de estoque por perda, consumo e vencimento.',
@@ -105,6 +107,7 @@ const _permissionUsageHints = {
       'Mostra Produtos/Estoque quando combinado com estoque e permite consultar itens.',
   'products:create': 'Permite cadastrar produto.',
   'products:update': 'Permite alterar produto, preço e dados do cadastro.',
+  'products:promotions': 'Mostra Preços e promoções e permite criar ou encerrar ofertas.',
   'products:delete': 'Permite excluir produto.',
   'stock:view': 'Mostra Estoque e permite consultar saldo.',
   'stock:move': 'Permite movimentar estoque manualmente.',

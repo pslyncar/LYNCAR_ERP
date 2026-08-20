@@ -39,6 +39,20 @@ Correcao aplicada: o PDV passou a usar travas de dialogo/acao sensivel para bloq
 
 Como validar: abrir o PDV, adicionar item, pressionar `F9` varias vezes rapidamente e confirmar que apenas um modal de autorizacao aparece. Repetir com `F4`, `F5` e `F6` para confirmar que desconto, cancelamento de item e pagamento tambem nao duplicam dialogs.
 
+## 2026-08-20 - Edicao fiscal podia inverter estoque negativo
+
+Status: resolvido.
+
+Area afetada: Estoque, cadastro de produtos, fiscal, Backend FastAPI e App Admin Flutter.
+
+Descricao: ao salvar um produto com saldo negativo depois de preencher dados fiscais, o saldo podia reaparecer positivo.
+
+Causa raiz: o formatador/interpretador de numero removia o sinal negativo e o formulario enviava `stock_quantity` em toda edicao do cadastro.
+
+Correcao aplicada: saldo ficou bloqueado no cadastro existente; a API de edicao recusa `stock_quantity`; foi criado ajuste rastreavel com motivo e observacao. O formatador numerico passou a preservar sinal negativo no fluxo de ajuste.
+
+Como validar: editar NCM ou qualquer dado fiscal de produto com saldo negativo e confirmar que o saldo nao muda. Depois, usar **Ajustar estoque**, informar saldo negativo e observacao, e confirmar o novo movimento no historico.
+
 ## Template
 
 Usar [[00 - Entrada/Templates/Template - Bug|Template - Bug]] para novos registros.

@@ -24,6 +24,7 @@ import 'pdv_screen.dart';
 import 'pdv_terminals_screen.dart';
 import 'products_screen.dart';
 import 'production_orders_screen.dart';
+import 'promotions_screen.dart';
 import 'reports_screen.dart';
 import 'sales_screen.dart';
 import 'settings_screen.dart';
@@ -248,6 +249,14 @@ class _AppShellState extends State<AppShell> {
             icon: Icons.inventory_2_outlined,
             selectedIcon: Icons.inventory_2,
             screen: ProductsScreen(session: widget.session),
+          ),
+        if (widget.session.hasModule('product_promotions') &&
+            widget.session.can('products:promotions'))
+          _Destination(
+            label: 'Promoções',
+            icon: Icons.sell_outlined,
+            selectedIcon: Icons.sell,
+            screen: PromotionsScreen(session: widget.session),
           ),
         if (widget.session.hasModule('marketplaces') &&
             widget.session.can('marketplaces:view'))

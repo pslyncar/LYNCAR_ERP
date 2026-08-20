@@ -48,6 +48,7 @@ PERMISSIONS = [
     PermissionDefinition("products:view", "Ver produtos", "products", "Visualizar produtos, peças e serviços."),
     PermissionDefinition("products:create", "Criar produtos", "products", "Cadastrar produtos, peças e serviços."),
     PermissionDefinition("products:update", "Editar produtos", "products", "Alterar produtos, peças e serviços."),
+    PermissionDefinition("products:promotions", "Gerenciar promoções", "product_promotions", "Criar, alterar e encerrar ofertas de produtos."),
     PermissionDefinition("products:delete", "Excluir produtos", "products", "Excluir produtos, peças e serviços."),
     PermissionDefinition("stock:view", "Ver estoque", "stock", "Visualizar estoque."),
     PermissionDefinition("stock:move", "Movimentar estoque", "stock", "Movimentar estoque."),

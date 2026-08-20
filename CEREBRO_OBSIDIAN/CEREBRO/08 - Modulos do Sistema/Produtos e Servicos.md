@@ -47,6 +47,14 @@ Este modulo passou a ser exibido na interface como **Estoque**, pois atende prod
 - Vendas e PDV guardam o preco de venda na venda, mas o historico de estoque deve registrar o custo/valor de estoque para permitir CMV e relatorios financeiros.
 - Os campos oficiais para base de compra sao `purchase_total_cost` e `purchase_quantity`; os campos oficiais calculados do estoque sao `average_cost` e `stock_value`.
 
+## Cadastro, saldo e promocoes
+
+- O cadastro do produto nao pode alterar `stock_quantity` depois da criacao. O saldo exibido nele e somente leitura.
+- Recontagem e correcao usam ajuste rastreavel com saldo contado, motivo e observacao. O movimento guarda saldo anterior, diferenca, saldo final, usuario e data.
+- Saldo negativo e valido e deve ser preservado; nunca pode ser convertido silenciosamente em positivo.
+- Preco promocional, inicio e fim pertencem ao menu **Precos e promocoes**, separado do cadastro e do estoque.
+- O produto novo ainda pode receber estoque inicial; entradas de mercadoria continuam sendo a forma oficial de aumentar estoque comprado.
+
 ## Entrada de mercadoria e NF-e
 
 - O modulo de estoque possui tela propria de Entradas.

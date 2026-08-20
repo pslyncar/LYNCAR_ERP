@@ -234,7 +234,7 @@ class ProductPayload {
     this.offerPrice,
     this.offerStartAt,
     this.offerEndAt,
-    required this.stockQuantity,
+    this.stockQuantity,
     required this.minimumStock,
     required this.unit,
     required this.active,
@@ -309,7 +309,7 @@ class ProductPayload {
   final double? purchasePackageFactor;
   final String? purchasePackageBarcode;
   final double? marginPercent;
-  final double stockQuantity;
+  final double? stockQuantity;
   final double minimumStock;
   final String unit;
   final String? ncm;
@@ -366,7 +366,7 @@ class ProductPayload {
       'purchase_package_factor': purchasePackageFactor,
       'purchase_package_barcode': _emptyToNull(purchasePackageBarcode),
       'margin_percent': marginPercent,
-      'stock_quantity': stockQuantity,
+      if (stockQuantity != null) 'stock_quantity': stockQuantity,
       'minimum_stock': minimumStock,
       'unit': unit.trim().isEmpty ? 'un' : unit.trim(),
       'ncm': _emptyToNull(ncm),

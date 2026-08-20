@@ -33,6 +33,24 @@ class StockWithdrawalCreate(BaseModel):
         return self
 
 
+class StockAdjustmentCreate(BaseModel):
+    """Recontagem ou correção de saldo, sempre registrada no histórico."""
+
+    counted_quantity: Decimal = Field(max_digits=12, decimal_places=3)
+    reason_code: str = Field(min_length=3, max_length=40)
+    notes: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_reason(self) -> "StockAdjustmentCreate":
+        if self.reason_code not in {"inventory_count", "data_correction", "other"}:
+            raise ValueError("Motivo de ajuste de estoque invalido.")
+        notes = (self.notes or "").strip()
+        if len(notes) < 5:
+            raise ValueError("Informe uma observacao de ao menos 5 caracteres.")
+        self.notes = notes
+        return self
+
+
 class StockMovementRead(BaseModel):
     id: int
     product_id: int

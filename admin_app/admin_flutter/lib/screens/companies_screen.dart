@@ -26,6 +26,7 @@ const _moduleLabels = {
   'dashboard': 'Dashboard',
   'clients': 'Clientes',
   'products': 'Produtos',
+  'product_promotions': 'Preços e promoções',
   'stock': 'Estoque',
   'stock_entries': 'Entradas',
   'stock_withdrawals': 'Baixas',

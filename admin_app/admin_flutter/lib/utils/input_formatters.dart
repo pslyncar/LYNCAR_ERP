@@ -136,12 +136,14 @@ class UpperCaseTextFormatter extends TextInputFormatter {
 double parseBrazilianNumber(String value) {
   final trimmed = value.trim();
   if (trimmed.isEmpty) return 0;
+  final negative = trimmed.startsWith('-');
   final onlyNumbers = trimmed.replaceAll(RegExp(r'[^0-9,.]'), '');
   final lastComma = onlyNumbers.lastIndexOf(',');
   final lastDot = onlyNumbers.lastIndexOf('.');
   final decimalIndex = lastComma > lastDot ? lastComma : lastDot;
   if (decimalIndex < 0) {
-    return double.tryParse(onlyNumbers.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    final parsed = double.tryParse(onlyNumbers.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    return negative ? -parsed : parsed;
   }
   final integerPart = onlyNumbers
       .substring(0, decimalIndex)
@@ -149,17 +151,21 @@ double parseBrazilianNumber(String value) {
   final decimalPart = onlyNumbers
       .substring(decimalIndex + 1)
       .replaceAll(RegExp(r'[^0-9]'), '');
-  return double.tryParse('$integerPart.$decimalPart') ?? 0;
+  final parsed = double.tryParse('$integerPart.$decimalPart') ?? 0;
+  return negative ? -parsed : parsed;
 }
 
 String formatBrazilianDecimal(double value) {
-  final fixed = value == value.roundToDouble()
-      ? value.toStringAsFixed(0)
-      : value.toStringAsFixed(2);
+  final negative = value < 0;
+  final absolute = value.abs();
+  final fixed = absolute == absolute.roundToDouble()
+      ? absolute.toStringAsFixed(0)
+      : absolute.toStringAsFixed(2);
   final parts = fixed.split('.');
-  return parts.length == 1
+  final formatted = parts.length == 1
       ? _groupInteger(parts.first)
       : '${_groupInteger(parts.first)},${parts.last}';
+  return negative ? '-$formatted' : formatted;
 }
 
 String formatBrazilianMoneyInput(double value) {

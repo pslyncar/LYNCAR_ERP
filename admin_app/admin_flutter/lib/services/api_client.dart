@@ -1150,6 +1150,44 @@ class ApiClient {
     return StockMovement.fromJson(_decodeResponse(response));
   }
 
+  Future<StockMovement> createStockAdjustment(
+    String token, {
+    required int productId,
+    required double countedQuantity,
+    required String reasonCode,
+    required String notes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/products/$productId/stock-adjustments'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'counted_quantity': countedQuantity,
+        'reason_code': reasonCode,
+        'notes': notes,
+      }),
+    );
+    return StockMovement.fromJson(_decodeResponse(response));
+  }
+
+  Future<Product> updateProductPromotion(
+    String token,
+    int productId, {
+    required double? offerPrice,
+    required DateTime? offerStartAt,
+    required DateTime? offerEndAt,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/products/$productId/promotion'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'offer_price': offerPrice,
+        'offer_start_at': offerStartAt?.toIso8601String(),
+        'offer_end_at': offerEndAt?.toIso8601String(),
+      }),
+    );
+    return Product.fromJson(_decodeResponse(response));
+  }
+
   Future<List<ProductBatch>> listProductBatches(
     String token,
     int productId,

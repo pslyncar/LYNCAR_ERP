@@ -43,6 +43,8 @@
 - `GET /products`
 - `GET /products/{product_id}`
 - `PUT /products/{product_id}`
+- `PUT /products/{product_id}/promotion`
+- `POST /products/{product_id}/stock-adjustments`
 - `DELETE /products/{product_id}`
 - `POST /service-orders`
 - `GET /service-orders`

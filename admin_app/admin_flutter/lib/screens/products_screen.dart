@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../models/product.dart';
@@ -228,6 +229,18 @@ class _ProductsScreenState extends State<ProductsScreen> {
     );
   }
 
+  Future<void> _adjustStock(Product product) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _StockAdjustmentDialog(
+        api: _api,
+        token: widget.session.token,
+        product: product,
+      ),
+    );
+    if (changed == true) await _load();
+  }
+
   Future<void> _openBatches(Product product) async {
     await showDialog<void>(
       context: context,
@@ -368,12 +381,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
                         products: filteredProducts,
                         apiBaseUrl: widget.session.apiBaseUrl,
                         canEdit: canUpdate,
+                        canAdjustStock: widget.session.can('stock:move'),
                         canViewBatches: widget.session.can(
                           'stock:batches:view',
                         ),
                         onOpen: _openForm,
                         onBatches: _openBatches,
                         onHistory: _openHistory,
+                        onAdjustStock: _adjustStock,
                         onComposition: _openComposition,
                       ),
               ),
@@ -629,20 +644,24 @@ class _ProductsTable extends StatelessWidget {
     required this.products,
     required this.apiBaseUrl,
     required this.canEdit,
+    required this.canAdjustStock,
     required this.canViewBatches,
     required this.onOpen,
     required this.onBatches,
     required this.onHistory,
+    required this.onAdjustStock,
     required this.onComposition,
   });
 
   final List<Product> products;
   final String apiBaseUrl;
   final bool canEdit;
+  final bool canAdjustStock;
   final bool canViewBatches;
   final ValueChanged<Product> onOpen;
   final ValueChanged<Product> onBatches;
   final ValueChanged<Product> onHistory;
+  final ValueChanged<Product> onAdjustStock;
   final ValueChanged<Product> onComposition;
 
   @override
@@ -665,7 +684,7 @@ class _ProductsTable extends StatelessWidget {
               SizedBox(width: 120, child: _HeaderCell('Venda')),
               SizedBox(width: 110, child: _HeaderCell('NCM')),
               SizedBox(width: 120, child: _HeaderCell('IBS/CBS')),
-              SizedBox(width: 148, child: _HeaderCell('Acoes')),
+              SizedBox(width: 68, child: _HeaderCell('Ações')),
             ],
           ),
         ),
@@ -751,25 +770,33 @@ class _ProductsTable extends StatelessWidget {
                     ),
                   ),
                   SizedBox(
-                    width: 148,
-                    child: Row(
-                      children: [
-                        IconButton(
-                          tooltip: 'Ficha técnica / composição',
-                          onPressed: () => onComposition(product),
-                          icon: const Icon(Icons.account_tree_outlined),
-                        ),
+                    width: 68,
+                    child: PopupMenuButton<_StockAction>(
+                      tooltip: 'Ações do produto',
+                      icon: const Icon(Icons.more_vert),
+                      onSelected: (action) {
+                        switch (action) {
+                          case _StockAction.composition:
+                            onComposition(product);
+                            return;
+                          case _StockAction.batches:
+                            onBatches(product);
+                            return;
+                          case _StockAction.history:
+                            onHistory(product);
+                            return;
+                          case _StockAction.adjust:
+                            onAdjustStock(product);
+                            return;
+                        }
+                      },
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(value: _StockAction.composition, child: Text('Ficha técnica / composição')),
                         if (canViewBatches)
-                          IconButton(
-                            tooltip: 'Saldos por lote',
-                            onPressed: () => onBatches(product),
-                            icon: const Icon(Icons.inventory_outlined),
-                          ),
-                        IconButton(
-                          tooltip: 'Histórico do estoque',
-                          onPressed: () => onHistory(product),
-                          icon: const Icon(Icons.history_outlined),
-                        ),
+                          const PopupMenuItem(value: _StockAction.batches, child: Text('Saldos por lote')),
+                        const PopupMenuItem(value: _StockAction.history, child: Text('Histórico do estoque')),
+                        if (canAdjustStock)
+                          const PopupMenuItem(value: _StockAction.adjust, child: Text('Ajustar estoque')),
                       ],
                     ),
                   ),
@@ -777,10 +804,12 @@ class _ProductsTable extends StatelessWidget {
               ),
             ),
           ),
-      ],
+        ],
     );
   }
 }
+
+enum _StockAction { composition, batches, history, adjust }
 
 class _ProductThumb extends StatelessWidget {
   const _ProductThumb({required this.imageUrl, required this.apiBaseUrl});
@@ -2005,6 +2034,114 @@ class _CompositionDialogState extends State<_CompositionDialog> {
   }
 }
 
+class _StockAdjustmentDialog extends StatefulWidget {
+  const _StockAdjustmentDialog({
+    required this.api,
+    required this.token,
+    required this.product,
+  });
+
+  final ApiClient api;
+  final String token;
+  final Product product;
+
+  @override
+  State<_StockAdjustmentDialog> createState() => _StockAdjustmentDialogState();
+}
+
+class _StockAdjustmentDialogState extends State<_StockAdjustmentDialog> {
+  late final _quantity = TextEditingController(
+    text: _number(widget.product.stockQuantity),
+  );
+  final _notes = TextEditingController();
+  String _reason = 'inventory_count';
+  String? _error;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _quantity.dispose();
+    _notes.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final quantity = parseBrazilianNumber(_quantity.text);
+    if (_notes.text.trim().length < 5) {
+      setState(() => _error = 'Explique o motivo do ajuste (ao menos 5 caracteres).');
+      return;
+    }
+    setState(() { _saving = true; _error = null; });
+    try {
+      await widget.api.createStockAdjustment(
+        widget.token,
+        productId: widget.product.id,
+        countedQuantity: quantity,
+        reasonCode: _reason,
+        notes: _notes.text.trim(),
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) setState(() => _error = 'Não foi possível registrar o ajuste.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text('Ajustar estoque — ${widget.product.name}'),
+    content: SizedBox(
+      width: 520,
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Text('Saldo atual: ${_number(widget.product.stockQuantity)} ${widget.product.unit}. O novo saldo pode ser negativo e ficará no histórico.', style: const TextStyle(color: Color(0xFF475569))),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _quantity,
+          inputFormatters: const [_SignedBrazilianDecimalInputFormatter()],
+          decoration: InputDecoration(labelText: 'Saldo contado (${widget.product.unit})', border: const OutlineInputBorder()),
+        ),
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _reason,
+          decoration: const InputDecoration(labelText: 'Motivo', border: OutlineInputBorder()),
+          items: const [
+            DropdownMenuItem(value: 'inventory_count', child: Text('Recontagem de inventário')),
+            DropdownMenuItem(value: 'data_correction', child: Text('Correção de saldo')),
+            DropdownMenuItem(value: 'other', child: Text('Outro ajuste')),
+          ],
+          onChanged: (value) => setState(() => _reason = value ?? 'inventory_count'),
+        ),
+        const SizedBox(height: 12),
+        TextField(controller: _notes, maxLines: 3, decoration: const InputDecoration(labelText: 'Observação obrigatória', border: OutlineInputBorder())),
+        if (_error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C)))),
+      ]),
+    ),
+    actions: [
+      TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+      FilledButton.icon(onPressed: _saving ? null : _save, icon: const Icon(Icons.fact_check_outlined), label: Text(_saving ? 'Registrando...' : 'Registrar ajuste')),
+    ],
+  );
+}
+
+class _SignedBrazilianDecimalInputFormatter extends TextInputFormatter {
+  const _SignedBrazilianDecimalInputFormatter();
+
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    final negative = newValue.text.trimLeft().startsWith('-');
+    final clean = newValue.text.replaceAll('.', ',').replaceAll(RegExp(r'[^0-9,]'), '');
+    final comma = clean.indexOf(',');
+    final integer = comma < 0 ? clean : clean.substring(0, comma);
+    final decimals = comma < 0 ? '' : clean.substring(comma + 1).replaceAll(',', '');
+    final grouped = integer.isEmpty ? '0' : formatBrazilianDecimal(double.tryParse(integer) ?? 0).split(',').first;
+    final text = '${negative ? '-' : ''}$grouped${comma < 0 ? '' : ',$decimals'}';
+    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+  }
+}
+
 class _FiscalStockInfo extends StatelessWidget {
   const _FiscalStockInfo({required this.label, required this.value});
 
@@ -2474,7 +2611,9 @@ class _ProductDialogState extends State<_ProductDialog> {
           ? _purchasePackageBarcode.text
           : null,
       marginPercent: _nullableDecimal(_marginPercent.text),
-      stockQuantity: _moneyValue(_stockQuantity.text),
+      // Saldo só é informado ao criar o item. Alterações posteriores passam
+      // pelo ajuste rastreável de estoque, nunca pelo cadastro fiscal.
+      stockQuantity: widget.product == null ? _moneyValue(_stockQuantity.text) : null,
       minimumStock: _moneyValue(_minimumStock.text),
       unit: _selectedUnit,
       ncm: _ncm.text,
@@ -2687,7 +2826,22 @@ class _ProductDialogState extends State<_ProductDialog> {
                   _Fields(
                     children: [
                       _unitDropdown(),
-                      _field(_stockQuantity, 'Estoque atual', number: true),
+                      if (widget.product == null)
+                        _field(
+                          _stockQuantity,
+                          'Estoque inicial',
+                          number: true,
+                          helperText:
+                              'Depois do cadastro, use Ajustar estoque para qualquer correção de saldo.',
+                        )
+                      else
+                        _readOnlyField(
+                          _stockQuantity,
+                          'Saldo atual',
+                          helperText:
+                              'O saldo é protegido. Ajustes ficam registrados no histórico do estoque.',
+                          locked: true,
+                        ),
                       _field(_minimumStock, 'Estoque minimo', number: true),
                       _field(
                         _purchaseTotalCost,
@@ -2745,24 +2899,6 @@ class _ProductDialogState extends State<_ProductDialog> {
                         number: true,
                         unitPrice: true,
                         focusNode: _saleFocus,
-                      ),
-                      _field(
-                        _offerPrice,
-                        'Preco de oferta',
-                        number: true,
-                        unitPrice: true,
-                        helperText:
-                            'Opcional. Usado automaticamente dentro do periodo.',
-                      ),
-                      _field(
-                        _offerStartAt,
-                        'Inicio da oferta',
-                        helperText: 'Formato: dd/mm/aaaa hh:mm',
-                      ),
-                      _field(
-                        _offerEndAt,
-                        'Fim da oferta',
-                        helperText: 'Formato: dd/mm/aaaa hh:mm',
                       ),
                       _field(
                         _marginPercent,
