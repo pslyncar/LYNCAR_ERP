@@ -12,9 +12,14 @@ import '../widgets/error_panel.dart';
 import '../widgets/responsive_data_table.dart';
 
 class FiscalDocumentsScreen extends StatefulWidget {
-  const FiscalDocumentsScreen({super.key, required this.session});
+  const FiscalDocumentsScreen({
+    super.key,
+    required this.session,
+    required this.onStartIssue,
+  });
 
   final Session session;
+  final VoidCallback onStartIssue;
 
   @override
   State<FiscalDocumentsScreen> createState() => _FiscalDocumentsScreenState();
@@ -74,9 +79,12 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
       });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
-    } catch (_) {
+    } catch (error) {
       if (mounted) {
-        setState(() => _error = 'Não foi possível carregar as notas fiscais.');
+        setState(
+          () => _error =
+              'Não foi possível interpretar os dados fiscais recebidos: $error',
+        );
       }
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -220,7 +228,7 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                 ),
                 const SizedBox(width: 10),
                 FilledButton.icon(
-                  onPressed: _canEmit && !_loading ? _openIssueDialog : null,
+                  onPressed: _canEmit && !_loading ? widget.onStartIssue : null,
                   icon: const Icon(Icons.add),
                   label: const Text('Emitir nota'),
                 ),
@@ -449,6 +457,18 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                                           label: 'Ver detalhes',
                                         ),
                                       ),
+                                      if (_canEmit &&
+                                          document.status != 'authorized' &&
+                                          document.status != 'cancelled' &&
+                                          document.status !=
+                                              'contingency_offline')
+                                        const PopupMenuItem(
+                                          value: 'review',
+                                          child: _ActionLine(
+                                            icon: Icons.edit_note_outlined,
+                                            label: 'Revisar / editar rascunho',
+                                          ),
+                                        ),
                                       if (_canAuthorize(document))
                                         PopupMenuItem(
                                           value: 'authorize',
@@ -525,6 +545,9 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         document.status != 'contingency_offline';
   }
 
+  // Transitional implementation retained only while its product/client selectors
+  // are extracted into EmitirNotaFiscalScreen.
+  // ignore: unused_element
   Future<void> _openIssueDialog() async {
     final settings = _settings;
     if (settings == null) return;
@@ -569,642 +592,697 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
     }
 
     try {
-      final confirmed = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (dialogContext) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            final nfeSelected = type == 'nfe';
-            final typeEnabled = nfeSelected
-                ? settings.nfeEnabled
-                : settings.nfceEnabled;
-            final visibleItems = draftItems
-                .asMap()
-                .entries
-                .where((entry) => entry.value.included)
-                .toList();
+      final confirmed = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (dialogContext) => StatefulBuilder(
+            builder: (context, setDialogState) {
+              final nfeSelected = type == 'nfe';
+              final typeEnabled = nfeSelected
+                  ? settings.nfeEnabled
+                  : settings.nfceEnabled;
+              final visibleItems = draftItems
+                  .asMap()
+                  .entries
+                  .where((entry) => entry.value.included)
+                  .toList();
 
-            Future<void> loadSale() async {
-              final number = saleNumber.text.trim();
-              if (number.isEmpty) {
-                setDialogState(() => dialogError = 'Digite o numero da venda.');
-                return;
+              Future<void> loadSale() async {
+                final number = saleNumber.text.trim();
+                if (number.isEmpty) {
+                  setDialogState(
+                    () => dialogError = 'Digite o numero da venda.',
+                  );
+                  return;
+                }
+                setDialogState(() {
+                  loadingSale = true;
+                  dialogError = null;
+                });
+                try {
+                  final loaded = await _api.getFiscalSaleDraft(
+                    widget.session.token,
+                    number,
+                  );
+                  setDialogState(() {
+                    draft = loaded;
+                    draftItems = [...loaded.items];
+                    manualMode = false;
+                    fiscalClient = null;
+                    cpf.text = loaded.consumerCpf ?? '';
+                    step = 1;
+                    loadingSale = false;
+                  });
+                } on ApiException catch (error) {
+                  setDialogState(() {
+                    dialogError = error.message;
+                    loadingSale = false;
+                  });
+                } catch (_) {
+                  setDialogState(() {
+                    dialogError = 'Nao foi possivel carregar a venda.';
+                    loadingSale = false;
+                  });
+                }
               }
-              setDialogState(() {
-                loadingSale = true;
-                dialogError = null;
-              });
-              try {
-                final loaded = await _api.getFiscalSaleDraft(
-                  widget.session.token,
-                  number,
-                );
-                setDialogState(() {
-                  draft = loaded;
-                  draftItems = [...loaded.items];
-                  manualMode = false;
-                  fiscalClient = null;
-                  cpf.text = loaded.consumerCpf ?? '';
-                  step = 1;
-                  loadingSale = false;
-                });
-              } on ApiException catch (error) {
-                setDialogState(() {
-                  dialogError = error.message;
-                  loadingSale = false;
-                });
-              } catch (_) {
-                setDialogState(() {
-                  dialogError = 'Nao foi possivel carregar a venda.';
-                  loadingSale = false;
-                });
-              }
-            }
 
-            Future<void> replaceProduct(int index) async {
-              final selected = await _selectFiscalProduct(dialogContext);
-              if (selected == null) return;
-              final current = draftItems[index];
-              final total =
-                  current.quantity * current.unitPrice - current.discountAmount;
-              setDialogState(() {
-                draftItems[index] = current.copyWith(
-                  fiscalProductId: selected.id,
-                  fiscalProductName: selected.name,
-                  fiscalDescription: selected.name,
-                  barcode: selected.barcode,
-                  unit: selected.unit,
-                  totalPrice: total < 0 ? 0 : total,
-                  adjustmentReason:
-                      'Produto fiscal substituido por ${selected.name}.',
-                );
-              });
-            }
-
-            Future<void> addProduct() async {
-              final selected = await _selectFiscalProduct(dialogContext);
-              if (selected == null) return;
-              final price = selected.salePrice;
-              setDialogState(() {
-                draftItems.add(
-                  FiscalDraftItem(
-                    saleItemId: null,
-                    originalProductId: null,
-                    originalProductName: null,
+              Future<void> replaceProduct(int index) async {
+                final selected = await _selectFiscalProduct(dialogContext);
+                if (selected == null) return;
+                final current = draftItems[index];
+                final total =
+                    current.quantity * current.unitPrice -
+                    current.discountAmount;
+                setDialogState(() {
+                  draftItems[index] = current.copyWith(
                     fiscalProductId: selected.id,
                     fiscalProductName: selected.name,
-                    originalDescription: null,
                     fiscalDescription: selected.name,
-                    quantity: 1,
-                    unit: selected.unit,
-                    unitPrice: price,
-                    discountAmount: 0,
-                    totalPrice: price,
                     barcode: selected.barcode,
-                    included: true,
+                    unit: selected.unit,
+                    totalPrice: total < 0 ? 0 : total,
                     adjustmentReason:
-                        'Produto adicionado manualmente na pre-nota fiscal.',
+                        'Produto fiscal substituido por ${selected.name}.',
+                  );
+                });
+              }
+
+              Future<void> addProduct() async {
+                final selected = await _selectFiscalProduct(dialogContext);
+                if (selected == null) return;
+                final price = selected.salePrice;
+                setDialogState(() {
+                  draftItems.add(
+                    FiscalDraftItem(
+                      saleItemId: null,
+                      originalProductId: null,
+                      originalProductName: null,
+                      fiscalProductId: selected.id,
+                      fiscalProductName: selected.name,
+                      originalDescription: null,
+                      fiscalDescription: selected.name,
+                      quantity: 1,
+                      unit: selected.unit,
+                      unitPrice: price,
+                      discountAmount: 0,
+                      totalPrice: price,
+                      barcode: selected.barcode,
+                      included: true,
+                      adjustmentReason:
+                          'Produto adicionado manualmente na pre-nota fiscal.',
+                    ),
+                  );
+                });
+              }
+
+              Future<void> editValue(int index) async {
+                final current = draftItems[index];
+                final controller = TextEditingController(
+                  text: current.unitPrice
+                      .toStringAsFixed(2)
+                      .replaceAll('.', ','),
+                );
+                final result = await showDialog<double>(
+                  context: dialogContext,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Alterar valor fiscal do item'),
+                    content: TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Valor unitario na nota',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                      FilledButton(
+                        onPressed: () {
+                          final value =
+                              double.tryParse(
+                                controller.text
+                                    .trim()
+                                    .replaceAll('.', '')
+                                    .replaceAll(',', '.'),
+                              ) ??
+                              current.unitPrice;
+                          Navigator.of(context).pop(value);
+                        },
+                        child: const Text('Aplicar'),
+                      ),
+                    ],
                   ),
                 );
-              });
-            }
+                controller.dispose();
+                if (result == null) return;
+                final total =
+                    current.quantity * result - current.discountAmount;
+                setDialogState(() {
+                  draftItems[index] = current.copyWith(
+                    unitPrice: result,
+                    totalPrice: total < 0 ? 0 : total,
+                    adjustmentReason:
+                        'Valor fiscal do item alterado manualmente.',
+                  );
+                });
+              }
 
-            Future<void> editValue(int index) async {
-              final current = draftItems[index];
-              final controller = TextEditingController(
-                text: current.unitPrice.toStringAsFixed(2).replaceAll('.', ','),
-              );
-              final result = await showDialog<double>(
-                context: dialogContext,
-                builder: (context) => AlertDialog(
-                  title: const Text('Alterar valor fiscal do item'),
-                  content: TextField(
-                    controller: controller,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(
-                      labelText: 'Valor unitario na nota',
-                      border: OutlineInputBorder(),
+              Future<void> editQuantity(int index) async {
+                final current = draftItems[index];
+                final controller = TextEditingController(
+                  text: current.quantity
+                      .toStringAsFixed(3)
+                      .replaceAll('.', ','),
+                );
+                final result = await showDialog<double>(
+                  context: dialogContext,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Alterar quantidade fiscal'),
+                    content: TextField(
+                      controller: controller,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Quantidade na nota (${current.unit})',
+                        border: const OutlineInputBorder(),
+                      ),
                     ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                      FilledButton(
+                        onPressed: () {
+                          final value =
+                              double.tryParse(
+                                controller.text
+                                    .trim()
+                                    .replaceAll('.', '')
+                                    .replaceAll(',', '.'),
+                              ) ??
+                              current.quantity;
+                          if (value <= 0) return;
+                          Navigator.of(context).pop(value);
+                        },
+                        child: const Text('Aplicar'),
+                      ),
+                    ],
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancelar'),
+                );
+                controller.dispose();
+                if (result == null) return;
+                final total =
+                    result * current.unitPrice - current.discountAmount;
+                setDialogState(() {
+                  draftItems[index] = current.copyWith(
+                    quantity: result,
+                    totalPrice: total < 0 ? 0 : total,
+                    adjustmentReason:
+                        'Quantidade fiscal do item alterada manualmente.',
+                  );
+                });
+              }
+
+              Future<void> editDescription(int index) async {
+                final current = draftItems[index];
+                final controller = TextEditingController(
+                  text: current.fiscalDescription,
+                );
+                final result = await showDialog<String>(
+                  context: dialogContext,
+                  builder: (context) => AlertDialog(
+                    title: const Text('Editar descricao fiscal'),
+                    content: TextField(
+                      controller: controller,
+                      maxLength: 220,
+                      minLines: 2,
+                      maxLines: 4,
+                      decoration: const InputDecoration(
+                        labelText: 'Descricao que saira na nota',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
-                    FilledButton(
-                      onPressed: () {
-                        final value =
-                            double.tryParse(
-                              controller.text
-                                  .trim()
-                                  .replaceAll('.', '')
-                                  .replaceAll(',', '.'),
-                            ) ??
-                            current.unitPrice;
-                        Navigator.of(context).pop(value);
-                      },
-                      child: const Text('Aplicar'),
-                    ),
-                  ],
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(context).pop(),
+                        child: const Text('Cancelar'),
+                      ),
+                      FilledButton(
+                        onPressed: () {
+                          final value = controller.text.trim();
+                          if (value.isEmpty) return;
+                          Navigator.of(context).pop(value);
+                        },
+                        child: const Text('Aplicar'),
+                      ),
+                    ],
+                  ),
+                );
+                controller.dispose();
+                if (result == null) return;
+                setDialogState(() {
+                  draftItems[index] = current.copyWith(
+                    fiscalDescription: result,
+                    adjustmentReason: 'Descricao fiscal alterada manualmente.',
+                  );
+                });
+              }
+
+              void deleteItem(int index) {
+                final current = draftItems[index];
+                setDialogState(() {
+                  draftItems[index] = current.copyWith(
+                    included: false,
+                    adjustmentReason: 'Item excluido da emissao fiscal.',
+                  );
+                });
+              }
+
+              Future<void> chooseFiscalClient() async {
+                final selected = await _selectFiscalClient(dialogContext);
+                if (selected == null) return;
+                setDialogState(() {
+                  fiscalClient = selected;
+                  if (!nfeSelected) {
+                    cpf.text = selected.documentNumber ?? cpf.text;
+                  }
+                });
+              }
+
+              final title = step == 0
+                  ? 'Pesquisar venda para emitir nota'
+                  : manualMode
+                  ? 'Montar nota fiscal manual'
+                  : 'Montar nota fiscal da venda ${draft?.saleNumber ?? '#${draft?.saleId ?? '-'}'}';
+
+              return Scaffold(
+                appBar: AppBar(
+                  title: Text(title),
+                  leading: IconButton(
+                    tooltip: 'Voltar',
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(dialogContext).pop(false),
+                  ),
                 ),
-              );
-              controller.dispose();
-              if (result == null) return;
-              final total = current.quantity * result - current.discountAmount;
-              setDialogState(() {
-                draftItems[index] = current.copyWith(
-                  unitPrice: result,
-                  totalPrice: total < 0 ? 0 : total,
-                  adjustmentReason:
-                      'Valor fiscal do item alterado manualmente.',
-                );
-              });
-            }
-
-            Future<void> editQuantity(int index) async {
-              final current = draftItems[index];
-              final controller = TextEditingController(
-                text: current.quantity.toStringAsFixed(3).replaceAll('.', ','),
-              );
-              final result = await showDialog<double>(
-                context: dialogContext,
-                builder: (context) => AlertDialog(
-                  title: const Text('Alterar quantidade fiscal'),
-                  content: TextField(
-                    controller: controller,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      labelText: 'Quantidade na nota (${current.unit})',
-                      border: const OutlineInputBorder(),
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancelar'),
-                    ),
-                    FilledButton(
-                      onPressed: () {
-                        final value =
-                            double.tryParse(
-                              controller.text
-                                  .trim()
-                                  .replaceAll('.', '')
-                                  .replaceAll(',', '.'),
-                            ) ??
-                            current.quantity;
-                        if (value <= 0) return;
-                        Navigator.of(context).pop(value);
-                      },
-                      child: const Text('Aplicar'),
-                    ),
-                  ],
-                ),
-              );
-              controller.dispose();
-              if (result == null) return;
-              final total = result * current.unitPrice - current.discountAmount;
-              setDialogState(() {
-                draftItems[index] = current.copyWith(
-                  quantity: result,
-                  totalPrice: total < 0 ? 0 : total,
-                  adjustmentReason:
-                      'Quantidade fiscal do item alterada manualmente.',
-                );
-              });
-            }
-
-            Future<void> editDescription(int index) async {
-              final current = draftItems[index];
-              final controller = TextEditingController(
-                text: current.fiscalDescription,
-              );
-              final result = await showDialog<String>(
-                context: dialogContext,
-                builder: (context) => AlertDialog(
-                  title: const Text('Editar descricao fiscal'),
-                  content: TextField(
-                    controller: controller,
-                    maxLength: 220,
-                    minLines: 2,
-                    maxLines: 4,
-                    decoration: const InputDecoration(
-                      labelText: 'Descricao que saira na nota',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('Cancelar'),
-                    ),
-                    FilledButton(
-                      onPressed: () {
-                        final value = controller.text.trim();
-                        if (value.isEmpty) return;
-                        Navigator.of(context).pop(value);
-                      },
-                      child: const Text('Aplicar'),
-                    ),
-                  ],
-                ),
-              );
-              controller.dispose();
-              if (result == null) return;
-              setDialogState(() {
-                draftItems[index] = current.copyWith(
-                  fiscalDescription: result,
-                  adjustmentReason: 'Descricao fiscal alterada manualmente.',
-                );
-              });
-            }
-
-            void deleteItem(int index) {
-              final current = draftItems[index];
-              setDialogState(() {
-                draftItems[index] = current.copyWith(
-                  included: false,
-                  adjustmentReason: 'Item excluido da emissao fiscal.',
-                );
-              });
-            }
-
-            Future<void> chooseFiscalClient() async {
-              final selected = await _selectFiscalClient(dialogContext);
-              if (selected == null) return;
-              setDialogState(() {
-                fiscalClient = selected;
-                if (!nfeSelected) {
-                  cpf.text = selected.documentNumber ?? cpf.text;
-                }
-              });
-            }
-
-            final title = step == 0
-                ? 'Pesquisar venda para emitir nota'
-                : manualMode
-                ? 'Montar nota fiscal manual'
-                : 'Montar nota fiscal da venda ${draft?.saleNumber ?? '#${draft?.saleId ?? '-'}'}';
-
-            return AlertDialog(
-              title: Text(title),
-              content: SizedBox(
-                width: step == 0 ? 720 : 1040,
-                child: SingleChildScrollView(
-                  child: step == 0
-                      ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Informe uma venda para emitir a partir dela ou crie uma nota manual escolhendo cliente, produtos, valores e observacoes.',
-                              style: TextStyle(color: Color(0xFF64748B)),
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextField(
-                                    controller: saleNumber,
-                                    autofocus: true,
-                                    onSubmitted: (_) => loadSale(),
-                                    decoration: const InputDecoration(
-                                      labelText: 'Numero da venda',
-                                      hintText: 'Ex.: V45, 45 ou V87',
-                                      border: OutlineInputBorder(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 10),
-                                FilledButton.icon(
-                                  onPressed: loadingSale ? null : loadSale,
-                                  icon: loadingSale
-                                      ? const SizedBox(
-                                          width: 16,
-                                          height: 16,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Icon(Icons.search),
-                                  label: const Text('Buscar venda'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            OutlinedButton.icon(
-                              onPressed: () => setDialogState(() {
-                                manualMode = true;
-                                draft = null;
-                                draftItems = [];
-                                fiscalClient = null;
-                                cpf.clear();
-                                dialogError = null;
-                                step = 1;
-                              }),
-                              icon: const Icon(Icons.edit_note_outlined),
-                              label: const Text('Criar nota manual'),
-                            ),
-                            if (dialogError != null) ...[
-                              const SizedBox(height: 10),
-                              Text(
-                                dialogError!,
-                                style: const TextStyle(
-                                  color: Color(0xFFB91C1C),
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ],
-                          ],
-                        )
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFFBFDBFE),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      manualMode
-                                          ? 'Nota manual | Total da nota ${_formatMoney(fiscalTotal())}'
-                                          : 'Venda original ${_formatMoney(draft!.saleTotal)} | Total da nota ${_formatMoney(fiscalTotal())}',
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w900,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    manualMode
-                                        ? 'Ao autorizar, o estoque sera baixado pelos itens desta nota.'
-                                        : 'A venda original nao sera alterada.',
-                                    style: const TextStyle(
-                                      color: Color(0xFF64748B),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            SegmentedButton<String>(
-                              segments: const [
-                                ButtonSegment(
-                                  value: 'nfce',
-                                  icon: Icon(Icons.point_of_sale_outlined),
-                                  label: Text('NFC-e'),
-                                ),
-                                ButtonSegment(
-                                  value: 'nfe',
-                                  icon: Icon(Icons.local_shipping_outlined),
-                                  label: Text('NF-e'),
-                                ),
-                              ],
-                              selected: {type},
-                              onSelectionChanged: (value) =>
-                                  setDialogState(() => type = value.first),
-                            ),
-                            const SizedBox(height: 10),
-                            if (nfeSelected && !settings.nfeEnabled)
-                              const _PendingEngineBox(
-                                text:
-                                    'A NF-e esta desabilitada. Ative e complete os dados fiscais em Configuracoes > Fiscal.',
-                              )
-                            else if (!nfeSelected && !settings.nfceEnabled)
-                              const _PendingEngineBox(
-                                text:
-                                    'A NFC-e esta desabilitada. Ative e configure o modulo em Configuracoes > Fiscal.',
-                              ),
-                            const SizedBox(height: 14),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(
-                                  color: const Color(0xFFD7E2F0),
-                                ),
-                              ),
-                              child: Row(
+                body: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 1200),
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: SingleChildScrollView(
+                        child: step == 0
+                            ? Column(
+                                mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Icon(Icons.person_search_outlined),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
+                                  const Text(
+                                    'Informe uma venda para emitir a partir dela ou crie uma nota manual escolhendo cliente, produtos, valores e observacoes.',
+                                    style: TextStyle(color: Color(0xFF64748B)),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: [
+                                      Expanded(
+                                        child: TextField(
+                                          controller: saleNumber,
+                                          autofocus: true,
+                                          onSubmitted: (_) => loadSale(),
+                                          decoration: const InputDecoration(
+                                            labelText: 'Numero da venda',
+                                            hintText: 'Ex.: V45, 45 ou V87',
+                                            border: OutlineInputBorder(),
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      FilledButton.icon(
+                                        onPressed: loadingSale
+                                            ? null
+                                            : loadSale,
+                                        icon: loadingSale
+                                            ? const SizedBox(
+                                                width: 16,
+                                                height: 16,
+                                                child:
+                                                    CircularProgressIndicator(
+                                                      strokeWidth: 2,
+                                                    ),
+                                              )
+                                            : const Icon(Icons.search),
+                                        label: const Text('Buscar venda'),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 12),
+                                  OutlinedButton.icon(
+                                    onPressed: () => setDialogState(() {
+                                      manualMode = true;
+                                      draft = null;
+                                      draftItems = [];
+                                      fiscalClient = null;
+                                      cpf.clear();
+                                      dialogError = null;
+                                      step = 1;
+                                    }),
+                                    icon: const Icon(Icons.edit_note_outlined),
+                                    label: const Text('Criar nota manual'),
+                                  ),
+                                  if (dialogError != null) ...[
+                                    const SizedBox(height: 10),
+                                    Text(
+                                      dialogError!,
+                                      style: const TextStyle(
+                                        color: Color(0xFFB91C1C),
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              )
+                            : Column(
+                                mainAxisSize: MainAxisSize.min,
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEFF6FF),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: const Color(0xFFBFDBFE),
+                                      ),
+                                    ),
+                                    child: Row(
                                       children: [
-                                        const Text(
-                                          'Cliente/destinatario fiscal',
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w900,
+                                        Expanded(
+                                          child: Text(
+                                            manualMode
+                                                ? 'Nota manual | Total da nota ${_formatMoney(fiscalTotal())}'
+                                                : 'Venda original ${_formatMoney(draft!.saleTotal)} | Total da nota ${_formatMoney(fiscalTotal())}',
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w900,
+                                            ),
                                           ),
                                         ),
-                                        const SizedBox(height: 4),
                                         Text(
-                                          clientLabel(fiscalClient),
+                                          manualMode
+                                              ? 'Ao autorizar, o estoque sera baixado pelos itens desta nota.'
+                                              : 'A venda original nao sera alterada.',
                                           style: const TextStyle(
-                                            color: Color(0xFF475569),
-                                          ),
-                                        ),
-                                        const SizedBox(height: 4),
-                                        const Text(
-                                          'Trocar aqui altera somente a nota fiscal. A venda/notinha original nao muda.',
-                                          style: TextStyle(
                                             color: Color(0xFF64748B),
-                                            fontSize: 12,
                                           ),
                                         ),
                                       ],
                                     ),
                                   ),
-                                  const SizedBox(width: 10),
-                                  Wrap(
-                                    spacing: 8,
-                                    children: [
-                                      OutlinedButton.icon(
-                                        onPressed: chooseFiscalClient,
-                                        icon: const Icon(Icons.search),
-                                        label: const Text('Trocar cliente'),
+                                  const SizedBox(height: 14),
+                                  SegmentedButton<String>(
+                                    segments: const [
+                                      ButtonSegment(
+                                        value: 'nfce',
+                                        icon: Icon(
+                                          Icons.point_of_sale_outlined,
+                                        ),
+                                        label: Text('NFC-e'),
                                       ),
-                                      if (fiscalClient != null)
-                                        TextButton(
-                                          onPressed: () => setDialogState(
-                                            () => fiscalClient = null,
+                                      ButtonSegment(
+                                        value: 'nfe',
+                                        icon: Icon(
+                                          Icons.local_shipping_outlined,
+                                        ),
+                                        label: Text('NF-e'),
+                                      ),
+                                    ],
+                                    selected: {type},
+                                    onSelectionChanged: (value) =>
+                                        setDialogState(
+                                          () => type = value.first,
+                                        ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                  if (nfeSelected && !settings.nfeEnabled)
+                                    const _PendingEngineBox(
+                                      text:
+                                          'A NF-e esta desabilitada. Ative e complete os dados fiscais em Configuracoes > Fiscal.',
+                                    )
+                                  else if (!nfeSelected &&
+                                      !settings.nfceEnabled)
+                                    const _PendingEngineBox(
+                                      text:
+                                          'A NFC-e esta desabilitada. Ative e configure o modulo em Configuracoes > Fiscal.',
+                                    ),
+                                  const SizedBox(height: 14),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: const Color(0xFFD7E2F0),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const Icon(
+                                          Icons.person_search_outlined,
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'Cliente/destinatario fiscal',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w900,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Text(
+                                                clientLabel(fiscalClient),
+                                                style: const TextStyle(
+                                                  color: Color(0xFF475569),
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              const Text(
+                                                'Trocar aqui altera somente a nota fiscal. A venda/notinha original nao muda.',
+                                                style: TextStyle(
+                                                  color: Color(0xFF64748B),
+                                                  fontSize: 12,
+                                                ),
+                                              ),
+                                            ],
                                           ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        Wrap(
+                                          spacing: 8,
+                                          children: [
+                                            OutlinedButton.icon(
+                                              onPressed: chooseFiscalClient,
+                                              icon: const Icon(Icons.search),
+                                              label: const Text(
+                                                'Trocar cliente',
+                                              ),
+                                            ),
+                                            if (fiscalClient != null)
+                                              TextButton(
+                                                onPressed: () => setDialogState(
+                                                  () => fiscalClient = null,
+                                                ),
+                                                child: Text(
+                                                  manualMode
+                                                      ? 'Remover cliente'
+                                                      : 'Usar da venda',
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  Row(
+                                    children: [
+                                      const Expanded(
+                                        child: Text(
+                                          'Produtos da nota',
+                                          style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ),
+                                      OutlinedButton.icon(
+                                        onPressed: addProduct,
+                                        icon: const Icon(Icons.add),
+                                        label: const Text('Adicionar produto'),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 10),
+                                  if (visibleItems.isEmpty)
+                                    Container(
+                                      width: double.infinity,
+                                      padding: const EdgeInsets.all(18),
+                                      decoration: BoxDecoration(
+                                        border: Border.all(
+                                          color: const Color(0xFFD7E2F0),
+                                        ),
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      child: const Text(
+                                        'Nenhum produto incluido na nota.',
+                                        style: TextStyle(
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    )
+                                  else
+                                    for (final entry in visibleItems)
+                                      _FiscalDraftItemCard(
+                                        item: entry.value,
+                                        code: itemCode(entry.value),
+                                        onReplaceProduct: () =>
+                                            replaceProduct(entry.key),
+                                        onEditValue: () => editValue(entry.key),
+                                        onEditQuantity: () =>
+                                            editQuantity(entry.key),
+                                        onEditDescription: () =>
+                                            editDescription(entry.key),
+                                        onDelete: () => deleteItem(entry.key),
+                                      ),
+                                  const SizedBox(height: 14),
+                                  DropdownButtonFormField<String>(
+                                    initialValue: operationNature,
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Natureza da operacao',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    items: [
+                                      for (final option
+                                          in _fiscalOperationOptions)
+                                        DropdownMenuItem(
+                                          value: option.value,
                                           child: Text(
-                                            manualMode
-                                                ? 'Remover cliente'
-                                                : 'Usar da venda',
+                                            option.label,
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                     ],
+                                    onChanged: (value) => setDialogState(
+                                      () => operationNature =
+                                          value ??
+                                          _fiscalOperationOptions.first.value,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  DropdownButtonFormField<String>(
+                                    initialValue: paymentCondition,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Condicao de pagamento fiscal',
+                                      border: OutlineInputBorder(),
+                                    ),
+                                    items: const [
+                                      DropdownMenuItem(
+                                        value: 'vista',
+                                        child: Text('Pagamento a vista'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'prazo',
+                                        child: Text('Pagamento a prazo'),
+                                      ),
+                                      DropdownMenuItem(
+                                        value: 'outros',
+                                        child: Text('Outros'),
+                                      ),
+                                    ],
+                                    onChanged: (value) => setDialogState(
+                                      () => paymentCondition = value ?? 'vista',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 14),
+                                  if (!nfeSelected)
+                                    TextField(
+                                      controller: cpf,
+                                      keyboardType: TextInputType.number,
+                                      decoration: const InputDecoration(
+                                        labelText:
+                                            'CPF do consumidor (opcional para NFC-e)',
+                                        border: OutlineInputBorder(),
+                                      ),
+                                    )
+                                  else
+                                    const Text(
+                                      'A NF-e usara o cliente/destinatario fiscal selecionado acima. O cadastro precisa ter CPF/CNPJ, endereco completo, cidade, UF e CEP.',
+                                      style: TextStyle(
+                                        color: Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  const SizedBox(height: 14),
+                                  TextField(
+                                    controller: fiscalNotes,
+                                    minLines: 2,
+                                    maxLines: 4,
+                                    maxLength: 2000,
+                                    decoration: const InputDecoration(
+                                      labelText:
+                                          'Observacoes fiscais complementares',
+                                      border: OutlineInputBorder(),
+                                    ),
                                   ),
                                 ],
                               ),
-                            ),
-                            const SizedBox(height: 14),
-                            Row(
-                              children: [
-                                const Expanded(
-                                  child: Text(
-                                    'Produtos da nota',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                                OutlinedButton.icon(
-                                  onPressed: addProduct,
-                                  icon: const Icon(Icons.add),
-                                  label: const Text('Adicionar produto'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 10),
-                            if (visibleItems.isEmpty)
-                              Container(
-                                width: double.infinity,
-                                padding: const EdgeInsets.all(18),
-                                decoration: BoxDecoration(
-                                  border: Border.all(
-                                    color: const Color(0xFFD7E2F0),
-                                  ),
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'Nenhum produto incluido na nota.',
-                                  style: TextStyle(color: Color(0xFF64748B)),
-                                ),
-                              )
-                            else
-                              for (final entry in visibleItems)
-                                _FiscalDraftItemCard(
-                                  item: entry.value,
-                                  code: itemCode(entry.value),
-                                  onReplaceProduct: () =>
-                                      replaceProduct(entry.key),
-                                  onEditValue: () => editValue(entry.key),
-                                  onEditQuantity: () => editQuantity(entry.key),
-                                  onEditDescription: () =>
-                                      editDescription(entry.key),
-                                  onDelete: () => deleteItem(entry.key),
-                                ),
-                            const SizedBox(height: 14),
-                            DropdownButtonFormField<String>(
-                              initialValue: operationNature,
-                              isExpanded: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Natureza da operacao',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: [
-                                for (final option in _fiscalOperationOptions)
-                                  DropdownMenuItem(
-                                    value: option.value,
-                                    child: Text(
-                                      option.label,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                              ],
-                              onChanged: (value) => setDialogState(
-                                () => operationNature =
-                                    value ??
-                                    _fiscalOperationOptions.first.value,
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            DropdownButtonFormField<String>(
-                              initialValue: paymentCondition,
-                              decoration: const InputDecoration(
-                                labelText: 'Condicao de pagamento fiscal',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'vista',
-                                  child: Text('Pagamento a vista'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'prazo',
-                                  child: Text('Pagamento a prazo'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'outros',
-                                  child: Text('Outros'),
-                                ),
-                              ],
-                              onChanged: (value) => setDialogState(
-                                () => paymentCondition = value ?? 'vista',
-                              ),
-                            ),
-                            const SizedBox(height: 14),
-                            if (!nfeSelected)
-                              TextField(
-                                controller: cpf,
-                                keyboardType: TextInputType.number,
-                                decoration: const InputDecoration(
-                                  labelText:
-                                      'CPF do consumidor (opcional para NFC-e)',
-                                  border: OutlineInputBorder(),
-                                ),
-                              )
-                            else
-                              const Text(
-                                'A NF-e usara o cliente/destinatario fiscal selecionado acima. O cadastro precisa ter CPF/CNPJ, endereco completo, cidade, UF e CEP.',
-                                style: TextStyle(color: Color(0xFF64748B)),
-                              ),
-                            const SizedBox(height: 14),
-                            TextField(
-                              controller: fiscalNotes,
-                              minLines: 2,
-                              maxLines: 4,
-                              maxLength: 2000,
-                              decoration: const InputDecoration(
-                                labelText: 'Observacoes fiscais complementares',
-                                border: OutlineInputBorder(),
-                              ),
-                            ),
-                          ],
-                        ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    if (step == 1) {
-                      setDialogState(() => step = 0);
-                    } else {
-                      Navigator.of(dialogContext).pop(false);
-                    }
-                  },
-                  child: Text(step == 1 ? 'Voltar' : 'Cancelar'),
-                ),
-                if (step == 1)
-                  FilledButton.icon(
-                    onPressed:
-                        !typeEnabled || !draftItems.any((item) => item.included)
-                        ? null
-                        : () => Navigator.of(dialogContext).pop(true),
-                    icon: const Icon(Icons.description_outlined),
-                    label: Text(
-                      nfeSelected ? 'Preparar NF-e' : 'Preparar NFC-e',
+                      ),
                     ),
                   ),
-              ],
-            );
-          },
+                ),
+                bottomNavigationBar: SafeArea(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            if (step == 1) {
+                              setDialogState(() => step = 0);
+                            } else {
+                              Navigator.of(dialogContext).pop(false);
+                            }
+                          },
+                          child: Text(step == 1 ? 'Voltar' : 'Cancelar'),
+                        ),
+                        if (step == 1) ...[
+                          const SizedBox(width: 12),
+                          FilledButton.icon(
+                            onPressed:
+                                !typeEnabled ||
+                                    !draftItems.any((item) => item.included)
+                                ? null
+                                : () => Navigator.of(dialogContext).pop(true),
+                            icon: const Icon(Icons.description_outlined),
+                            label: Text(
+                              nfeSelected ? 'Preparar NF-e' : 'Preparar NFC-e',
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       );
       if (confirmed != true) return;
@@ -1240,6 +1318,8 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
             );
       if (!mounted) return;
       setState(() => _documents = [document, ..._documents]);
+      await _reviewDocument(document);
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -1587,6 +1667,8 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
     switch (action) {
       case 'details':
         await _showDetails(document);
+      case 'review':
+        await _reviewDocument(document);
       case 'authorize':
         await _authorize(document);
       case 'transmit_contingency':
@@ -1867,6 +1949,168 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _reviewDocument(FiscalDocument document) async {
+    final nature = TextEditingController(text: document.operationNature ?? '');
+    final notes = TextEditingController(text: document.fiscalNotes ?? '');
+    final itemControllers = [
+      for (final item in document.fiscalItems)
+        (
+          ncm: TextEditingController(text: item.ncm ?? ''),
+          cfop: TextEditingController(text: item.cfop ?? ''),
+          origin: TextEditingController(text: item.origin ?? ''),
+          csosn: TextEditingController(text: item.csosn ?? ''),
+        ),
+    ];
+    try {
+      final save = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            'Revisar ${document.documentType == 'nfe' ? 'NF-e' : 'NFC-e'} #${document.id}',
+          ),
+          content: SizedBox(
+            width: 860,
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Rascunho: revise e salve antes de enviar à SEFAZ. Notas rejeitadas também podem ser corrigidas aqui.',
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: nature,
+                    decoration: const InputDecoration(
+                      labelText: 'Natureza da operação',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: notes,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Observações fiscais',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  for (
+                    var index = 0;
+                    index < document.fiscalItems.length;
+                    index++
+                  ) ...[
+                    Text(
+                      document.fiscalItems[index].fiscalDescription,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        SizedBox(
+                          width: 150,
+                          child: TextField(
+                            controller: itemControllers[index].ncm,
+                            decoration: const InputDecoration(
+                              labelText: 'NCM',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 110,
+                          child: TextField(
+                            controller: itemControllers[index].cfop,
+                            decoration: const InputDecoration(
+                              labelText: 'CFOP',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 100,
+                          child: TextField(
+                            controller: itemControllers[index].origin,
+                            decoration: const InputDecoration(
+                              labelText: 'Origem',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 110,
+                          child: TextField(
+                            controller: itemControllers[index].csosn,
+                            decoration: const InputDecoration(
+                              labelText: 'CSOSN',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const Divider(height: 24),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Fechar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              child: const Text('Salvar rascunho'),
+            ),
+          ],
+        ),
+      );
+      if (save != true) return;
+      final items = [
+        for (var index = 0; index < document.fiscalItems.length; index++)
+          document.fiscalItems[index].copyWith(
+            ncm: itemControllers[index].ncm.text.trim(),
+            cfop: itemControllers[index].cfop.text.trim(),
+            origin: itemControllers[index].origin.text.trim(),
+            csosn: itemControllers[index].csosn.text.trim(),
+          ),
+      ];
+      final updated = await _api.updateFiscalDocument(
+        widget.session.token,
+        document.id,
+        operationNature: nature.text.trim(),
+        fiscalNotes: notes.text.trim(),
+        items: items,
+      );
+      if (!mounted) return;
+      setState(
+        () => _documents = [
+          for (final item in _documents)
+            if (item.id == updated.id) updated else item,
+        ],
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rascunho fiscal salvo para revisão.')),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      nature.dispose();
+      notes.dispose();
+      for (final controllers in itemControllers) {
+        controllers.ncm.dispose();
+        controllers.cfop.dispose();
+        controllers.origin.dispose();
+        controllers.csosn.dispose();
+      }
+    }
   }
 }
 

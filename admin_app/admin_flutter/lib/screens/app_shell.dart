@@ -10,6 +10,7 @@ import 'dashboard_screen.dart';
 import 'equipments_screen.dart';
 import 'finance_screen.dart';
 import 'fiscal_documents_screen.dart';
+import 'emitir_nota_fiscal_screen.dart';
 import 'master_access_screen.dart';
 import 'master_billing_screen.dart';
 import 'master_contracts_screen.dart';
@@ -56,6 +57,7 @@ class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
   bool _pdvFullscreen = false;
   bool _menuHovered = false;
+  bool _issuingFiscalDocument = false;
 
   @override
   Widget build(BuildContext context) {
@@ -317,7 +319,17 @@ class _AppShellState extends State<AppShell> {
             label: 'Notas fiscais',
             icon: Icons.description_outlined,
             selectedIcon: Icons.description,
-            screen: FiscalDocumentsScreen(session: widget.session),
+            screen: _issuingFiscalDocument
+                ? EmitirNotaFiscalScreen(
+                    session: widget.session,
+                    onBack: () =>
+                        setState(() => _issuingFiscalDocument = false),
+                  )
+                : FiscalDocumentsScreen(
+                    session: widget.session,
+                    onStartIssue: () =>
+                        setState(() => _issuingFiscalDocument = true),
+                  ),
           ),
         if (widget.session.can('products:view') ||
             widget.session.can('stock:view') ||

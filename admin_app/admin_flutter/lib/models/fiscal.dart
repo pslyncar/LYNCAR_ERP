@@ -525,8 +525,25 @@ class FiscalDocument {
     this.recipientDocument,
     this.recipientName,
     this.operationNature,
+    this.finality = '1',
     this.paymentCondition,
     this.fiscalNotes,
+    this.freightMode,
+    this.freightAmount = 0,
+    this.insuranceAmount = 0,
+    this.otherExpensesAmount = 0,
+    this.carrierName,
+    this.carrierDocument,
+    this.carrierStateRegistration,
+    this.carrierAddress,
+    this.carrierCity,
+    this.carrierUf,
+    this.volumeQuantity,
+    this.netWeight,
+    this.grossWeight,
+    this.volumeSpecies,
+    this.volumeBrand,
+    this.volumeNumbering,
     this.sefazStatusCode,
     this.sefazMessage,
     this.sefazProtocol,
@@ -538,6 +555,7 @@ class FiscalDocument {
     this.cancellationProtocol,
     this.cancellationStatusCode,
     this.cancellationMessage,
+    this.fiscalItems = const [],
   });
 
   final int id;
@@ -553,8 +571,25 @@ class FiscalDocument {
   final String? recipientDocument;
   final String? recipientName;
   final String? operationNature;
+  final String finality;
   final String? paymentCondition;
   final String? fiscalNotes;
+  final String? freightMode;
+  final double freightAmount;
+  final double insuranceAmount;
+  final double otherExpensesAmount;
+  final String? carrierName;
+  final String? carrierDocument;
+  final String? carrierStateRegistration;
+  final String? carrierAddress;
+  final String? carrierCity;
+  final String? carrierUf;
+  final double? volumeQuantity;
+  final double? netWeight;
+  final double? grossWeight;
+  final String? volumeSpecies;
+  final String? volumeBrand;
+  final String? volumeNumbering;
   final String? sefazStatusCode;
   final String? sefazMessage;
   final String? sefazProtocol;
@@ -566,6 +601,7 @@ class FiscalDocument {
   final String? cancellationProtocol;
   final String? cancellationStatusCode;
   final String? cancellationMessage;
+  final List<FiscalDraftItem> fiscalItems;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -584,8 +620,25 @@ class FiscalDocument {
       recipientDocument: json['recipient_document'] as String?,
       recipientName: json['recipient_name'] as String?,
       operationNature: json['operation_nature'] as String?,
+      finality: json['finality'] as String? ?? '1',
       paymentCondition: json['payment_condition'] as String?,
       fiscalNotes: json['fiscal_notes'] as String?,
+      freightMode: json['freight_mode'] as String?,
+      freightAmount: _toDouble(json['freight_amount']),
+      insuranceAmount: _toDouble(json['insurance_amount']),
+      otherExpensesAmount: _toDouble(json['other_expenses_amount']),
+      carrierName: json['carrier_name'] as String?,
+      carrierDocument: json['carrier_document'] as String?,
+      carrierStateRegistration: json['carrier_state_registration'] as String?,
+      carrierAddress: json['carrier_address'] as String?,
+      carrierCity: json['carrier_city'] as String?,
+      carrierUf: json['carrier_uf'] as String?,
+      volumeQuantity: _toDoubleOrNull(json['volume_quantity']),
+      netWeight: _toDoubleOrNull(json['net_weight']),
+      grossWeight: _toDoubleOrNull(json['gross_weight']),
+      volumeSpecies: json['volume_species'] as String?,
+      volumeBrand: json['volume_brand'] as String?,
+      volumeNumbering: json['volume_numbering'] as String?,
       sefazStatusCode: json['sefaz_status_code'] as String?,
       sefazMessage: json['sefaz_message'] as String?,
       sefazProtocol: json['sefaz_protocol'] as String?,
@@ -603,6 +656,9 @@ class FiscalDocument {
       cancellationProtocol: json['cancellation_protocol'] as String?,
       cancellationStatusCode: json['cancellation_status_code'] as String?,
       cancellationMessage: json['cancellation_message'] as String?,
+      fiscalItems: (json['fiscal_items'] as List<dynamic>? ?? [])
+          .map((item) => FiscalDraftItem.fromJson(item as Map<String, dynamic>))
+          .toList(),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: DateTime.parse(json['updated_at'] as String),
     );
@@ -627,6 +683,15 @@ class FiscalDraftItem {
     this.barcode,
     this.included = true,
     this.adjustmentReason,
+    this.ncm,
+    this.cest,
+    this.cfop,
+    this.origin,
+    this.cst,
+    this.csosn,
+    this.pisCst,
+    this.cofinsCst,
+    this.cbenef,
   });
 
   final int? id;
@@ -645,6 +710,15 @@ class FiscalDraftItem {
   final String? barcode;
   final bool included;
   final String? adjustmentReason;
+  final String? ncm;
+  final String? cest;
+  final String? cfop;
+  final String? origin;
+  final String? cst;
+  final String? csosn;
+  final String? pisCst;
+  final String? cofinsCst;
+  final String? cbenef;
 
   factory FiscalDraftItem.fromJson(Map<String, dynamic> json) {
     return FiscalDraftItem(
@@ -664,6 +738,15 @@ class FiscalDraftItem {
       barcode: json['barcode'] as String?,
       included: json['included'] as bool? ?? true,
       adjustmentReason: json['adjustment_reason'] as String?,
+      ncm: json['ncm'] as String?,
+      cest: json['cest'] as String?,
+      cfop: json['cfop'] as String?,
+      origin: json['origin'] as String?,
+      cst: json['cst'] as String?,
+      csosn: json['csosn'] as String?,
+      pisCst: json['pis_cst'] as String?,
+      cofinsCst: json['cofins_cst'] as String?,
+      cbenef: json['cbenef'] as String?,
     );
   }
 
@@ -679,6 +762,15 @@ class FiscalDraftItem {
     double? totalPrice,
     bool? included,
     String? adjustmentReason,
+    String? ncm,
+    String? cest,
+    String? cfop,
+    String? origin,
+    String? cst,
+    String? csosn,
+    String? pisCst,
+    String? cofinsCst,
+    String? cbenef,
   }) {
     return FiscalDraftItem(
       id: id,
@@ -697,6 +789,15 @@ class FiscalDraftItem {
       barcode: barcode ?? this.barcode,
       included: included ?? this.included,
       adjustmentReason: adjustmentReason ?? this.adjustmentReason,
+      ncm: ncm ?? this.ncm,
+      cest: cest ?? this.cest,
+      cfop: cfop ?? this.cfop,
+      origin: origin ?? this.origin,
+      cst: cst ?? this.cst,
+      csosn: csosn ?? this.csosn,
+      pisCst: pisCst ?? this.pisCst,
+      cofinsCst: cofinsCst ?? this.cofinsCst,
+      cbenef: cbenef ?? this.cbenef,
     );
   }
 
@@ -710,6 +811,15 @@ class FiscalDraftItem {
     'discount_amount': discountAmount,
     'included': included,
     'adjustment_reason': adjustmentReason,
+    'ncm': ncm,
+    'cest': cest,
+    'cfop': cfop,
+    'origin': origin,
+    'cst': cst,
+    'csosn': csosn,
+    'pis_cst': pisCst,
+    'cofins_cst': cofinsCst,
+    'cbenef': cbenef,
   };
 }
 

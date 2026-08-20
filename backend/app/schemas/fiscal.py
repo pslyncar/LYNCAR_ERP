@@ -186,6 +186,15 @@ class FiscalDocumentItemDraftRead(BaseModel):
     barcode: str | None = None
     included: bool = True
     adjustment_reason: str | None = None
+    ncm: str | None = None
+    cest: str | None = None
+    cfop: str | None = None
+    origin: str | None = None
+    cst: str | None = None
+    csosn: str | None = None
+    pis_cst: str | None = None
+    cofins_cst: str | None = None
+    cbenef: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -209,6 +218,15 @@ class FiscalDocumentItemOverride(BaseModel):
     discount_amount: Decimal = Field(default=0, ge=0)
     included: bool = True
     adjustment_reason: str | None = Field(default=None, max_length=1000)
+    ncm: str | None = Field(default=None, max_length=20)
+    cest: str | None = Field(default=None, max_length=20)
+    cfop: str | None = Field(default=None, max_length=10)
+    origin: str | None = Field(default=None, max_length=2)
+    cst: str | None = Field(default=None, max_length=10)
+    csosn: str | None = Field(default=None, max_length=10)
+    pis_cst: str | None = Field(default=None, max_length=10)
+    cofins_cst: str | None = Field(default=None, max_length=10)
+    cbenef: str | None = Field(default=None, max_length=20)
 
 
 class FiscalDocumentPrepareWithItems(FiscalDocumentPrepare):
@@ -224,6 +242,32 @@ class FiscalDocumentPrepareManual(BaseModel):
     fiscal_notes: str | None = Field(default=None, max_length=2000)
     stock_deduction_on_authorize: bool = True
     items: list[FiscalDocumentItemOverride] = Field(min_length=1)
+
+
+class FiscalDocumentUpdate(BaseModel):
+    fiscal_client_id: int | None = Field(default=None, gt=0)
+    consumer_cpf: str | None = Field(default=None, max_length=14)
+    operation_nature: str | None = Field(default=None, max_length=120)
+    finality: Literal["1", "2", "3", "4"] | None = None
+    payment_condition: Literal["vista", "prazo", "outros"] | None = None
+    fiscal_notes: str | None = Field(default=None, max_length=2000)
+    freight_mode: str | None = Field(default=None, max_length=2)
+    freight_amount: Decimal | None = Field(default=None, ge=0)
+    insurance_amount: Decimal | None = Field(default=None, ge=0)
+    other_expenses_amount: Decimal | None = Field(default=None, ge=0)
+    carrier_name: str | None = Field(default=None, max_length=180)
+    carrier_document: str | None = Field(default=None, max_length=20)
+    carrier_state_registration: str | None = Field(default=None, max_length=20)
+    carrier_address: str | None = Field(default=None, max_length=180)
+    carrier_city: str | None = Field(default=None, max_length=120)
+    carrier_uf: str | None = Field(default=None, min_length=2, max_length=2)
+    volume_quantity: Decimal | None = Field(default=None, ge=0)
+    net_weight: Decimal | None = Field(default=None, ge=0)
+    gross_weight: Decimal | None = Field(default=None, ge=0)
+    volume_species: str | None = Field(default=None, max_length=60)
+    volume_brand: str | None = Field(default=None, max_length=60)
+    volume_numbering: str | None = Field(default=None, max_length=60)
+    items: list[FiscalDocumentItemOverride] | None = Field(default=None, min_length=1)
 
 
 class FiscalProductLookupRead(BaseModel):
@@ -380,8 +424,25 @@ class FiscalDocumentRead(BaseModel):
     recipient_document: str | None
     recipient_name: str | None
     operation_nature: str | None
+    finality: str = "1"
     payment_condition: str | None
     fiscal_notes: str | None
+    freight_mode: str | None = None
+    freight_amount: Decimal = Decimal("0")
+    insurance_amount: Decimal = Decimal("0")
+    other_expenses_amount: Decimal = Decimal("0")
+    carrier_name: str | None = None
+    carrier_document: str | None = None
+    carrier_state_registration: str | None = None
+    carrier_address: str | None = None
+    carrier_city: str | None = None
+    carrier_uf: str | None = None
+    volume_quantity: Decimal | None = None
+    net_weight: Decimal | None = None
+    gross_weight: Decimal | None = None
+    volume_species: str | None = None
+    volume_brand: str | None = None
+    volume_numbering: str | None = None
     sefaz_protocol: str | None
     sefaz_status_code: str | None
     sefaz_message: str | None

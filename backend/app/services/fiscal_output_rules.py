@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 from typing import Any
@@ -126,19 +126,6 @@ def _digits_same_or_empty(rule_value: Any, current_value: Any) -> bool:
     if not rule_digits:
         return True
     return rule_digits == digits(str(current_value or ""))
-
-
-def _product_cfop_for_destination(product: Any, default_cfop: str | None, destination_uf: str, origin_uf: str) -> str | None:
-    product_cfop = _clean(getattr(product, "cfop_sale", None))
-    if not product_cfop:
-        return default_cfop
-    product_cfop_text = str(product_cfop)
-    is_interstate = bool(destination_uf and origin_uf and destination_uf != origin_uf)
-    if is_interstate and product_cfop_text.startswith("5"):
-        return default_cfop
-    if not is_interstate and product_cfop_text.startswith("6"):
-        return default_cfop
-    return product_cfop_text
 
 
 def _rule_matches(
@@ -277,12 +264,10 @@ def resolve_output_tax_profile(
     operation_type: str = "sale",
     uf_destination: str | None = None,
 ) -> OutputTaxProfile:
-    """Resolve a tributacao de saida sem depender de copia do XML de entrada.
+    """Resolve a tributacao de saida sem copiar tributacao de entrada.
 
-    Ordem:
-    1. Regra especifica do produto, quando existir em product_tax_rules.
-    2. Cadastro fiscal do produto.
-    3. Padrao automatico por CRT/regime/modelo/operação.
+    CFOP e ICMS sao definidos por regra de saida ou pelo padrao do emitente;
+    o cadastro do produto fornece somente os dados classificatorios.
     """
     rule = resolve_output_rule(
         setting,
@@ -309,8 +294,7 @@ def resolve_output_tax_profile(
             {"csosn": rule_csosn},
         )()
         return OutputTaxProfile(
-            cfop=_clean(getattr(rule, "cfop", None))
-            or _product_cfop_for_destination(product, default_cfop, destination_uf, origin_uf),
+            cfop=_clean(getattr(rule, "cfop", None)) or default_cfop,
             origin=_clean(getattr(rule, "origin", None)) or _clean(getattr(product, "origin", None)) or default_origin,
             cst=_clean(getattr(rule, "cst", None)) or _clean(getattr(product, "cst", None)),
             csosn=effective_csosn(setting, rule_product, model=model)
@@ -351,7 +335,7 @@ def resolve_output_tax_profile(
     product_csosn = effective_csosn(setting, product, model=model)
     default_cst = "00" if crt == "3" else None
     return OutputTaxProfile(
-        cfop=_product_cfop_for_destination(product, default_cfop, destination_uf, origin_uf),
+        cfop=default_cfop,
         origin=_clean(getattr(product, "origin", None)) or default_origin,
         cst=_clean(getattr(product, "cst", None)) or default_cst,
         csosn=product_csosn,
@@ -370,3 +354,15 @@ def resolve_output_tax_profile(
         selective_tax_rate=getattr(product, "selective_tax_rate", None),
         source="product_or_default",
     )
+
+
+def apply_draft_tax_overrides(profile: OutputTaxProfile, item: Any) -> OutputTaxProfile:
+    """Aplica somente valores explicitamente gravados no item do rascunho."""
+    values = {
+        name: _clean(getattr(item, name, None))
+        for name in ("cfop", "origin", "cst", "csosn", "pis_cst", "cofins_cst")
+        if _clean(getattr(item, name, None)) is not None
+    }
+    if not values:
+        return profile
+    return replace(profile, **values, source="manual_item_override")

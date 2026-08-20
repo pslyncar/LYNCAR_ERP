@@ -57,6 +57,12 @@ A tela `Notas fiscais` possui resumo por status, pesquisa, filtros, historico, d
 
 A configuracao fiscal possui o campo `pdv_nfce_enabled`. Ele permite manter certificado, CSC, numeracao e estrutura fiscal cadastrados enquanto a emissao automatica do PDV permanece desativada ate a empresa completar os dados obrigatorios de produtos e tributacao.
 
+## Rascunho e revisao de saida
+
+- A preparacao manual de NF-e/NFC-e cria e preserva um documento em `draft`.
+- Antes da transmissao, o rascunho pode ser reaberto e corrigido; uma rejeicao tambem pode voltar a `draft` apos a correcao.
+- CFOP e tributacao de saida obedecem: override gravado no item, regra fiscal de saida e, por ultimo, padrao CRT/UF/modelo. `product.cfop_sale` nao pode substituir essas decisoes.
+
 ## Certificado A1
 
 - Upload de `.pfx/.p12` pelo modulo Fiscal.

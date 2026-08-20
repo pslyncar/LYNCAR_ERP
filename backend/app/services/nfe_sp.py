@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from random import randint
 
 import requests_pkcs12
@@ -10,7 +10,7 @@ from lxml import etree
 from app.core.config import get_settings
 from app.models.fiscal import CompanyFiscalSetting, FiscalDocument
 from app.models.sale import Sale
-from app.services.fiscal_output_rules import product_with_output_tax_profile, resolve_output_tax_profile
+from app.services.fiscal_output_rules import apply_draft_tax_overrides, product_with_output_tax_profile, resolve_output_tax_profile
 from app.services.fiscal_document_policy import assert_supported_authorizer
 from app.services.holidays import _resolve_ibge_city_code
 from app.services.nfce_sp import (
@@ -46,6 +46,11 @@ NFE_SP_URLS = {
         "evento": "https://nfe.fazenda.sp.gov.br/ws/nferecepcaoevento4.asmx",
     },
 }
+
+
+def _weight(value: Decimal | int | float | None) -> str:
+    amount = Decimal(value or 0).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    return f"{amount:.3f}"
 
 
 def _require_setting(setting: CompanyFiscalSetting) -> None:
@@ -217,7 +222,7 @@ def build_nfe_xml(
         ("tpEmis", "1"),
         ("cDV", access_key[-1]),
         ("tpAmb", tp_amb),
-        ("finNFe", "1"),
+        ("finNFe", document.finality or "1"),
         ("indFinal", "1"),
         ("indPres", "1"),
         ("procEmi", "0"),
@@ -299,6 +304,7 @@ def build_nfe_xml(
             model="55",
             uf_destination=destination_state,
         )
+        tax_profile = apply_draft_tax_overrides(tax_profile, item)
         for tag, value in [
             (
                 "cProd",
@@ -313,7 +319,7 @@ def build_nfe_xml(
                 if tp_amb == "2"
                 else item.description,
             ),
-            ("NCM", _digits(product.ncm if product else "")),
+            ("NCM", _digits(getattr(item, "ncm", None) or (product.ncm if product else ""))),
             ("CFOP", tax_profile.cfop if product else ""),
             ("uCom", (item.unit or "UN").upper()[:6]),
             ("qCom", _quantity(quantity)),
@@ -325,6 +331,12 @@ def build_nfe_xml(
             ("vUnTrib", _money(unit_price)),
         ]:
             _text(prod, tag, value)
+        cest = _digits(getattr(item, "cest", None) or (getattr(product, "cest", None) if product else ""))
+        if cest:
+            _text(prod, "CEST", cest)
+        cbenef = getattr(item, "cbenef", None)
+        if cbenef:
+            _text(prod, "cBenef", cbenef)
         if Decimal(item.discount_amount or 0) > 0:
             _text(prod, "vDesc", _money(item.discount_amount))
         _text(prod, "indTot", "1")
@@ -376,22 +388,44 @@ def build_nfe_xml(
         ("vFCPST", "0.00"),
         ("vFCPSTRet", "0.00"),
         ("vProd", _money(total_products)),
-        ("vFrete", "0.00"),
-        ("vSeg", "0.00"),
+        ("vFrete", _money(document.freight_amount or 0)),
+        ("vSeg", _money(document.insurance_amount or 0)),
         ("vDesc", _money(total_discount)),
         ("vII", "0.00"),
         ("vIPI", "0.00"),
         ("vIPIDevol", "0.00"),
         ("vPIS", "0.00"),
         ("vCOFINS", "0.00"),
-        ("vOutro", "0.00"),
-        ("vNF", _money(sale.total_amount)),
+        ("vOutro", _money(document.other_expenses_amount or 0)),
+        ("vNF", _money(Decimal(sale.total_amount or 0) + Decimal(document.freight_amount or 0) + Decimal(document.insurance_amount or 0) + Decimal(document.other_expenses_amount or 0))),
     ]:
         _text(icmstot, tag, value)
     append_ibscbs_totals(total, rtc_totals, sale.total_amount)
 
     transp = etree.SubElement(inf, f"{{{NFE_NS}}}transp")
-    _text(transp, "modFrete", "9")
+    _text(transp, "modFrete", document.freight_mode or "9")
+    if document.carrier_name:
+        transporta = etree.SubElement(transp, f"{{{NFE_NS}}}transporta")
+        carrier_document = _digits(document.carrier_document or "")
+        if len(carrier_document) == 14:
+            _text(transporta, "CNPJ", carrier_document)
+        elif len(carrier_document) == 11:
+            _text(transporta, "CPF", carrier_document)
+        _text(transporta, "xNome", document.carrier_name)
+        carrier_ie = _digits(document.carrier_state_registration or "")
+        if carrier_ie:
+            _text(transporta, "IE", carrier_ie)
+        _text(transporta, "xEnder", document.carrier_address)
+        _text(transporta, "xMun", document.carrier_city)
+        _text(transporta, "UF", document.carrier_uf)
+    if document.volume_quantity is not None or document.net_weight is not None or document.gross_weight is not None:
+        vol = etree.SubElement(transp, f"{{{NFE_NS}}}vol")
+        _text(vol, "qVol", int(Decimal(document.volume_quantity or 0)))
+        _text(vol, "esp", document.volume_species)
+        _text(vol, "marca", document.volume_brand)
+        _text(vol, "nVol", document.volume_numbering)
+        _text(vol, "pesoL", _weight(document.net_weight or 0))
+        _text(vol, "pesoB", _weight(document.gross_weight or 0))
     pag = etree.SubElement(inf, f"{{{NFE_NS}}}pag")
     for payment in sale.payments:
         det_pag = etree.SubElement(pag, f"{{{NFE_NS}}}detPag")

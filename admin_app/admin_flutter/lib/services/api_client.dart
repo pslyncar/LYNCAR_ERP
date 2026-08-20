@@ -2230,6 +2230,28 @@ class ApiClient {
     return FiscalDocument.fromJson(_decodeResponse(response));
   }
 
+  Future<FiscalDocument> updateFiscalDocument(
+    String token,
+    int documentId, {
+    String? operationNature,
+    String? fiscalNotes,
+    List<FiscalDraftItem>? items,
+    Map<String, dynamic>? additionalFields,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/fiscal/documents/$documentId'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'operation_nature': operationNature,
+        'fiscal_notes': fiscalNotes,
+        if (items != null)
+          'items': items.map((item) => item.toOverrideJson()).toList(),
+        ...?additionalFields,
+      }),
+    );
+    return FiscalDocument.fromJson(_decodeResponse(response));
+  }
+
   Future<FiscalDocument> transmitFiscalContingencyDocument(
     String token,
     int documentId,

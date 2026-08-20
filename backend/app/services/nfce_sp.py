@@ -23,6 +23,7 @@ from app.services.fiscal_certificate import decrypt_certificate_bytes, decrypt_s
 from app.services.fiscal_output_rules import (
     effective_crt as _rule_effective_crt,
     effective_csosn as _rule_effective_csosn,
+    apply_draft_tax_overrides,
     product_with_output_tax_profile,
     resolve_output_tax_profile,
 )
@@ -214,16 +215,18 @@ def _require_sale(sale: Sale, setting: CompanyFiscalSetting | None = None, *, mo
             missing.append("produto vinculado")
         else:
             tax_profile = resolve_output_tax_profile(setting, product, model=model) if setting is not None else None
-            if not product.ncm:
+            if tax_profile is not None:
+                tax_profile = apply_draft_tax_overrides(tax_profile, item)
+            if not _digits(getattr(item, "ncm", None) or product.ncm):
                 missing.append("NCM")
-            if not (tax_profile.cfop if tax_profile is not None else product.cfop_sale):
+            if not (tax_profile.cfop if tax_profile is not None else getattr(item, "cfop", None)):
                 missing.append("CFOP de venda")
-            if not (tax_profile.origin if tax_profile is not None else product.origin):
+            if not (tax_profile.origin if tax_profile is not None else getattr(item, "origin", None)):
                 missing.append("origem")
             if not (
                 (tax_profile.csosn or tax_profile.cst)
                 if tax_profile is not None
-                else (product.csosn or product.cst)
+                else (getattr(item, "csosn", None) or getattr(item, "cst", None))
             ):
                 missing.append("CSOSN/CST")
         if missing:
@@ -374,11 +377,14 @@ def build_nfce_xml(
         det = etree.SubElement(inf, f"{{{NFE_NS}}}det", nItem=str(index))
         prod = etree.SubElement(det, f"{{{NFE_NS}}}prod")
         tax_profile = resolve_output_tax_profile(setting, product, model="65")
+        tax_profile = apply_draft_tax_overrides(tax_profile, item)
         for tag, value in [
             ("cProd", product.internal_code if product and product.internal_code else item.product_id or index),
             ("cEAN", _gtin_or_sem_gtin(item.barcode)),
             ("xProd", homologation_product_name if tp_amb == "2" else item.description),
-            ("NCM", _digits(product.ncm if product else "")),
+            ("NCM", _digits(getattr(item, "ncm", None) or (product.ncm if product else ""))),
+            ("CEST", _digits(getattr(item, "cest", None) or (getattr(product, "cest", None) if product else ""))),
+            ("cBenef", getattr(item, "cbenef", None)),
             ("CFOP", tax_profile.cfop if product else ""),
             ("uCom", (item.unit or "UN").upper()[:6]),
             ("qCom", _quantity(item.quantity)),

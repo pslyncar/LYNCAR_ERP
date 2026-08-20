@@ -220,6 +220,29 @@ FISCAL_DOCUMENT_COLUMNS = [
     ("operation_nature", "VARCHAR(120)"),
     ("payment_condition", "VARCHAR(20)"),
     ("fiscal_notes", "TEXT"),
+    ("finality", "VARCHAR(1) NOT NULL DEFAULT '1'"),
+    ("freight_mode", "VARCHAR(2)"),
+    ("freight_amount", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("insurance_amount", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("other_expenses_amount", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("carrier_name", "VARCHAR(180)"),
+    ("carrier_document", "VARCHAR(20)"),
+    ("carrier_state_registration", "VARCHAR(20)"),
+    ("carrier_address", "VARCHAR(180)"),
+    ("carrier_city", "VARCHAR(120)"),
+    ("carrier_uf", "VARCHAR(2)"),
+    ("volume_quantity", "NUMERIC(12, 3)"),
+    ("volume_species", "VARCHAR(60)"),
+    ("volume_brand", "VARCHAR(60)"),
+    ("volume_numbering", "VARCHAR(60)"),
+    ("net_weight", "NUMERIC(12, 3)"),
+    ("gross_weight", "NUMERIC(12, 3)"),
+]
+
+FISCAL_DOCUMENT_ITEM_COLUMNS = [
+    ("ncm", "VARCHAR(20)"), ("cest", "VARCHAR(20)"), ("cfop", "VARCHAR(10)"),
+    ("origin", "VARCHAR(2)"), ("cst", "VARCHAR(10)"), ("csosn", "VARCHAR(10)"),
+    ("pis_cst", "VARCHAR(10)"), ("cofins_cst", "VARCHAR(10)"), ("cbenef", "VARCHAR(20)"),
 ]
 
 PRODUCTION_ORDER_COLUMNS = [
@@ -814,6 +837,11 @@ def add_fiscal_setting_columns(bind_engine=engine) -> None:
             if not column_exists_in_connection(connection, "fiscal_documents", column_name):
                 connection.execute(
                     text(f"ALTER TABLE fiscal_documents ADD COLUMN {column_name} {column_type}")
+                )
+        for column_name, column_type in FISCAL_DOCUMENT_ITEM_COLUMNS:
+            if not column_exists_in_connection(connection, "fiscal_document_items", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE fiscal_document_items ADD COLUMN {column_name} {column_type}")
                 )
         connection.execute(
             text(

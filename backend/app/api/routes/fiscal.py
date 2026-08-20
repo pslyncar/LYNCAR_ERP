@@ -33,6 +33,7 @@ from app.schemas.fiscal import (
     FiscalDocumentItemDraftRead,
     FiscalDocumentPrepareWithItems,
     FiscalDocumentPrepareManual,
+    FiscalDocumentUpdate,
     FiscalProductLookupRead,
     FiscalDocumentCancel,
     FiscalDocumentRead,
@@ -596,6 +597,15 @@ def _document_item_to_sale_item_view(item: FiscalDocumentItem) -> SimpleNamespac
         discount_amount=item.discount_amount,
         total_price=item.total_price,
         barcode=item.barcode or (product.barcode if product is not None else None),
+        ncm=item.ncm,
+        cest=item.cest,
+        cfop=item.cfop,
+        origin=item.origin,
+        cst=item.cst,
+        csosn=item.csosn,
+        pis_cst=item.pis_cst,
+        cofins_cst=item.cofins_cst,
+        cbenef=item.cbenef,
     )
 
 
@@ -677,6 +687,43 @@ def _resolve_fiscal_client(db: Session, client_id: int | None) -> Client | None:
     if not client.active:
         raise HTTPException(status_code=400, detail="Cliente fiscal esta inativo.")
     return client
+
+
+def _clean_item_tax_overrides(item: FiscalDocumentItemOverride) -> dict[str, str | None]:
+    """Campos tributarios informados no rascunho prevalecem sobre o motor."""
+    return {
+        name: ("".join(value.split()) if name in {"ncm", "cest", "cfop"} else value.strip()) or None
+        for name in ("ncm", "cest", "cfop", "origin", "cst", "csosn", "pis_cst", "cofins_cst", "cbenef")
+        if (value := getattr(item, name, None)) is not None
+    }
+
+
+def _replace_document_items(
+    db: Session,
+    document: FiscalDocument,
+    items: list[FiscalDocumentItemOverride],
+    current_user: User,
+) -> None:
+    included_count = 0
+    document.fiscal_items.clear()
+    db.flush()
+    for override in items:
+        product = db.get(Product, override.fiscal_product_id) if override.fiscal_product_id else None
+        if override.included and product is None:
+            raise HTTPException(status_code=400, detail="Item incluido precisa ter produto fiscal vinculado.")
+        included_count += int(override.included)
+        quantity, unit_price, discount = (Decimal(override.quantity), Decimal(override.unit_price), Decimal(override.discount_amount))
+        description = " ".join((override.fiscal_description or "").split()) or (product.name if product else "Item fiscal")
+        document.fiscal_items.append(FiscalDocumentItem(
+            fiscal_product_id=product.id if product else None, fiscal_description=description[:220],
+            quantity=quantity, unit=(" ".join((override.unit or "").split()) or (product.unit if product else "un"))[:20],
+            unit_price=unit_price, discount_amount=discount, total_price=_line_total(quantity, unit_price, discount),
+            barcode=product.barcode if product else None, included=override.included,
+            adjustment_reason=override.adjustment_reason, created_by_user_id=current_user.id,
+            **_clean_item_tax_overrides(override),
+        ))
+    if not included_count:
+        raise HTTPException(status_code=400, detail="A nota precisa ter pelo menos um item incluido.")
 
 
 def _refresh_document_fiscal_balances(db: Session, document: FiscalDocument) -> None:
@@ -1529,6 +1576,7 @@ def prepare_fiscal_document_with_items(
                 included=override.included,
                 adjustment_reason=override.adjustment_reason,
                 created_by_user_id=current_user.id,
+                **_clean_item_tax_overrides(override),
             )
         )
     if included_count == 0:
@@ -1617,10 +1665,45 @@ def prepare_manual_fiscal_document(
                 included=override.included,
                 adjustment_reason=override.adjustment_reason or "Item incluido em nota fiscal manual.",
                 created_by_user_id=current_user.id,
+                **_clean_item_tax_overrides(override),
             )
         )
     if included_count == 0:
         raise HTTPException(status_code=400, detail="A nota manual precisa ter pelo menos um item incluido.")
+    db.commit()
+    db.refresh(document)
+    return document
+
+
+@router.put("/documents/{document_id}", response_model=FiscalDocumentRead)
+def update_fiscal_document(
+    document_id: int,
+    payload: FiscalDocumentUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocument:
+    document = db.scalar(
+        select(FiscalDocument)
+        .options(selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product))
+        .where(FiscalDocument.id == document_id)
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    if document.status in {"authorized", "cancelled", "contingency_offline"}:
+        raise HTTPException(status_code=400, detail="Documento autorizado ou cancelado nao pode ser alterado.")
+    if payload.fiscal_client_id is not None:
+        client = _resolve_fiscal_client(db, payload.fiscal_client_id)
+        document.fiscal_client_id = client.id
+        document.recipient_document, document.recipient_name = client.document_number, client.name
+    for name in ("consumer_cpf", "operation_nature", "finality", "payment_condition", "fiscal_notes", "freight_mode", "freight_amount", "insurance_amount", "other_expenses_amount", "carrier_name", "carrier_document", "carrier_state_registration", "carrier_address", "carrier_city", "carrier_uf", "volume_quantity", "volume_species", "volume_brand", "volume_numbering", "net_weight", "gross_weight"):
+        value = getattr(payload, name)
+        if value is not None:
+            setattr(document, name, value)
+    if payload.items is not None:
+        _replace_document_items(db, document, payload.items, current_user)
+    document.status = "draft"
+    document.sefaz_status_code = None
+    document.sefaz_message = "Rascunho fiscal atualizado e pronto para revisao."
     db.commit()
     db.refresh(document)
     return document
