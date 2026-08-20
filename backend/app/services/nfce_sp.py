@@ -28,6 +28,7 @@ from app.services.fiscal_output_rules import (
     resolve_output_tax_profile,
 )
 from app.services.fiscal_document_policy import assert_supported_authorizer
+from app.services.fiscal_xml import build_processed_nfe_xml
 from app.services.rtc_tax import RtcTaxTotals, append_ibscbs_totals, append_item_ibscbs, append_item_selective_tax
 from app.services.rtc_compliance import is_rtc_mandatory
 
@@ -656,7 +657,13 @@ def send_nfce_authorization(signed_xml: str, setting: CompanyFiscalSetting, enve
         xmotivo = root.findtext(f".//{{{NFE_NS}}}xMotivo") or "Retorno SEFAZ sem mensagem."
         protocol = root.findtext(f".//{{{NFE_NS}}}nProt")
     if cstat in {"100", "150"}:
-        return NfceResult("authorized", cstat, xmotivo, protocol=protocol, authorized_xml=text)
+        return NfceResult(
+            "authorized",
+            cstat,
+            xmotivo,
+            protocol=protocol,
+            authorized_xml=build_processed_nfe_xml(signed_xml, text),
+        )
     return NfceResult("rejected", cstat, xmotivo, authorized_xml=text)
 
 

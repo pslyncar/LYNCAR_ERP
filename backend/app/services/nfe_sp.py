@@ -13,6 +13,7 @@ from app.models.fiscal import CompanyFiscalSetting, FiscalDocument
 from app.models.sale import Sale
 from app.services.fiscal_output_rules import apply_draft_tax_overrides, product_with_output_tax_profile, resolve_output_tax_profile
 from app.services.fiscal_document_policy import assert_supported_authorizer
+from app.services.fiscal_xml import build_processed_nfe_xml
 from app.services.holidays import _resolve_ibge_city_code
 from app.services.nfce_sp import (
     NFE_AUTORIZACAO_ACTION,
@@ -605,7 +606,7 @@ def send_nfe_authorization(
             cstat,
             message,
             protocol=protocol,
-            authorized_xml=response_xml,
+            authorized_xml=build_processed_nfe_xml(signed_xml, response_xml),
         )
     return NfceResult("rejected", cstat, message, authorized_xml=response_xml)
 

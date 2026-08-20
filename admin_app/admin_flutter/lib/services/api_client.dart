@@ -2083,6 +2083,14 @@ class ApiClient {
     return NfceNumberingSyncResult.fromJson(_decodeResponse(response));
   }
 
+  Future<FiscalNumberingStatus> getFiscalNumberingStatus(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/fiscal/settings/numbering-status'),
+      headers: _authHeaders(token),
+    );
+    return FiscalNumberingStatus.fromJson(_decodeResponse(response));
+  }
+
   Future<Map<String, dynamic>> recoverFiscalDocumentsFromSefaz(
     String token,
   ) async {

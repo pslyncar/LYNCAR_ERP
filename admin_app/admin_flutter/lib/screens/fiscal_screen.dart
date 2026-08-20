@@ -6,6 +6,7 @@ import '../models/session.dart';
 import '../services/api_client.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
+import '../widgets/fiscal_numbering_dialog.dart';
 
 class FiscalScreen extends StatefulWidget {
   const FiscalScreen({super.key, required this.session});
@@ -19,6 +20,7 @@ class FiscalScreen extends StatefulWidget {
 class _FiscalScreenState extends State<FiscalScreen> {
   late final ApiClient _api = ApiClient(widget.session.apiBaseUrl);
   CompanyFiscalSetting? _settings;
+  FiscalNumberingStatus? _numberingStatus;
   FiscalSetupChecklist? _checklist;
   RtcCompliance? _rtcCompliance;
   List<FiscalOutputRule> _outputRules = const [];
@@ -41,6 +43,14 @@ class _FiscalScreenState extends State<FiscalScreen> {
     });
     try {
       final settings = await _api.getFiscalSettings(widget.session.token);
+      FiscalNumberingStatus? numberingStatus;
+      try {
+        numberingStatus = await _api.getFiscalNumberingStatus(
+          widget.session.token,
+        );
+      } on ApiException {
+        // Mantém compatibilidade durante a atualização gradual do backend.
+      }
       final outputRules = await _api.listFiscalOutputRules(
         widget.session.token,
       );
@@ -61,6 +71,7 @@ class _FiscalScreenState extends State<FiscalScreen> {
       if (!mounted) return;
       setState(() {
         _settings = settings;
+        _numberingStatus = numberingStatus;
         _checklist = checklist;
         _rtcCompliance = rtcCompliance;
         _outputRules = outputRules;
@@ -129,7 +140,7 @@ class _FiscalScreenState extends State<FiscalScreen> {
               onUploadCertificate: _uploadCertificate,
               onDeleteCertificate: _deleteCertificate,
               syncingNfceNumbering: _syncingNfceNumbering,
-              onSyncNfceNumbering: _syncNfceNumbering,
+              onSyncNfceNumbering: _showFiscalNumbering,
               recoveringFiscalDocuments: _recoveringFiscalDocuments,
               onRecoverFiscalDocuments: _recoverFiscalDocuments,
             ),
@@ -612,54 +623,35 @@ class _FiscalScreenState extends State<FiscalScreen> {
     }
   }
 
-  Future<void> _syncNfceNumbering() async {
-    final current = _settings;
-    if (current == null) return;
-    final confirmed = await showDialog<bool>(
+  Future<void> _showFiscalNumbering() async {
+    await showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sincronizar numeração NFC-e'),
-        content: Text(
-          'O sistema vai consultar a NFCeListagemChaves da SEFAZ-SP em homologacao, '
-          'identificar o maior número autorizado da série ${current.nfceSeries} '
-          'e gravar a próxima NFC-e sem reduzir a sequência atual.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          FilledButton.icon(
-            onPressed: () => Navigator.of(context).pop(true),
-            icon: const Icon(Icons.sync),
-            label: const Text('Sincronizar'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (context) => FiscalNumberingDialog(
+        initialStatus: _numberingStatus,
+        onSynchronize: _synchronizeFiscalNumbering,
       ),
     );
-    if (confirmed != true) return;
+  }
+
+  Future<FiscalNumberingStatus> _synchronizeFiscalNumbering() async {
+    if (_settings == null) {
+      throw ApiException('Configuração fiscal ainda não carregada.');
+    }
     setState(() {
       _syncingNfceNumbering = true;
       _error = null;
     });
     try {
       final result = await _api.syncNfceNumbering(widget.session.token);
-      await _load();
-      if (!mounted) return;
-      final warning = result.incomplete
-          ? '\n\nA SEFAZ indicou lista incompleta. Reduza o periodo ou repita a consulta para conferir tudo.'
-          : '';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'NFC-e serie ${result.series}: maior autorizada '
-            '${result.highestAuthorizedNumber?.toString() ?? 'nao encontrada'}; '
-            'proxima gravada ${result.updatedNextNumber}.$warning',
-          ),
-        ),
-      );
-    } on ApiException catch (error) {
-      setState(() => _error = error.message);
+      final status = await _api.getFiscalNumberingStatus(widget.session.token);
+      if (mounted) setState(() => _numberingStatus = status);
+      if (result.incomplete) {
+        throw ApiException(
+          'A SEFAZ informou uma listagem parcial de NFC-e. Repita a conferência mais tarde.',
+        );
+      }
+      return status;
     } finally {
       if (mounted) setState(() => _syncingNfceNumbering = false);
     }
@@ -704,8 +696,11 @@ class _FiscalScreenState extends State<FiscalScreen> {
         SnackBar(
           content: Text(
             'Importadas ${result['imported'] ?? 0}, atualizadas ${result['updated'] ?? 0}. '
-            'NFC-e: ${result['nfce_downloaded'] ?? 0}/${result['nfce_keys'] ?? 0}. '
-            'NF-e: ${result['nfe_docs'] ?? 0}. $messages',
+            'NFC-e XML: ${result['nfce_existing'] ?? 0} já armazenados e '
+            '${result['nfce_downloaded'] ?? 0} recuperados de ${result['nfce_keys'] ?? 0}. '
+            'NF-e XML: ${result['nfe_existing'] ?? 0} já armazenados, '
+            '${result['nfe_repaired'] ?? 0} reparados e '
+            '${result['nfe_unrecoverable'] ?? 0} pendentes. $messages',
           ),
         ),
       );
@@ -1066,10 +1061,6 @@ class _SettingsCard extends StatelessWidget {
                 'Certificado A1',
                 item?.hasCertificate == true ? 'cadastrado' : 'pendente',
               ),
-              _ChipLine('Série NFC-e', '${item?.nfceSeries ?? 1}'),
-              _ChipLine('Proxima NFC-e', '${item?.nfceNextNumber ?? 1}'),
-              _ChipLine('Série NF-e', '${item?.nfeSeries ?? 1}'),
-              _ChipLine('Proxima NF-e', '${item?.nfeNextNumber ?? 1}'),
               _ChipLine(
                 'CSC NFC-e',
                 item?.hasNfceCsc == true ? 'cadastrado' : 'pendente',
@@ -1160,7 +1151,7 @@ class _SettingsCard extends StatelessWidget {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.sync),
-                  label: const Text('Sincronizar NFC-e com a SEFAZ'),
+                  label: const Text('Conferir numeração fiscal'),
                 ),
                 OutlinedButton.icon(
                   onPressed:

@@ -149,6 +149,38 @@ class NfceNumberingSyncResult {
   }
 }
 
+class FiscalNumberingStatus {
+  const FiscalNumberingStatus({
+    required this.environment,
+    required this.nfceSeries,
+    required this.nfceNextNumber,
+    required this.nfeSeries,
+    required this.nfeNextNumber,
+    this.nfceLastAuthorizedNumber,
+    this.nfeLastAuthorizedNumber,
+  });
+
+  final String environment;
+  final int nfceSeries;
+  final int? nfceLastAuthorizedNumber;
+  final int nfceNextNumber;
+  final int nfeSeries;
+  final int? nfeLastAuthorizedNumber;
+  final int nfeNextNumber;
+
+  factory FiscalNumberingStatus.fromJson(Map<String, dynamic> json) {
+    return FiscalNumberingStatus(
+      environment: json['environment'] as String? ?? 'homologacao',
+      nfceSeries: json['nfce_series'] as int? ?? 1,
+      nfceLastAuthorizedNumber: json['nfce_last_authorized_number'] as int?,
+      nfceNextNumber: json['nfce_next_number'] as int? ?? 1,
+      nfeSeries: json['nfe_series'] as int? ?? 1,
+      nfeLastAuthorizedNumber: json['nfe_last_authorized_number'] as int?,
+      nfeNextNumber: json['nfe_next_number'] as int? ?? 1,
+    );
+  }
+}
+
 class FiscalSetupChecklist {
   const FiscalSetupChecklist({
     required this.readyForNfe,

@@ -6,6 +6,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile, status
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
+from lxml import etree
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -43,6 +44,7 @@ from app.schemas.fiscal import (
     FiscalOutputRuleRead,
     FiscalOutputRuleUpdate,
     FiscalDocumentsRecoveryRead,
+    FiscalNumberingStatusRead,
     FiscalSetupChecklistItem,
     FiscalSetupChecklistRead,
     NfceNumberingSyncRead,
@@ -58,6 +60,8 @@ from app.services.nfce_sp import (
 from app.services.nfce_listagem_chaves_sp import sync_nfce_next_number_from_sefaz
 from app.services.fiscal_recovery import RecoveredFiscalDocument, recover_fiscal_documents
 from app.services.nfe_sp import _duplicate_nfe_key, authorize_nfe
+from app.services.nfe_protocol_sp import query_nfe_protocol
+from app.services.fiscal_xml import build_processed_nfe_xml, is_processed_nfe_xml
 from app.services.fiscal_output_rules import effective_crt, resolve_output_rule, resolve_output_tax_profile
 from app.services.rtc_compliance import (
     RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
@@ -882,6 +886,47 @@ def get_fiscal_settings(
     return _get_or_create_settings(db)
 
 
+@router.get("/settings/numbering-status", response_model=FiscalNumberingStatusRead)
+def get_fiscal_numbering_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:view")),
+) -> FiscalNumberingStatusRead:
+    setting = _get_or_create_settings(db)
+
+    def last_authorized(document_type: str, series: int) -> int | None:
+        return db.scalar(
+            select(func.max(FiscalDocument.number)).where(
+                FiscalDocument.environment == setting.environment,
+                FiscalDocument.document_type == document_type,
+                FiscalDocument.series == series,
+                FiscalDocument.status.in_(("authorized", "cancelled")),
+                FiscalDocument.number.is_not(None),
+            )
+        )
+
+    nfce_series = int(setting.nfce_series or 1)
+    nfe_series = int(setting.nfe_series or 1)
+    local_nfce = last_authorized("nfce", nfce_series)
+    local_nfe = last_authorized("nfe", nfe_series)
+    stored_nfce = setting.nfce_last_authorized_number
+    stored_nfe = setting.nfe_last_authorized_number
+    return FiscalNumberingStatusRead(
+        environment=setting.environment,
+        nfce_series=nfce_series,
+        nfce_last_authorized_number=max(
+            (value for value in (local_nfce, stored_nfce) if value is not None),
+            default=None,
+        ),
+        nfce_next_number=int(setting.nfce_next_number or 1),
+        nfe_series=nfe_series,
+        nfe_last_authorized_number=max(
+            (value for value in (local_nfe, stored_nfe) if value is not None),
+            default=None,
+        ),
+        nfe_next_number=int(setting.nfe_next_number or 1),
+    )
+
+
 @router.get("/settings/pdv-logo", response_model=CompanyFiscalSettingRead)
 def get_pdv_logo_settings(
     db: Session = Depends(get_db),
@@ -919,6 +964,11 @@ def sync_nfce_numbering(
             detail=f"Falha ao consultar NFCeListagemChaves na SEFAZ: {type(exc).__name__}: {str(exc)[:300]}",
         ) from exc
     setting.nfce_next_number = max(int(setting.nfce_next_number or 1), result.updated_next_number)
+    if result.highest_authorized_number is not None:
+        setting.nfce_last_authorized_number = max(
+            int(setting.nfce_last_authorized_number or 0),
+            int(result.highest_authorized_number),
+        )
     db.commit()
     return NfceNumberingSyncRead(**result.__dict__)
 
@@ -966,8 +1016,38 @@ def recover_documents_from_sefaz(
             status_code=400,
             detail="Recuperacao fiscal bloqueada fora do ambiente de homologacao.",
         )
+    existing_nfce_xml_keys = set(
+        db.scalars(
+            select(FiscalDocument.access_key).where(
+                FiscalDocument.document_type == "nfce",
+                FiscalDocument.access_key.is_not(None),
+                FiscalDocument.xml_authorized.is_not(None),
+            )
+        )
+    )
+    issued_nfe_documents = list(
+        db.scalars(
+            select(FiscalDocument).where(
+                FiscalDocument.document_type == "nfe",
+                FiscalDocument.status.in_(("authorized", "cancelled")),
+            )
+        )
+    )
+    existing_nfe_documents = [
+        document
+        for document in issued_nfe_documents
+        if is_processed_nfe_xml(document.xml_authorized)
+    ]
+    missing_nfe_documents = [
+        document
+        for document in issued_nfe_documents
+        if not is_processed_nfe_xml(document.xml_authorized)
+    ]
     try:
-        recovery = recover_fiscal_documents(setting)
+        recovery = recover_fiscal_documents(
+            setting,
+            existing_nfce_xml_keys=existing_nfce_xml_keys,
+        )
     except NfceValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
@@ -977,6 +1057,47 @@ def recover_documents_from_sefaz(
         ) from exc
 
     counts = {"imported": 0, "updated": 0, "skipped": 0}
+    messages = list(recovery.messages)
+    nfe_repaired = 0
+    nfe_unrecoverable = 0
+    for document in missing_nfe_documents:
+        if not document.access_key or not document.xml_signed:
+            nfe_unrecoverable += 1
+            continue
+        if document.xml_authorized:
+            try:
+                document.xml_authorized = build_processed_nfe_xml(
+                    document.xml_signed,
+                    document.xml_authorized,
+                )
+                nfe_repaired += 1
+                counts["updated"] += 1
+                continue
+            except (ValueError, etree.XMLSyntaxError):
+                pass
+        try:
+            protocol = query_nfe_protocol(setting, document.access_key)
+        except Exception as exc:
+            messages.append(
+                f"NF-e {document.number or document.id}: falha na consulta de protocolo: "
+                f"{type(exc).__name__}: {str(exc)[:180]}"
+            )
+            nfe_unrecoverable += 1
+            continue
+        if not protocol.authorized:
+            messages.append(
+                f"NF-e {document.number or document.id}: "
+                f"{protocol.status_code or '-'} {protocol.message}"
+            )
+            nfe_unrecoverable += 1
+            continue
+        document.xml_authorized = build_processed_nfe_xml(
+            document.xml_signed,
+            protocol.response_xml,
+        )
+        document.sefaz_protocol = protocol.protocol or document.sefaz_protocol
+        nfe_repaired += 1
+        counts["updated"] += 1
     max_nfce = int(setting.nfce_next_number or 1) - 1
     max_nfe = int(setting.nfe_next_number or 1) - 1
     for recovered in recovery.documents:
@@ -990,16 +1111,30 @@ def recover_documents_from_sefaz(
             max_nfe = max(max_nfe, int(document.number))
     setting.nfce_next_number = max(int(setting.nfce_next_number or 1), max_nfce + 1)
     setting.nfe_next_number = max(int(setting.nfe_next_number or 1), max_nfe + 1)
+    if max_nfce > 0:
+        setting.nfce_last_authorized_number = max(
+            int(setting.nfce_last_authorized_number or 0),
+            max_nfce,
+        )
+    if max_nfe > 0:
+        setting.nfe_last_authorized_number = max(
+            int(setting.nfe_last_authorized_number or 0),
+            max_nfe,
+        )
     db.commit()
     return FiscalDocumentsRecoveryRead(
         **counts,
         nfce_keys=recovery.nfce_keys,
+        nfce_existing=recovery.nfce_existing,
         nfce_downloaded=recovery.nfce_downloaded,
-        nfe_docs=recovery.nfe_docs,
+        nfe_docs=len(existing_nfe_documents) + nfe_repaired,
+        nfe_existing=len(existing_nfe_documents),
+        nfe_repaired=nfe_repaired,
+        nfe_unrecoverable=nfe_unrecoverable,
         incomplete=recovery.incomplete,
         ult_nsu=recovery.ult_nsu,
         max_nsu=recovery.max_nsu,
-        messages=list(recovery.messages),
+        messages=messages,
     )
 
 
@@ -1880,8 +2015,16 @@ def authorize_fiscal_document(
         _refresh_document_fiscal_balances(db, document)
         if document.document_type == "nfce":
             setting.nfce_next_number = max(setting.nfce_next_number, int(document.number or 0) + 1)
+            setting.nfce_last_authorized_number = max(
+                int(setting.nfce_last_authorized_number or 0),
+                int(document.number or 0),
+            )
         else:
             setting.nfe_next_number = max(setting.nfe_next_number, int(document.number or 0) + 1)
+            setting.nfe_last_authorized_number = max(
+                int(setting.nfe_last_authorized_number or 0),
+                int(document.number or 0),
+            )
             recipient = document.fiscal_client or (document.sale.client if document.sale is not None else None)
             if recipient is not None:
                 document.recipient_document = recipient.document_number

@@ -54,6 +54,7 @@ class RecoveredFiscalDocument:
 @dataclass(frozen=True)
 class FiscalRecoveryResult:
     nfce_keys: int = 0
+    nfce_existing: int = 0
     nfce_downloaded: int = 0
     nfe_docs: int = 0
     incomplete: bool = False
@@ -277,35 +278,41 @@ def distribute_nfe_documents(setting: CompanyFiscalSetting, *, max_batches: int 
     return docs, ult_nsu, max_nsu, messages
 
 
-def recover_fiscal_documents(setting: CompanyFiscalSetting) -> FiscalRecoveryResult:
+def recover_fiscal_documents(
+    setting: CompanyFiscalSetting,
+    *,
+    existing_nfce_xml_keys: set[str] | None = None,
+) -> FiscalRecoveryResult:
     docs: list[RecoveredFiscalDocument] = []
     messages: list[str] = []
+    existing_keys = existing_nfce_xml_keys or set()
     keys, incomplete, cstat, message = list_nfce_keys(setting)
     messages.append(f"NFCeListagemChaves {cstat}: {message}")
+    nfce_existing = 0
     nfce_downloaded = 0
     for key in keys:
         if key[20:22] != "65":
+            continue
+        if key in existing_keys:
+            nfce_existing += 1
             continue
         doc = download_nfce_xml(setting, key)
         if doc.authorized_xml:
             nfce_downloaded += 1
         docs.append(doc)
-    ult_nsu = None
-    max_nsu = None
-    nfe_docs: list[RecoveredFiscalDocument] = []
-    try:
-        nfe_docs, ult_nsu, max_nsu, nfe_messages = distribute_nfe_documents(setting)
-        docs.extend(nfe_docs)
-        messages.extend(nfe_messages)
-    except Exception as exc:
-        messages.append(f"NFeDistribuicaoDFe falhou: {type(exc).__name__}: {str(exc)[:300]}")
+        if doc.status_code == "656":
+            incomplete = True
+            messages.append(
+                "NFCeDownloadXML 656: limite da SEFAZ atingido; a recuperação "
+                "continua na próxima tentativa após o prazo informado pelo fisco."
+            )
+            break
     return FiscalRecoveryResult(
         nfce_keys=len(keys),
+        nfce_existing=nfce_existing,
         nfce_downloaded=nfce_downloaded,
-        nfe_docs=len(nfe_docs),
+        nfe_docs=0,
         incomplete=incomplete,
-        max_nsu=max_nsu,
-        ult_nsu=ult_nsu,
         messages=tuple(messages),
         documents=tuple(docs),
     )

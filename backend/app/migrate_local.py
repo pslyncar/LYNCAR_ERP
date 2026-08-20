@@ -209,6 +209,8 @@ FISCAL_SETTING_COLUMNS = [
     ("city", "VARCHAR(120)"),
     ("zip_code", "VARCHAR(20)"),
     ("logo_url", "TEXT"),
+    ("nfce_last_authorized_number", "INTEGER"),
+    ("nfe_last_authorized_number", "INTEGER"),
 ]
 
 FISCAL_DOCUMENT_COLUMNS = [

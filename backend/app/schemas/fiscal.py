@@ -72,13 +72,27 @@ class NfceNumberingSyncRead(BaseModel):
     message: str
 
 
+class FiscalNumberingStatusRead(BaseModel):
+    environment: FiscalEnvironment
+    nfce_series: int
+    nfce_last_authorized_number: int | None
+    nfce_next_number: int
+    nfe_series: int
+    nfe_last_authorized_number: int | None
+    nfe_next_number: int
+
+
 class FiscalDocumentsRecoveryRead(BaseModel):
     imported: int
     updated: int
     skipped: int
     nfce_keys: int
+    nfce_existing: int = 0
     nfce_downloaded: int
     nfe_docs: int
+    nfe_existing: int = 0
+    nfe_repaired: int = 0
+    nfe_unrecoverable: int = 0
     incomplete: bool
     ult_nsu: str | None = None
     max_nsu: str | None = None
@@ -131,8 +145,10 @@ class CompanyFiscalSettingRead(BaseModel):
     certificate_expires_at: date | None
     nfce_series: int
     nfce_next_number: int
+    nfce_last_authorized_number: int | None = None
     nfe_series: int
     nfe_next_number: int
+    nfe_last_authorized_number: int | None = None
     nfce_csc_id: str | None
     nfce_csc_secret_key: str | None = Field(default=None, exclude=True)
     logo_url: str | None = None
