@@ -53,6 +53,9 @@ Este modulo passou a ser exibido na interface como **Estoque**, pois atende prod
 - Recontagem e correcao usam ajuste rastreavel com saldo contado, motivo e observacao. O movimento guarda saldo anterior, diferenca, saldo final, usuario e data.
 - Saldo negativo e valido e deve ser preservado; nunca pode ser convertido silenciosamente em positivo.
 - Preco promocional, inicio e fim pertencem ao menu **Precos e promocoes**, separado do cadastro e do estoque.
+- A tela de promocoes apresenta indicadores e filtros para ofertas ativas, agendadas, encerradas e produtos sem oferta, alem de busca e ordenacao.
+- A criacao/edicao de oferta informa o desconto calculado, usa seletores de data e hora, oferece periodos rapidos e permite encerrar a oferta para restaurar imediatamente o preco normal.
+- A listagem de promocoes e responsiva ao espaco disponivel com o menu lateral aberto ou fechado e nao exibe formularios repetidos em todos os produtos.
 - O produto novo ainda pode receber estoque inicial; entradas de mercadoria continuam sendo a forma oficial de aumentar estoque comprado.
 
 ## Entrada de mercadoria e NF-e
