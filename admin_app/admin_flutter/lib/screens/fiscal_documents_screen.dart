@@ -242,8 +242,6 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
               ErrorPanel(message: _error!, onRetry: _load),
               const SizedBox(height: 14),
             ],
-            _EngineNotice(settings: _settings),
-            const SizedBox(height: 14),
             Wrap(
               spacing: 12,
               runSpacing: 12,
@@ -2159,49 +2157,6 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         controllers.csosn.dispose();
       }
     }
-  }
-}
-
-class _EngineNotice extends StatelessWidget {
-  const _EngineNotice({required this.settings});
-
-  final CompanyFiscalSetting? settings;
-
-  @override
-  Widget build(BuildContext context) {
-    final nfceReady = settings?.nfceEnabled == true;
-    return AppCard(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(
-            nfceReady ? Icons.verified_user_outlined : Icons.info_outline,
-            color: nfceReady
-                ? const Color(0xFF047857)
-                : const Color(0xFFB45309),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  nfceReady
-                      ? 'Motor fiscal SEFAZ disponível'
-                      : 'NFC-e ainda não habilitada nesta empresa',
-                  style: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 4),
-                const Text(
-                  'NFC-e modelo 65, NF-e modelo 55, DANFE e cancelamento usam os serviços fiscais reais. Em homologação, os documentos permanecem sem valor fiscal.',
-                  style: TextStyle(color: Color(0xFF64748B)),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
