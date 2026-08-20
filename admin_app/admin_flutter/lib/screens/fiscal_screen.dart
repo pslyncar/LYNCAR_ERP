@@ -4,6 +4,7 @@ import 'package:file_picker/file_picker.dart';
 import '../models/fiscal.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
+import '../utils/fiscal_sefaz_tools.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
 import '../widgets/fiscal_numbering_dialog.dart';
@@ -1022,7 +1023,10 @@ class _SettingsCard extends StatelessWidget {
             spacing: 10,
             runSpacing: 10,
             children: [
-              _ChipLine('Ambiente', item?.environment ?? 'homologação'),
+              _ChipLine(
+                'Ambiente',
+                fiscalEnvironmentLabel(item?.environment ?? 'homologacao'),
+              ),
               _ChipLine(
                 'CNPJ',
                 item?.cnpj?.isNotEmpty == true ? 'ok' : 'pendente',
@@ -1138,10 +1142,11 @@ class _SettingsCard extends StatelessWidget {
                 ),
                 OutlinedButton.icon(
                   onPressed:
-                      saving ||
-                          syncingNfceNumbering ||
-                          item?.environment != 'homologacao' ||
-                          item?.hasCertificate != true
+                      !canRunFiscalSefazTool(
+                        settings: item,
+                        saving: saving,
+                        working: syncingNfceNumbering,
+                      )
                       ? null
                       : onSyncNfceNumbering,
                   icon: syncingNfceNumbering
@@ -1155,10 +1160,11 @@ class _SettingsCard extends StatelessWidget {
                 ),
                 OutlinedButton.icon(
                   onPressed:
-                      saving ||
-                          recoveringFiscalDocuments ||
-                          item?.environment != 'homologacao' ||
-                          item?.hasCertificate != true
+                      !canRunFiscalSefazTool(
+                        settings: item,
+                        saving: saving,
+                        working: recoveringFiscalDocuments,
+                      )
                       ? null
                       : onRecoverFiscalDocuments,
                   icon: recoveringFiscalDocuments
@@ -1181,9 +1187,11 @@ class _SettingsCard extends StatelessWidget {
             ],
             const SizedBox(height: 14),
           ],
-          const Text(
-            'O certificado A1 fica criptografado no banco separado desta empresa. Assinatura XML e comunicação SEFAZ entram na homologação fiscal real.',
-            style: TextStyle(color: Color(0xFF64748B)),
+          Text(
+            'O certificado A1 fica criptografado no banco separado desta empresa. '
+            'Assinatura XML e comunicação usam o ambiente de '
+            '${fiscalEnvironmentLabel(item?.environment ?? 'homologacao')}.',
+            style: const TextStyle(color: Color(0xFF64748B)),
           ),
         ],
       ),

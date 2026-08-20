@@ -956,11 +956,6 @@ def sync_nfce_numbering(
     current_user: User = Depends(require_permission("fiscal:settings")),
 ) -> NfceNumberingSyncRead:
     setting = _get_or_create_settings(db)
-    if setting.environment != "homologacao":
-        raise HTTPException(
-            status_code=400,
-            detail="Sincronizacao manual bloqueada fora do ambiente de homologacao.",
-        )
     try:
         result = sync_nfce_next_number_from_sefaz(setting)
     except NfceValidationError as exc:
@@ -1018,11 +1013,6 @@ def recover_documents_from_sefaz(
     current_user: User = Depends(require_permission("fiscal:settings")),
 ) -> FiscalDocumentsRecoveryRead:
     setting = _get_or_create_settings(db)
-    if setting.environment != "homologacao":
-        raise HTTPException(
-            status_code=400,
-            detail="Recuperacao fiscal bloqueada fora do ambiente de homologacao.",
-        )
     existing_nfce_xml_keys = set(
         db.scalars(
             select(FiscalDocument.access_key).where(
