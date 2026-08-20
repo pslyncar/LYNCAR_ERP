@@ -92,6 +92,13 @@ def _is_recent_processing(document: FiscalDocument) -> bool:
     return datetime.utcnow() - updated_at.replace(tzinfo=None) < FISCAL_PROCESSING_TIMEOUT
 
 
+def _fiscal_xml_filename(document: FiscalDocument) -> str:
+    document_type = "nfe" if document.document_type == "nfe" else "nfce"
+    series = document.series or 1
+    number = document.number or document.id
+    return f"{document_type}-serie-{series}-numero-{number}.xml"
+
+
 def _get_or_create_settings(db: Session) -> CompanyFiscalSetting:
     setting = db.scalar(select(CompanyFiscalSetting).order_by(CompanyFiscalSetting.id.asc()))
     if setting is not None:
@@ -2167,4 +2174,32 @@ def get_fiscal_document_danfe(
         content=pdf,
         media_type="application/pdf",
         headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
+
+
+@router.get("/documents/{document_id}/xml")
+def download_fiscal_document_xml(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:documents:view")),
+) -> Response:
+    document = db.get(FiscalDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    if document.status not in {"authorized", "cancelled"}:
+        raise HTTPException(
+            status_code=409,
+            detail="O XML autorizado fica disponivel somente depois da autorizacao da nota.",
+        )
+    if not document.xml_authorized or not document.xml_authorized.strip():
+        raise HTTPException(
+            status_code=404,
+            detail="XML autorizado nao encontrado. Use Recuperar notas da SEFAZ e tente novamente.",
+        )
+    return Response(
+        content=document.xml_authorized.encode("utf-8"),
+        media_type="application/xml",
+        headers={
+            "Content-Disposition": f'attachment; filename="{_fiscal_xml_filename(document)}"',
+        },
     )

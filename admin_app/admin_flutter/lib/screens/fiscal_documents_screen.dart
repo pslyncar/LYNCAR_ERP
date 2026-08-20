@@ -6,6 +6,7 @@ import '../models/client.dart';
 import '../models/fiscal.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
+import '../services/file_download.dart';
 import '../services/fiscal_print.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
@@ -32,6 +33,7 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
   bool _loading = true;
   String? _error;
   int? _authorizingId;
+  int? _downloadingXmlId;
   bool _autoSyncingContingency = false;
   Timer? _contingencySyncTimer;
   String _typeFilter = 'all';
@@ -500,6 +502,17 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                                           child: _ActionLine(
                                             icon: Icons.print_outlined,
                                             label: 'Imprimir',
+                                          ),
+                                        ),
+                                      if (document.status == 'authorized' ||
+                                          document.status == 'cancelled')
+                                        PopupMenuItem(
+                                          value: 'download_xml',
+                                          enabled:
+                                              _downloadingXmlId != document.id,
+                                          child: const _ActionLine(
+                                            icon: Icons.download_outlined,
+                                            label: 'Baixar XML',
                                           ),
                                         ),
                                       if (document.status == 'authorized' &&
@@ -1675,6 +1688,8 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         await _transmitContingency(document);
       case 'print':
         await _printDocument(document);
+      case 'download_xml':
+        await _downloadXml(document);
       case 'cancel':
         await _cancelDocument(document);
     }
@@ -1748,6 +1763,39 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
           () => _error = 'Não foi possível abrir o DANFE para impressão.',
         );
       }
+    }
+  }
+
+  Future<void> _downloadXml(FiscalDocument document) async {
+    setState(() {
+      _downloadingXmlId = document.id;
+      _error = null;
+    });
+    try {
+      final bytes = await _api.getFiscalDocumentXml(
+        widget.session.token,
+        document.id,
+      );
+      final series = document.series ?? 1;
+      final number = document.number ?? document.id;
+      downloadBytesFile(
+        filename: '${document.documentType}-serie-$series-numero-$number.xml',
+        bytes: bytes,
+        mimeType: 'application/xml;charset=utf-8',
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Download do XML iniciado.')),
+        );
+      }
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(() => _error = 'Não foi possível baixar o XML da nota.');
+      }
+    } finally {
+      if (mounted) setState(() => _downloadingXmlId = null);
     }
   }
 

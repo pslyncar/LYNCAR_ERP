@@ -2370,6 +2370,17 @@ class ApiClient {
     return response.bodyBytes;
   }
 
+  Future<Uint8List> getFiscalDocumentXml(String token, int documentId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/fiscal/documents/$documentId/xml'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode >= 400) {
+      _decodeResponse(response);
+    }
+    return response.bodyBytes;
+  }
+
   Future<List<SystemUser>> listSystemUsers(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/admin/users'),
