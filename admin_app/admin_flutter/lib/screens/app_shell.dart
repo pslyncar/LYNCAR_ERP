@@ -14,6 +14,7 @@ import 'emitir_nota_fiscal_screen.dart';
 import 'master_access_screen.dart';
 import 'master_billing_screen.dart';
 import 'master_contracts_screen.dart';
+import 'master_integrations_screen.dart';
 import 'master_payment_settings_screen.dart';
 import 'master_pdv_terminals_screen.dart';
 import 'master_plans_screen.dart';
@@ -127,6 +128,13 @@ class _AppShellState extends State<AppShell> {
           icon: Icons.account_balance_wallet_outlined,
           selectedIcon: Icons.account_balance_wallet,
           screen: MasterPaymentSettingsScreen(session: widget.session),
+        ),
+      if (isMasterPanel && widget.session.canMaster('master:integrations'))
+        _Destination(
+          label: 'Configurações',
+          icon: Icons.settings_outlined,
+          selectedIcon: Icons.settings,
+          screen: MasterIntegrationsScreen(session: widget.session),
         ),
       if (isMasterPanel && widget.session.canMaster('master:support'))
         _Destination(
