@@ -1,5 +1,9 @@
 # Fonte canonico do PDV Windows 1.0.51
 
+> **ATUALIZACAO 21/08/2026:** este documento registra a entrega historica
+> 1.0.51. Para qualquer manutencao atual, seguir obrigatoriamente
+> `2026-08-21_fonte_canonico_pdv_windows.md`.
+
 Em 01/08/2026 foi confirmado que o servidor guardava uma copia parcial ou antiga
 do fonte Flutter do PDV, embora o binario publicado 1.0.51 contivesse o consumidor
 dos comandos remotos.

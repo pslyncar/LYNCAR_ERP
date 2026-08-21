@@ -13,7 +13,24 @@ import '../models/stock_movement.dart';
 import '../services/api_client.dart';
 import '../utils/input_formatters.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_pagination.dart';
 import '../widgets/error_panel.dart';
+
+/// Abre o mesmo cadastro completo usado pelo estoque para um produto já
+/// conhecido. Outros módulos não precisam duplicar validações fiscais.
+Future<bool> showProductEditorDialog(
+  BuildContext context, {
+  required ApiClient api,
+  required String token,
+  required Product product,
+}) async {
+  return await showDialog<bool>(
+        context: context,
+        builder: (context) =>
+            _ProductDialog(api: api, token: token, product: product),
+      ) ==
+      true;
+}
 
 const _productTypes = {
   'produto': 'Produto',
@@ -162,6 +179,8 @@ class ProductsScreen extends StatefulWidget {
 }
 
 class _ProductsScreenState extends State<ProductsScreen> {
+  static const _pageSize = 20;
+
   late final ApiClient _api = ApiClient(widget.session.apiBaseUrl);
   List<Product> _products = [];
   final _search = TextEditingController();
@@ -174,6 +193,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
   bool _advancedOpen = false;
   bool _loading = true;
   String? _error;
+  int _currentPage = 0;
 
   @override
   void initState() {
@@ -196,7 +216,10 @@ class _ProductsScreenState extends State<ProductsScreen> {
     });
     try {
       final products = await _api.listProducts(widget.session.token);
-      setState(() => _products = products);
+      setState(() {
+        _products = products;
+        _currentPage = 0;
+      });
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } catch (_) {
@@ -269,6 +292,14 @@ class _ProductsScreenState extends State<ProductsScreen> {
     final canCreate = widget.session.can('products:create');
     final canUpdate = widget.session.can('products:update');
     final filteredProducts = _filteredProducts();
+    final pageCount = filteredProducts.isEmpty
+        ? 0
+        : (filteredProducts.length / _pageSize).ceil();
+    final safePage = pageCount == 0 ? 0 : _currentPage.clamp(0, pageCount - 1);
+    final pagedProducts = filteredProducts
+        .skip(safePage * _pageSize)
+        .take(_pageSize)
+        .toList(growable: false);
     final active = _products.where((product) => product.active).length;
     final lowStock = _products
         .where((product) => product.stockQuantity <= product.minimumStock)
@@ -350,16 +381,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
               lowStockOnly: _lowStockOnly,
               withBatchOnly: _withBatchOnly,
               advancedOpen: _advancedOpen,
-              onChanged: () => setState(() {}),
+              onChanged: () => setState(() => _currentPage = 0),
               onToggleAdvanced: () =>
                   setState(() => _advancedOpen = !_advancedOpen),
-              onTypeChanged: (value) =>
-                  setState(() => _typeFilter = value ?? 'todos'),
-              onStatusChanged: (value) =>
-                  setState(() => _statusFilter = value ?? 'ativos'),
-              onLowStockChanged: (value) =>
-                  setState(() => _lowStockOnly = value),
-              onBatchChanged: (value) => setState(() => _withBatchOnly = value),
+              onTypeChanged: (value) => setState(() {
+                _typeFilter = value ?? 'todos';
+                _currentPage = 0;
+              }),
+              onStatusChanged: (value) => setState(() {
+                _statusFilter = value ?? 'ativos';
+                _currentPage = 0;
+              }),
+              onLowStockChanged: (value) => setState(() {
+                _lowStockOnly = value;
+                _currentPage = 0;
+              }),
+              onBatchChanged: (value) => setState(() {
+                _withBatchOnly = value;
+                _currentPage = 0;
+              }),
               onClear: _clearFilters,
             ),
             const SizedBox(height: 18),
@@ -377,19 +417,31 @@ class _ProductsScreenState extends State<ProductsScreen> {
                           'Nenhum item encontrado com esses filtros.',
                         ),
                       )
-                    : _ProductsTable(
-                        products: filteredProducts,
-                        apiBaseUrl: widget.session.apiBaseUrl,
-                        canEdit: canUpdate,
-                        canAdjustStock: widget.session.can('stock:move'),
-                        canViewBatches: widget.session.can(
-                          'stock:batches:view',
-                        ),
-                        onOpen: _openForm,
-                        onBatches: _openBatches,
-                        onHistory: _openHistory,
-                        onAdjustStock: _adjustStock,
-                        onComposition: _openComposition,
+                    : Column(
+                        children: [
+                          _ProductsTable(
+                            products: pagedProducts,
+                            apiBaseUrl: widget.session.apiBaseUrl,
+                            canEdit: canUpdate,
+                            canAdjustStock: widget.session.can('stock:move'),
+                            canViewBatches: widget.session.can(
+                              'stock:batches:view',
+                            ),
+                            onOpen: _openForm,
+                            onBatches: _openBatches,
+                            onHistory: _openHistory,
+                            onAdjustStock: _adjustStock,
+                            onComposition: _openComposition,
+                          ),
+                          AppPagination(
+                            currentPage: safePage,
+                            totalItems: filteredProducts.length,
+                            pageSize: _pageSize,
+                            itemLabel: 'produtos',
+                            onPageChanged: (page) =>
+                                setState(() => _currentPage = page),
+                          ),
+                        ],
                       ),
               ),
           ],
@@ -407,6 +459,7 @@ class _ProductsScreenState extends State<ProductsScreen> {
       _statusFilter = 'ativos';
       _lowStockOnly = false;
       _withBatchOnly = false;
+      _currentPage = 0;
     });
   }
 
@@ -791,12 +844,24 @@ class _ProductsTable extends StatelessWidget {
                         }
                       },
                       itemBuilder: (context) => [
-                        const PopupMenuItem(value: _StockAction.composition, child: Text('Ficha técnica / composição')),
+                        const PopupMenuItem(
+                          value: _StockAction.composition,
+                          child: Text('Ficha técnica / composição'),
+                        ),
                         if (canViewBatches)
-                          const PopupMenuItem(value: _StockAction.batches, child: Text('Saldos por lote')),
-                        const PopupMenuItem(value: _StockAction.history, child: Text('Histórico do estoque')),
+                          const PopupMenuItem(
+                            value: _StockAction.batches,
+                            child: Text('Saldos por lote'),
+                          ),
+                        const PopupMenuItem(
+                          value: _StockAction.history,
+                          child: Text('Histórico do estoque'),
+                        ),
                         if (canAdjustStock)
-                          const PopupMenuItem(value: _StockAction.adjust, child: Text('Ajustar estoque')),
+                          const PopupMenuItem(
+                            value: _StockAction.adjust,
+                            child: Text('Ajustar estoque'),
+                          ),
                       ],
                     ),
                   ),
@@ -804,7 +869,7 @@ class _ProductsTable extends StatelessWidget {
               ),
             ),
           ),
-        ],
+      ],
     );
   }
 }
@@ -2068,10 +2133,15 @@ class _StockAdjustmentDialogState extends State<_StockAdjustmentDialog> {
   Future<void> _save() async {
     final quantity = parseBrazilianNumber(_quantity.text);
     if (_notes.text.trim().length < 5) {
-      setState(() => _error = 'Explique o motivo do ajuste (ao menos 5 caracteres).');
+      setState(
+        () => _error = 'Explique o motivo do ajuste (ao menos 5 caracteres).',
+      );
       return;
     }
-    setState(() { _saving = true; _error = null; });
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
     try {
       await widget.api.createStockAdjustment(
         widget.token,
@@ -2084,7 +2154,9 @@ class _StockAdjustmentDialogState extends State<_StockAdjustmentDialog> {
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } catch (_) {
-      if (mounted) setState(() => _error = 'Não foi possível registrar o ajuste.');
+      if (mounted) {
+        setState(() => _error = 'Não foi possível registrar o ajuste.');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -2095,33 +2167,73 @@ class _StockAdjustmentDialogState extends State<_StockAdjustmentDialog> {
     title: Text('Ajustar estoque — ${widget.product.name}'),
     content: SizedBox(
       width: 520,
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text('Saldo atual: ${_number(widget.product.stockQuantity)} ${widget.product.unit}. O novo saldo pode ser negativo e ficará no histórico.', style: const TextStyle(color: Color(0xFF475569))),
-        const SizedBox(height: 16),
-        TextField(
-          controller: _quantity,
-          inputFormatters: const [_SignedBrazilianDecimalInputFormatter()],
-          decoration: InputDecoration(labelText: 'Saldo contado (${widget.product.unit})', border: const OutlineInputBorder()),
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _reason,
-          decoration: const InputDecoration(labelText: 'Motivo', border: OutlineInputBorder()),
-          items: const [
-            DropdownMenuItem(value: 'inventory_count', child: Text('Recontagem de inventário')),
-            DropdownMenuItem(value: 'data_correction', child: Text('Correção de saldo')),
-            DropdownMenuItem(value: 'other', child: Text('Outro ajuste')),
-          ],
-          onChanged: (value) => setState(() => _reason = value ?? 'inventory_count'),
-        ),
-        const SizedBox(height: 12),
-        TextField(controller: _notes, maxLines: 3, decoration: const InputDecoration(labelText: 'Observação obrigatória', border: OutlineInputBorder())),
-        if (_error != null) Padding(padding: const EdgeInsets.only(top: 10), child: Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C)))),
-      ]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Saldo atual: ${_number(widget.product.stockQuantity)} ${widget.product.unit}. O novo saldo pode ser negativo e ficará no histórico.',
+            style: const TextStyle(color: Color(0xFF475569)),
+          ),
+          const SizedBox(height: 16),
+          TextField(
+            controller: _quantity,
+            inputFormatters: const [_SignedBrazilianDecimalInputFormatter()],
+            decoration: InputDecoration(
+              labelText: 'Saldo contado (${widget.product.unit})',
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(
+            initialValue: _reason,
+            decoration: const InputDecoration(
+              labelText: 'Motivo',
+              border: OutlineInputBorder(),
+            ),
+            items: const [
+              DropdownMenuItem(
+                value: 'inventory_count',
+                child: Text('Recontagem de inventário'),
+              ),
+              DropdownMenuItem(
+                value: 'data_correction',
+                child: Text('Correção de saldo'),
+              ),
+              DropdownMenuItem(value: 'other', child: Text('Outro ajuste')),
+            ],
+            onChanged: (value) =>
+                setState(() => _reason = value ?? 'inventory_count'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _notes,
+            maxLines: 3,
+            decoration: const InputDecoration(
+              labelText: 'Observação obrigatória',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                _error!,
+                style: const TextStyle(color: Color(0xFFB91C1C)),
+              ),
+            ),
+        ],
+      ),
     ),
     actions: [
-      TextButton(onPressed: _saving ? null : () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
-      FilledButton.icon(onPressed: _saving ? null : _save, icon: const Icon(Icons.fact_check_outlined), label: Text(_saving ? 'Registrando...' : 'Registrar ajuste')),
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+        child: const Text('Cancelar'),
+      ),
+      FilledButton.icon(
+        onPressed: _saving ? null : _save,
+        icon: const Icon(Icons.fact_check_outlined),
+        label: Text(_saving ? 'Registrando...' : 'Registrar ajuste'),
+      ),
     ],
   );
 }
@@ -2130,15 +2242,30 @@ class _SignedBrazilianDecimalInputFormatter extends TextInputFormatter {
   const _SignedBrazilianDecimalInputFormatter();
 
   @override
-  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
     final negative = newValue.text.trimLeft().startsWith('-');
-    final clean = newValue.text.replaceAll('.', ',').replaceAll(RegExp(r'[^0-9,]'), '');
+    final clean = newValue.text
+        .replaceAll('.', ',')
+        .replaceAll(RegExp(r'[^0-9,]'), '');
     final comma = clean.indexOf(',');
     final integer = comma < 0 ? clean : clean.substring(0, comma);
-    final decimals = comma < 0 ? '' : clean.substring(comma + 1).replaceAll(',', '');
-    final grouped = integer.isEmpty ? '0' : formatBrazilianDecimal(double.tryParse(integer) ?? 0).split(',').first;
-    final text = '${negative ? '-' : ''}$grouped${comma < 0 ? '' : ',$decimals'}';
-    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+    final decimals = comma < 0
+        ? ''
+        : clean.substring(comma + 1).replaceAll(',', '');
+    final grouped = integer.isEmpty
+        ? '0'
+        : formatBrazilianDecimal(
+            double.tryParse(integer) ?? 0,
+          ).split(',').first;
+    final text =
+        '${negative ? '-' : ''}$grouped${comma < 0 ? '' : ',$decimals'}';
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 }
 
@@ -2613,7 +2740,9 @@ class _ProductDialogState extends State<_ProductDialog> {
       marginPercent: _nullableDecimal(_marginPercent.text),
       // Saldo só é informado ao criar o item. Alterações posteriores passam
       // pelo ajuste rastreável de estoque, nunca pelo cadastro fiscal.
-      stockQuantity: widget.product == null ? _moneyValue(_stockQuantity.text) : null,
+      stockQuantity: widget.product == null
+          ? _moneyValue(_stockQuantity.text)
+          : null,
       minimumStock: _moneyValue(_minimumStock.text),
       unit: _selectedUnit,
       ncm: _ncm.text,

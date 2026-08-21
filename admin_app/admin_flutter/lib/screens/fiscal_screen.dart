@@ -7,6 +7,7 @@ import '../services/api_client.dart';
 import '../utils/fiscal_sefaz_tools.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
+import 'products_screen.dart';
 import '../widgets/fiscal_numbering_dialog.dart';
 
 class FiscalScreen extends StatefulWidget {
@@ -146,7 +147,14 @@ class _FiscalScreenState extends State<FiscalScreen> {
               onRecoverFiscalDocuments: _recoverFiscalDocuments,
             ),
             const SizedBox(height: 14),
-            _RtcCompliancePanel(compliance: _rtcCompliance),
+            FiscalPendingPanel(
+              compliance: _rtcCompliance,
+              canManage: widget.session.can('fiscal:settings'),
+              onConfigureRule: () => _editOutputRule(),
+              onConfigureProductRule: (product) =>
+                  _editOutputRule(null, product),
+              onEditProduct: _editPendingProduct,
+            ),
             const SizedBox(height: 14),
             _FiscalOutputRulesCard(
               rules: _outputRules,
@@ -712,11 +720,17 @@ class _FiscalScreenState extends State<FiscalScreen> {
     }
   }
 
-  Future<void> _editOutputRule([FiscalOutputRule? rule]) async {
+  Future<void> _editOutputRule([
+    FiscalOutputRule? rule,
+    RtcIncompleteProduct? pendingProduct,
+  ]) async {
     final result = await showDialog<Map<String, dynamic>>(
       context: context,
-      builder: (context) =>
-          _FiscalOutputRuleDialog(rule: rule, settings: _settings),
+      builder: (context) => _FiscalOutputRuleDialog(
+        rule: rule,
+        settings: _settings,
+        presetProduct: pendingProduct,
+      ),
     );
     if (result == null) return;
     setState(() {
@@ -736,6 +750,31 @@ class _FiscalScreenState extends State<FiscalScreen> {
       await _load();
     } on ApiException catch (error) {
       setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _editPendingProduct(RtcIncompleteProduct pendingProduct) async {
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final product = await _api.getProduct(
+        widget.session.token,
+        pendingProduct.id,
+      );
+      if (!mounted) return;
+      final changed = await showProductEditorDialog(
+        context,
+        api: _api,
+        token: widget.session.token,
+        product: product,
+      );
+      if (changed) await _load();
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -1199,10 +1238,21 @@ class _SettingsCard extends StatelessWidget {
   }
 }
 
-class _RtcCompliancePanel extends StatelessWidget {
-  const _RtcCompliancePanel({required this.compliance});
+class FiscalPendingPanel extends StatelessWidget {
+  const FiscalPendingPanel({
+    super.key,
+    required this.compliance,
+    required this.canManage,
+    required this.onConfigureRule,
+    required this.onConfigureProductRule,
+    required this.onEditProduct,
+  });
 
   final RtcCompliance? compliance;
+  final bool canManage;
+  final VoidCallback onConfigureRule;
+  final ValueChanged<RtcIncompleteProduct> onConfigureProductRule;
+  final ValueChanged<RtcIncompleteProduct> onEditProduct;
 
   @override
   Widget build(BuildContext context) {
@@ -1216,7 +1266,7 @@ class _RtcCompliancePanel extends StatelessWidget {
       );
     }
 
-    final needsAction = item.mandatory && !item.ready;
+    final needsAction = !item.ready;
     final statusColor = needsAction
         ? const Color(0xFFB42318)
         : item.mandatory
@@ -1261,7 +1311,7 @@ class _RtcCompliancePanel extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Reforma Tributária 2026',
+                      'Pendências fiscais',
                       style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.w900,
@@ -1317,62 +1367,43 @@ class _RtcCompliancePanel extends StatelessWidget {
                 ),
             ],
           ),
-          if (!item.mandatory) ...[
+          if (!item.mandatory && !needsAction) ...[
             const SizedBox(height: 14),
             const Text(
-              'Nenhum campo novo será exigido deste emitente agora. As regras atuais de MEI e Simples Nacional permanecem preservadas.',
+              'Nenhuma pendência fiscal exigível foi encontrada. As regras atuais de MEI e Simples Nacional permanecem preservadas.',
               style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ],
           if (needsAction) ...[
             const SizedBox(height: 16),
-            Text(
-              '${item.productsIncomplete} de ${item.productsTotal} produto(s) precisam de revisão antes da emissão.',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 10),
-            ...item.incompleteProducts
-                .take(8)
-                .map(
-                  (product) => Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(
-                          Icons.inventory_2_outlined,
-                          size: 18,
-                          color: Color(0xFF64748B),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text.rich(
-                            TextSpan(
-                              children: [
-                                TextSpan(
-                                  text: product.internalCode?.isNotEmpty == true
-                                      ? '${product.internalCode} - ${product.name}: '
-                                      : '${product.name}: ',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                TextSpan(
-                                  text: product.missingFields.join(', '),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${item.productsIncomplete} de ${item.productsTotal} produto(s) precisam de revisão antes da emissão.',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
                   ),
                 ),
-            if (item.incompleteProducts.length > 8)
-              Text(
-                'E mais ${item.incompleteProducts.length - 8} produto(s).',
-                style: const TextStyle(color: Color(0xFF64748B)),
-              ),
+                if (canManage)
+                  FilledButton.tonalIcon(
+                    onPressed: onConfigureRule,
+                    icon: const Icon(Icons.rule_outlined),
+                    label: const Text('Criar regra em massa'),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _PendingProductsPager(
+              products: item.incompleteProducts,
+              canManage: canManage,
+              onEditProduct: onEditProduct,
+              onCreateRule: onConfigureProductRule,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'Como resolver: dado específico deve ser corrigido no produto; uma classificação válida para vários itens deve virar regra por produto, NCM ou prefixo de NCM. A regra nunca substitui um valor já preenchido.',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
           ],
         ],
       ),
@@ -1381,6 +1412,198 @@ class _RtcCompliancePanel extends StatelessWidget {
 
   static String _rateLabel(double value) {
     return '${value.toStringAsFixed(value == value.roundToDouble() ? 0 : 2)}%';
+  }
+}
+
+class _PendingProductsPager extends StatefulWidget {
+  const _PendingProductsPager({
+    required this.products,
+    required this.canManage,
+    required this.onEditProduct,
+    required this.onCreateRule,
+  });
+
+  static const pageSize = 5;
+
+  final List<RtcIncompleteProduct> products;
+  final bool canManage;
+  final ValueChanged<RtcIncompleteProduct> onEditProduct;
+  final ValueChanged<RtcIncompleteProduct> onCreateRule;
+
+  @override
+  State<_PendingProductsPager> createState() => _PendingProductsPagerState();
+}
+
+class _PendingProductsPagerState extends State<_PendingProductsPager> {
+  int _page = 0;
+
+  int get _pageCount =>
+      (widget.products.length / _PendingProductsPager.pageSize).ceil();
+
+  @override
+  void didUpdateWidget(covariant _PendingProductsPager oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final lastPage = (_pageCount - 1).clamp(0, 1 << 30);
+    if (_page > lastPage) _page = lastPage;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final start = _page * _PendingProductsPager.pageSize;
+    final end = (start + _PendingProductsPager.pageSize).clamp(
+      0,
+      widget.products.length,
+    );
+    final visible = widget.products.sublist(start, end);
+    return Column(
+      children: [
+        for (final product in visible)
+          _PendingProductActionRow(
+            product: product,
+            canManage: widget.canManage,
+            onEditProduct: () => widget.onEditProduct(product),
+            onCreateRule: () => widget.onCreateRule(product),
+          ),
+        if (_pageCount > 1) ...[
+          const SizedBox(height: 6),
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (var index = 0; index < _pageCount; index++)
+                SizedBox(
+                  width: 42,
+                  height: 40,
+                  child: index == _page
+                      ? FilledButton(
+                          key: Key('pending-products-page-${index + 1}'),
+                          onPressed: null,
+                          style: FilledButton.styleFrom(
+                            disabledBackgroundColor: const Color(0xFF0E6680),
+                            disabledForegroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: Text('${index + 1}'),
+                        )
+                      : OutlinedButton(
+                          key: Key('pending-products-page-${index + 1}'),
+                          onPressed: () => setState(() => _page = index),
+                          style: OutlinedButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                          ),
+                          child: Text('${index + 1}'),
+                        ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Mostrando ${start + 1}–$end de ${widget.products.length} produtos',
+            style: const TextStyle(color: Color(0xFF64748B)),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _PendingProductActionRow extends StatelessWidget {
+  const _PendingProductActionRow({
+    required this.product,
+    required this.canManage,
+    required this.onEditProduct,
+    required this.onCreateRule,
+  });
+
+  final RtcIncompleteProduct product;
+  final bool canManage;
+  final VoidCallback onEditProduct;
+  final VoidCallback onCreateRule;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = product.internalCode?.isNotEmpty == true
+        ? '${product.internalCode} - ${product.name}'
+        : product.name;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFDCE5F0)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final details = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.inventory_2_outlined,
+                size: 20,
+                color: Color(0xFF64748B),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(product.missingFields.join(' • ')),
+                    const SizedBox(height: 3),
+                    Text(
+                      product.ncm?.isNotEmpty == true
+                          ? 'NCM atual: ${product.ncm}'
+                          : 'NCM não informado',
+                      style: const TextStyle(color: Color(0xFF64748B)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final actions = Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: canManage ? onEditProduct : null,
+                icon: const Icon(Icons.edit_outlined),
+                label: const Text('Editar produto'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: canManage ? onCreateRule : null,
+                icon: const Icon(Icons.rule_outlined),
+                label: const Text('Regra deste produto'),
+              ),
+            ],
+          );
+          if (constraints.maxWidth < 850) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                details,
+                if (canManage) ...[
+                  const SizedBox(height: 10),
+                  Align(alignment: Alignment.centerRight, child: actions),
+                ],
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: details),
+              if (canManage) ...[const SizedBox(width: 12), actions],
+            ],
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -1578,10 +1801,15 @@ class _FiscalOutputRulesCard extends StatelessWidget {
 }
 
 class _FiscalOutputRuleDialog extends StatefulWidget {
-  const _FiscalOutputRuleDialog({required this.rule, required this.settings});
+  const _FiscalOutputRuleDialog({
+    required this.rule,
+    required this.settings,
+    this.presetProduct,
+  });
 
   final FiscalOutputRule? rule;
   final CompanyFiscalSetting? settings;
+  final RtcIncompleteProduct? presetProduct;
 
   @override
   State<_FiscalOutputRuleDialog> createState() =>
@@ -1592,6 +1820,9 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
   late final TextEditingController _name = TextEditingController(
     text:
         widget.rule?.name ??
+        (widget.presetProduct == null
+            ? null
+            : 'Regra - ${widget.presetProduct!.name}') ??
         'Venda padrao ${widget.settings?.crt == '4' ? 'MEI' : ''}'.trim(),
   );
   late final TextEditingController _priority = TextEditingController(
@@ -1607,7 +1838,10 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
     text: widget.rule?.cest ?? '',
   );
   late final TextEditingController _productId = TextEditingController(
-    text: widget.rule?.productId?.toString() ?? '',
+    text:
+        widget.rule?.productId?.toString() ??
+        widget.presetProduct?.id.toString() ??
+        '',
   );
   late final TextEditingController _cfop = TextEditingController(
     text: widget.rule?.cfop ?? '',
@@ -1690,7 +1924,9 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
     return AlertDialog(
       title: Text(
         widget.rule == null
-            ? 'Nova regra fiscal de saída'
+            ? widget.presetProduct == null
+                  ? 'Nova regra fiscal de saída'
+                  : 'Regra fiscal para ${widget.presetProduct!.name}'
             : 'Editar regra fiscal de saída',
       ),
       content: SizedBox(
@@ -1714,6 +1950,24 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
                 ),
               ),
               const SizedBox(height: 8),
+              if (widget.presetProduct != null) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                  ),
+                  child: Text(
+                    'Esta regra será aplicada somente ao produto '
+                    '${widget.presetProduct!.internalCode ?? widget.presetProduct!.id} '
+                    '- ${widget.presetProduct!.name}.',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
               Row(
                 children: [
                   Expanded(
@@ -1826,7 +2080,14 @@ class _FiscalOutputRuleDialogState extends State<_FiscalOutputRuleDialog> {
                   Row(
                     children: [
                       Expanded(
-                        child: _field(_productId, 'ID produto especifico'),
+                        child: TextField(
+                          controller: _productId,
+                          readOnly: widget.presetProduct != null,
+                          decoration: const InputDecoration(
+                            labelText: 'Produto específico',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 10),
                       Expanded(child: _field(_ncm, 'NCM exato')),

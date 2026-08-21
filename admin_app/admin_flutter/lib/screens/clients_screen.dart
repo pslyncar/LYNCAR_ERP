@@ -7,6 +7,7 @@ import '../services/api_client.dart';
 import '../services/cep_service.dart';
 import '../utils/input_formatters.dart';
 import '../widgets/app_card.dart';
+import '../widgets/app_pagination.dart';
 import '../widgets/error_panel.dart';
 
 class ClientsScreen extends StatefulWidget {
@@ -19,6 +20,8 @@ class ClientsScreen extends StatefulWidget {
 }
 
 class _ClientsScreenState extends State<ClientsScreen> {
+  static const _pageSize = 20;
+
   late final ApiClient _api = ApiClient(widget.session.apiBaseUrl);
   List<Client> _clients = [];
   final _search = TextEditingController();
@@ -28,6 +31,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
   bool _advancedOpen = false;
   bool _loading = true;
   String? _error;
+  int _currentPage = 0;
 
   @override
   void initState() {
@@ -49,7 +53,10 @@ class _ClientsScreenState extends State<ClientsScreen> {
 
     try {
       final clients = await _api.listClients(widget.session.token);
-      setState(() => _clients = clients);
+      setState(() {
+        _clients = clients;
+        _currentPage = 0;
+      });
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } catch (_) {
@@ -81,6 +88,14 @@ class _ClientsScreenState extends State<ClientsScreen> {
   @override
   Widget build(BuildContext context) {
     final filteredClients = _filteredClients();
+    final pageCount = filteredClients.isEmpty
+        ? 0
+        : (filteredClients.length / _pageSize).ceil();
+    final safePage = pageCount == 0 ? 0 : _currentPage.clamp(0, pageCount - 1);
+    final pagedClients = filteredClients
+        .skip(safePage * _pageSize)
+        .take(_pageSize)
+        .toList(growable: false);
     return SafeArea(
       child: RefreshIndicator(
         onRefresh: _loadClients,
@@ -101,15 +116,21 @@ class _ClientsScreenState extends State<ClientsScreen> {
               contractFilter: _contractFilter,
               statusFilter: _statusFilter,
               advancedOpen: _advancedOpen,
-              onChanged: () => setState(() {}),
+              onChanged: () => setState(() => _currentPage = 0),
               onToggleAdvanced: () =>
                   setState(() => _advancedOpen = !_advancedOpen),
-              onPersonTypeChanged: (value) =>
-                  setState(() => _personTypeFilter = value ?? 'todos'),
-              onContractChanged: (value) =>
-                  setState(() => _contractFilter = value ?? 'todos'),
-              onStatusChanged: (value) =>
-                  setState(() => _statusFilter = value ?? 'ativos'),
+              onPersonTypeChanged: (value) => setState(() {
+                _personTypeFilter = value ?? 'todos';
+                _currentPage = 0;
+              }),
+              onContractChanged: (value) => setState(() {
+                _contractFilter = value ?? 'todos';
+                _currentPage = 0;
+              }),
+              onStatusChanged: (value) => setState(() {
+                _statusFilter = value ?? 'ativos';
+                _currentPage = 0;
+              }),
               onClear: _clearFilters,
             ),
             const SizedBox(height: 18),
@@ -127,10 +148,22 @@ class _ClientsScreenState extends State<ClientsScreen> {
                           'Nenhum cliente encontrado com esses filtros.',
                         ),
                       )
-                    : _ClientsTable(
-                        clients: filteredClients,
-                        onOpenClient: _openDetailsDialog,
-                        canEdit: widget.session.can('clients:update'),
+                    : Column(
+                        children: [
+                          _ClientsTable(
+                            clients: pagedClients,
+                            onOpenClient: _openDetailsDialog,
+                            canEdit: widget.session.can('clients:update'),
+                          ),
+                          AppPagination(
+                            currentPage: safePage,
+                            totalItems: filteredClients.length,
+                            pageSize: _pageSize,
+                            itemLabel: 'clientes',
+                            onPageChanged: (page) =>
+                                setState(() => _currentPage = page),
+                          ),
+                        ],
                       ),
               ),
           ],
@@ -163,6 +196,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
       _personTypeFilter = 'todos';
       _contractFilter = 'todos';
       _statusFilter = 'ativos';
+      _currentPage = 0;
     });
   }
 

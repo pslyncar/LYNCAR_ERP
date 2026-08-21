@@ -19,6 +19,7 @@ from app.models.fiscal import (
     FiscalDocumentItem,
     FiscalOutputRule,
     FiscalSettingsAuditLog,
+    FiscalTransmissionJob,
 )
 from app.models.client import Client
 from app.models.product import Product
@@ -47,6 +48,7 @@ from app.schemas.fiscal import (
     FiscalNumberingStatusRead,
     FiscalSetupChecklistItem,
     FiscalSetupChecklistRead,
+    FiscalTransmissionJobRead,
     NfceNumberingSyncRead,
 )
 from app.services.fiscal_stock import refresh_many_product_fiscal_balances
@@ -69,12 +71,13 @@ from app.services.rtc_compliance import (
     RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM,
     RtcComplianceError,
     is_rtc_mandatory,
-    rtc_product_issues,
+    fiscal_product_issues,
     rtc_rates_for,
     validate_rtc_document,
 )
 from app.services.fiscal_events_sp import send_cancellation_event
 from app.services.fiscal_pdf import generate_danfe_pdf
+from app.services.fiscal_queue import enqueue_fiscal_job, resume_fiscal_configuration_jobs
 from app.services.product_batches import apply_batch_out, return_to_batch
 from app.services.product_costs import apply_stock_in, apply_stock_out
 
@@ -132,24 +135,44 @@ def _next_available_fiscal_number(
     series: int,
     configured_next_number: int,
 ) -> int:
+    consumed_statuses = (
+        "authorized",
+        "cancelled",
+        "contingency_offline",
+        "pending_return",
+        "not_found_after_timeout",
+    )
     highest_used_number = db.scalar(
         select(func.max(FiscalDocument.number)).where(
             FiscalDocument.environment == environment,
             FiscalDocument.document_type == document_type,
             FiscalDocument.series == series,
+            FiscalDocument.status.in_(consumed_statuses),
             FiscalDocument.number.is_not(None),
         )
     )
     next_number = max(int(configured_next_number or 1), int(highest_used_number or 0) + 1)
-    while db.scalar(
-        select(FiscalDocument.id).where(
+    owner = db.scalar(
+        select(FiscalDocument).where(
             FiscalDocument.environment == environment,
             FiscalDocument.document_type == document_type,
             FiscalDocument.series == series,
             FiscalDocument.number == next_number,
         )
-    ):
+    )
+    while owner is not None:
+        # Um numero que ja foi associado a um documento nunca volta ao pool.
+        # Rejeicoes definitivas conservam o numero para correcao/reenvio, mas
+        # nao podem bloquear as vendas seguintes da mesma serie fiscal.
         next_number += 1
+        owner = db.scalar(
+            select(FiscalDocument).where(
+                FiscalDocument.environment == environment,
+                FiscalDocument.document_type == document_type,
+                FiscalDocument.series == series,
+                FiscalDocument.number == next_number,
+            )
+        )
     return next_number
 
 
@@ -181,7 +204,6 @@ def _reserve_fiscal_number(
             series=int(document.series),
             configured_next_number=int(setting.nfce_next_number or 1),
         )
-        setting.nfce_next_number = max(int(setting.nfce_next_number or 1), int(document.number) + 1)
     else:
         document.series = document.series or int(setting.nfe_series or 1)
         document.number = document.number or _next_available_fiscal_number(
@@ -191,12 +213,123 @@ def _reserve_fiscal_number(
             series=int(document.series),
             configured_next_number=int(setting.nfe_next_number or 1),
         )
-        setting.nfe_next_number = max(int(setting.nfe_next_number or 1), int(document.number) + 1)
     document.status = "processing"
     document.sefaz_status_code = "PROCESSING"
     document.sefaz_message = "Documento reservado e em envio para a SEFAZ."
-    db.commit()
+    # A transacao e o bloqueio da configuracao fiscal permanecem ativos durante
+    # o envio. Assim dois PDVs nao reservam numeros diferentes enquanto a SEFAZ
+    # ainda nao decidiu se o numero atual foi consumido.
+    db.flush()
     return document, setting
+
+
+def _create_timeout_contingency(
+    db: Session,
+    *,
+    document: FiscalDocument,
+    setting: CompanyFiscalSetting,
+    fiscal_sale,
+    requested_by_user_id: int | None,
+    error_message: str,
+) -> FiscalDocument:
+    if document.document_type != "nfce" or document.number is None:
+        raise NfceValidationError(
+            "Contingencia automatica disponivel somente para NFC-e numerada."
+        )
+    document.status = "pending_return"
+    document.sefaz_status_code = "TIMEOUT_PENDING_RETURN"
+    document.sefaz_message = (
+        "A SEFAZ nao devolveu uma resposta conclusiva. A chave normal sera "
+        f"consultada automaticamente. Falha original: {error_message[:300]}"
+    )
+    setting.nfce_next_number = max(
+        int(setting.nfce_next_number or 1),
+        int(document.number) + 1,
+    )
+    contingency = FiscalDocument(
+        origin_document_id=document.id,
+        sale_id=document.sale_id,
+        fiscal_client_id=document.fiscal_client_id,
+        document_type="nfce",
+        model="65",
+        series=int(document.series or setting.nfce_series or 1),
+        environment=document.environment,
+        consumer_cpf=document.consumer_cpf,
+        recipient_document=document.recipient_document,
+        recipient_name=document.recipient_name,
+        operation_nature=document.operation_nature,
+        finality=document.finality,
+        payment_condition=document.payment_condition,
+        fiscal_notes=document.fiscal_notes,
+        freight_mode=document.freight_mode,
+        freight_amount=document.freight_amount,
+        insurance_amount=document.insurance_amount,
+        other_expenses_amount=document.other_expenses_amount,
+        status="draft",
+        sefaz_message="Preparando NFC-e em contingencia apos timeout.",
+    )
+    db.add(contingency)
+    db.flush()
+    contingency.number = _next_available_fiscal_number(
+        db,
+        environment=contingency.environment,
+        document_type="nfce",
+        series=int(contingency.series),
+        configured_next_number=int(setting.nfce_next_number),
+    )
+    if document.sale_id is None:
+        for item in document.fiscal_items:
+            contingency.fiscal_items.append(
+                FiscalDocumentItem(
+                    sale_item_id=item.sale_item_id,
+                    original_product_id=item.original_product_id,
+                    fiscal_product_id=item.fiscal_product_id,
+                    original_description=item.original_description,
+                    fiscal_description=item.fiscal_description,
+                    quantity=item.quantity,
+                    unit=item.unit,
+                    unit_price=item.unit_price,
+                    discount_amount=item.discount_amount,
+                    total_price=item.total_price,
+                    barcode=item.barcode,
+                    included=item.included,
+                    adjustment_reason=item.adjustment_reason,
+                    ncm=item.ncm,
+                    cest=item.cest,
+                    cfop=item.cfop,
+                    origin=item.origin,
+                    cst=item.cst,
+                    csosn=item.csosn,
+                    pis_cst=item.pis_cst,
+                    cofins_cst=item.cofins_cst,
+                    cbenef=item.cbenef,
+                )
+            )
+    result = prepare_nfce_offline_contingency(setting, contingency, fiscal_sale)
+    contingency.status = result.status
+    contingency.sefaz_status_code = result.status_code
+    contingency.sefaz_message = result.message
+    setting.nfce_next_number = max(
+        int(setting.nfce_next_number),
+        int(contingency.number) + 1,
+    )
+    enqueue_fiscal_job(
+        db,
+        document,
+        requested_by_user_id=requested_by_user_id,
+        job_type="recover_pending_return",
+        delay_seconds=10,
+    )
+    enqueue_fiscal_job(
+        db,
+        contingency,
+        requested_by_user_id=requested_by_user_id,
+        job_type="transmit_contingency",
+        delay_seconds=15,
+    )
+    db.commit()
+    db.refresh(contingency)
+    return contingency
 
 
 def _rule_read(rule: FiscalOutputRule) -> FiscalOutputRuleRead:
@@ -1154,13 +1287,23 @@ def get_rtc_compliance(
     )
     incomplete_products = []
     for product in products:
-        issues = rtc_product_issues(setting, product, model=model)
+        issues = fiscal_product_issues(
+            setting,
+            product,
+            model=model,
+            issue_date=today,
+        )
         if issues:
+            matched_rule = resolve_output_rule(setting, product, model=model)
+            profile = resolve_output_tax_profile(setting, product, model=model)
             incomplete_products.append(
                 {
                     "id": product.id,
                     "name": product.name,
                     "internal_code": product.internal_code,
+                    "ncm": product.ncm,
+                    "rule_source": profile.source,
+                    "rule_name": getattr(matched_rule, "name", None),
                     "missing_fields": issues,
                 }
             )
@@ -1184,13 +1327,13 @@ def get_rtc_compliance(
         else None
     )
 
-    if mandatory and incomplete_products:
+    if incomplete_products:
         message = (
-            "Emissão IBS/CBS obrigatória para CRT 3. Complete os dados fiscais "
-            "indicados antes de transmitir para a SEFAZ."
+            "Existem produtos com dados fiscais exigíveis ainda não resolvidos. "
+            "Complete o cadastro ou crie uma regra para o grupo correspondente."
         )
     elif mandatory:
-        message = "Cadastro pronto para a obrigatoriedade IBS/CBS do CRT 3."
+        message = "Produtos prontos para emissão, inclusive IBS/CBS obrigatório."
     else:
         message = (
             f"CRT {crt} preservado pelo cronograma atual. IBS/CBS não é "
@@ -1201,7 +1344,7 @@ def get_rtc_compliance(
         "effective_crt": crt,
         "mandatory": mandatory,
         "mandatory_from": mandatory_from.isoformat() if mandatory_from else None,
-        "ready": not mandatory or not incomplete_products,
+        "ready": not incomplete_products,
         "message": message,
         "document_model": model,
         "rates": rates,
@@ -1294,6 +1437,7 @@ def create_fiscal_output_rule(
         raise HTTPException(status_code=400, detail="Vigencia final nao pode ser anterior a inicial.")
     rule = FiscalOutputRule(**data)
     db.add(rule)
+    resume_fiscal_configuration_jobs(db)
     db.commit()
     db.refresh(rule)
     rule = db.scalar(
@@ -1325,6 +1469,7 @@ def update_fiscal_output_rule(
         raise HTTPException(status_code=400, detail="Vigencia final nao pode ser anterior a inicial.")
     for key, value in data.items():
         setattr(rule, key, value)
+    resume_fiscal_configuration_jobs(db)
     db.commit()
     db.refresh(rule)
     rule = db.scalar(
@@ -1585,9 +1730,21 @@ def prepare_fiscal_document(
             selectinload(Sale.client),
         )
         .where(Sale.id == payload.sale_id)
+        .with_for_update()
     )
     if sale is None:
         raise HTTPException(status_code=404, detail="Venda nao encontrada.")
+    existing_document = db.scalar(
+        select(FiscalDocument)
+        .where(
+            FiscalDocument.sale_id == sale.id,
+            FiscalDocument.document_type == payload.document_type,
+            FiscalDocument.status != "cancelled",
+        )
+        .order_by(FiscalDocument.id.desc())
+    )
+    if existing_document is not None:
+        return existing_document
     setting = _get_or_create_settings(db)
     if payload.document_type == "nfce" and not setting.nfce_enabled:
         raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
@@ -1833,12 +1990,74 @@ def update_fiscal_document(
             setattr(document, name, value)
     if payload.items is not None:
         _replace_document_items(db, document, payload.items, current_user)
+    # Se a SEFAZ ja recebeu esta tentativa, o numero permanece no documento.
+    # A edicao apenas recompõe o rascunho para um reenvio idempotente da mesma
+    # serie/numero; documentos ainda sem numero receberao o proximo disponivel.
     document.status = "draft"
     document.sefaz_status_code = None
     document.sefaz_message = "Rascunho fiscal atualizado e pronto para revisao."
+    document.sefaz_protocol = None
+    document.xml_generated = None
+    document.xml_signed = None
+    document.xml_authorized = None
+    document.authorized_at = None
     db.commit()
     db.refresh(document)
     return document
+
+
+@router.post(
+    "/documents/{document_id}/enqueue",
+    response_model=FiscalTransmissionJobRead,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def enqueue_fiscal_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalTransmissionJob:
+    document = db.get(FiscalDocument, document_id)
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    job = enqueue_fiscal_job(
+        db,
+        document,
+        requested_by_user_id=current_user.id,
+        job_type="authorize",
+    )
+    if document.status in {"authorized", "cancelled", "contingency_offline"}:
+        job.status = "completed"
+        job.result_document_id = document.id
+        job.completed_at = datetime.utcnow()
+        job.next_attempt_at = None
+    db.commit()
+    return db.scalar(
+        select(FiscalTransmissionJob)
+        .options(
+            selectinload(FiscalTransmissionJob.document),
+            selectinload(FiscalTransmissionJob.result_document),
+        )
+        .where(FiscalTransmissionJob.id == job.id)
+    )
+
+
+@router.get("/jobs/{job_id}", response_model=FiscalTransmissionJobRead)
+def get_fiscal_transmission_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalTransmissionJob:
+    job = db.scalar(
+        select(FiscalTransmissionJob)
+        .options(
+            selectinload(FiscalTransmissionJob.document),
+            selectinload(FiscalTransmissionJob.result_document),
+        )
+        .where(FiscalTransmissionJob.id == job_id)
+    )
+    if job is None:
+        raise HTTPException(status_code=404, detail="Trabalho fiscal nao encontrado.")
+    return job
 
 
 @router.post("/documents/{document_id}/authorize", response_model=FiscalDocumentRead)
@@ -1858,6 +2077,7 @@ def authorize_fiscal_document(
             selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.original_product),
         )
         .where(FiscalDocument.id == document_id)
+        .with_for_update()
     )
     if document is None:
         raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
@@ -1915,53 +2135,70 @@ def authorize_fiscal_document(
             if document.sale is not None
             else _manual_fiscal_sale_view(document)
         )
-        if document.document_type == "nfce":
-            result = authorize_nfce(setting, document, fiscal_sale)
-        else:
-            # Em homologacao pode haver numeros autorizados fora deste banco.
-            # A rejeicao 539 traz a chave conflitante; avancamos somente quando
-            # a propria SEFAZ comprova a duplicidade externa.
-            for _ in range(10):
-                result = authorize_nfe(setting, document, fiscal_sale)
-                duplicate_key = (
-                    _duplicate_nfe_key(result.message)
-                    if result.status_code == "539"
-                    and setting.environment == "homologacao"
-                    else None
+        # NFC-e e NF-e seguem a mesma regra: rejeicao comum conserva o numero.
+        # Somente a rejeicao 539, cuja resposta traz a chave que a SEFAZ ja
+        # conhece, comprova que outro emissor/PDV consumiu aquele numero.
+        model = "65" if document.document_type == "nfce" else "55"
+        authorize_document = authorize_nfce if document.document_type == "nfce" else authorize_nfe
+        for _ in range(10):
+            result = authorize_document(setting, document, fiscal_sale)
+            duplicate_key = (
+                _duplicate_nfe_key(result.message)
+                if result.status_code == "539"
+                else None
+            )
+            if duplicate_key is None or duplicate_key[20:22] != model:
+                break
+            duplicate_series = int(duplicate_key[22:25])
+            duplicate_number = int(duplicate_key[25:34])
+            configured_series = int(
+                document.series
+                or (setting.nfce_series if document.document_type == "nfce" else setting.nfe_series)
+                or 1
+            )
+            if duplicate_series != configured_series:
+                break
+            if document.document_type == "nfce":
+                setting.nfce_next_number = max(
+                    int(setting.nfce_next_number or 1), duplicate_number + 1
                 )
-                if duplicate_key is None or duplicate_key[20:22] != "55":
-                    break
-                duplicate_series = int(duplicate_key[22:25])
-                duplicate_number = int(duplicate_key[25:34])
-                if duplicate_series != int(document.series or setting.nfe_series or 1):
-                    break
-                setting.nfe_next_number = max(
-                    int(setting.nfe_next_number or 1),
-                    duplicate_number + 1,
-                )
-                document.number = None
-                document.access_key = None
-                document.xml_generated = None
-                document.xml_signed = None
-                document.xml_authorized = None
-                db.flush()
-                document.number = _next_available_fiscal_number(
-                    db,
-                    environment=document.environment,
-                    document_type="nfe",
-                    series=int(document.series),
-                    configured_next_number=int(setting.nfe_next_number),
-                )
-                setting.nfe_next_number = max(
-                    int(setting.nfe_next_number),
-                    int(document.number) + 1,
-                )
+                configured_next_number = int(setting.nfce_next_number)
             else:
-                raise NfceValidationError(
-                    "A SEFAZ informou dez numeros de NF-e consecutivos ja utilizados. "
-                    "Confira a numeracao fiscal antes de continuar."
+                setting.nfe_next_number = max(
+                    int(setting.nfe_next_number or 1), duplicate_number + 1
                 )
-    except (NfceValidationError, RtcComplianceError) as exc:
+                configured_next_number = int(setting.nfe_next_number)
+            document.number = None
+            document.access_key = None
+            document.xml_generated = None
+            document.xml_signed = None
+            document.xml_authorized = None
+            db.flush()
+            document.number = _next_available_fiscal_number(
+                db,
+                environment=document.environment,
+                document_type=document.document_type,
+                series=configured_series,
+                configured_next_number=configured_next_number,
+            )
+        else:
+            raise NfceValidationError(
+                "A SEFAZ informou dez numeros fiscais consecutivos ja utilizados. "
+                "Confira a numeracao fiscal antes de continuar."
+            )
+    except HTTPException:
+        db.rollback()
+        raise
+    except RtcComplianceError as exc:
+        # A venda já foi concluída. Uma lacuna cadastral não deve transformá-la
+        # em erro nem consumir numeração: a transmissão aguarda configuração.
+        document.status = "pending_configuration"
+        document.sefaz_status_code = "CONFIGURACAO_FISCAL"
+        document.sefaz_message = str(exc)
+        db.commit()
+        db.refresh(document)
+        return document
+    except NfceValidationError as exc:
         document.status = "rejected"
         document.sefaz_status_code = "VALIDACAO"
         document.sefaz_message = _friendly_sefaz_message("VALIDACAO", str(exc))
@@ -1971,7 +2208,14 @@ def authorize_fiscal_document(
     except Exception as exc:
         if document.document_type == "nfce" and _is_sefaz_connection_failure(exc):
             try:
-                result = prepare_nfce_offline_contingency(setting, document, fiscal_sale)
+                return _create_timeout_contingency(
+                    db,
+                    document=document,
+                    setting=setting,
+                    fiscal_sale=fiscal_sale,
+                    requested_by_user_id=current_user.id,
+                    error_message=f"{type(exc).__name__}: {str(exc)}",
+                )
             except NfceValidationError as validation_exc:
                 document.status = "rejected"
                 document.sefaz_status_code = "VALIDACAO_CONTINGENCIA"
@@ -1979,17 +2223,6 @@ def authorize_fiscal_document(
                 db.commit()
                 db.refresh(document)
                 return document
-            document.status = result.status
-            document.sefaz_status_code = result.status_code
-            document.sefaz_message = (
-                f"{result.message} Motivo da contingencia: {type(exc).__name__}: {str(exc)[:300]}"
-            )
-            document.sefaz_protocol = None
-            document.xml_authorized = None
-            setting.nfce_next_number = max(setting.nfce_next_number, int(document.number or 0) + 1)
-            db.commit()
-            db.refresh(document)
-            return document
         document.status = "rejected"
         document.sefaz_status_code = "ERRO_ENVIO"
         document.sefaz_message = _friendly_sefaz_message(
@@ -2047,6 +2280,7 @@ def transmit_contingency_fiscal_document(
             selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
         )
         .where(FiscalDocument.id == document_id)
+        .with_for_update()
     )
     if document is None:
         raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
@@ -2056,7 +2290,7 @@ def transmit_contingency_fiscal_document(
         return document
     if document.status != "contingency_offline":
         raise HTTPException(status_code=400, detail="Somente NFC-e em contingencia offline pode ser transmitida.")
-    setting = _get_or_create_settings(db)
+    setting = _locked_fiscal_setting(db)
     try:
         result = transmit_nfce_offline_contingency(setting, document)
     except NfceValidationError as exc:
@@ -2085,6 +2319,10 @@ def transmit_contingency_fiscal_document(
         if document.sale_id is None:
             _post_manual_document_stock_out(db, document, current_user.id)
         _refresh_document_fiscal_balances(db, document)
+        setting.nfce_last_authorized_number = max(
+            int(setting.nfce_last_authorized_number or 0),
+            int(document.number or 0),
+        )
     db.commit()
     db.refresh(document)
     return document

@@ -1,5 +1,7 @@
 # 2026-06-27 - PDV offline e NFC-e contingencia
 
+> **Historico/superado em parte:** a retransmissao fiscal nao depende mais da tela aberta. A arquitetura vigente esta em [[2026-08-21 - Fila fiscal transacional e evolucao para broker]].
+
 ## Resumo
 
 Foi concluida a entrega do PDV com memoria local/offline e do motor fiscal NFC-e com contingencia offline `tpEmis=9`.

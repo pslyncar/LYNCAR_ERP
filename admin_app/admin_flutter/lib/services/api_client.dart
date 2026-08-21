@@ -928,6 +928,14 @@ class ApiClient {
         .toList();
   }
 
+  Future<Product> getProduct(String token, int productId) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/products/$productId'),
+      headers: _authHeaders(token),
+    );
+    return Product.fromJson(_decodeResponse(response));
+  }
+
   Future<Product> createProduct(String token, ProductPayload payload) async {
     final response = await http.post(
       Uri.parse('$baseUrl/products'),
@@ -2311,6 +2319,14 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     return FiscalDocument.fromJson(_decodeResponse(response));
+  }
+
+  Future<void> enqueueFiscalDocument(String token, int documentId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/fiscal/documents/$documentId/enqueue'),
+      headers: _authHeaders(token),
+    );
+    _decodeResponse(response);
   }
 
   Future<FiscalDocument> updateFiscalDocument(

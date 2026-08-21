@@ -214,6 +214,8 @@ FISCAL_SETTING_COLUMNS = [
 ]
 
 FISCAL_DOCUMENT_COLUMNS = [
+    ("fiscal_client_id", "INTEGER REFERENCES clients(id) ON DELETE SET NULL"),
+    ("origin_document_id", "INTEGER REFERENCES fiscal_documents(id) ON DELETE SET NULL"),
     ("cancellation_reason", "VARCHAR(255)"),
     ("cancellation_protocol", "VARCHAR(80)"),
     ("cancellation_status_code", "VARCHAR(20)"),
@@ -902,6 +904,12 @@ def add_fiscal_setting_columns(bind_engine=engine) -> None:
                     """
                 )
             )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_fiscal_documents_origin_document_id "
+                "ON fiscal_documents(origin_document_id)"
+            )
+        )
 
 
 def add_production_order_columns(bind_engine=engine) -> None:

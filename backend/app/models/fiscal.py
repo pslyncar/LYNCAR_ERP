@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, LargeBinary, Numeric, String, Text, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, LargeBinary, Numeric, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -82,6 +82,10 @@ class FiscalDocument(Base):
     __tablename__ = "fiscal_documents"
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    origin_document_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("fiscal_documents.id", ondelete="SET NULL"),
+        index=True,
+    )
     sale_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sales.id", ondelete="SET NULL"), index=True)
     fiscal_client_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
     document_type: Mapped[str] = mapped_column(String(10), nullable=False, default="nfce")
@@ -151,6 +155,54 @@ class FiscalDocument(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+
+class FiscalTransmissionJob(Base):
+    __tablename__ = "fiscal_transmission_jobs"
+    __table_args__ = (
+        UniqueConstraint(
+            "document_id",
+            "job_type",
+            name="uq_fiscal_transmission_job_document_type",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    document_id: Mapped[int] = mapped_column(
+        ForeignKey("fiscal_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    result_document_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("fiscal_documents.id", ondelete="SET NULL"),
+        index=True,
+    )
+    requested_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"),
+        index=True,
+    )
+    job_type: Mapped[str] = mapped_column(String(40), nullable=False, default="authorize")
+    lane_key: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(nullable=False, default=0)
+    next_attempt_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True), index=True)
+    locked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    document = relationship("FiscalDocument", foreign_keys=[document_id])
+    result_document = relationship("FiscalDocument", foreign_keys=[result_document_id])
 
 
 class FiscalDocumentItem(Base):

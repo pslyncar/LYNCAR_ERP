@@ -375,9 +375,9 @@ def build_nfe_xml(
         ]:
             _text(prod, tag, value)
         cest = _digits(getattr(item, "cest", None) or (getattr(product, "cest", None) if product else ""))
-        if cest:
+        if len(cest) == 7:
             _text(prod, "CEST", cest)
-        cbenef = getattr(item, "cbenef", None)
+        cbenef = (getattr(item, "cbenef", None) or "").strip()
         if cbenef:
             _text(prod, "cBenef", cbenef)
         for tag, value in [

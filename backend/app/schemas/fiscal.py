@@ -13,6 +13,10 @@ FiscalDocumentStatus = Literal[
     "signed",
     "sent",
     "processing",
+    "contingency_offline",
+    "pending_return",
+    "not_found_after_timeout",
+    "duplicate_authorization_review",
     "authorized",
     "rejected",
     "cancelled",
@@ -427,6 +431,7 @@ class FiscalOutputRulePreviewRead(BaseModel):
 
 class FiscalDocumentRead(BaseModel):
     id: int
+    origin_document_id: int | None = None
     sale_id: int | None
     fiscal_client_id: int | None = None
     document_type: FiscalDocumentType
@@ -471,6 +476,25 @@ class FiscalDocumentRead(BaseModel):
     cancellation_status_code: str | None
     cancellation_message: str | None
     fiscal_items: list[FiscalDocumentItemDraftRead] = []
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FiscalTransmissionJobRead(BaseModel):
+    id: int
+    document_id: int
+    result_document_id: int | None = None
+    job_type: str
+    lane_key: str
+    status: str
+    attempts: int
+    next_attempt_at: datetime | None = None
+    completed_at: datetime | None = None
+    last_error: str | None = None
+    document: FiscalDocumentRead | None = None
+    result_document: FiscalDocumentRead | None = None
     created_at: datetime
     updated_at: datetime
 

@@ -99,6 +99,11 @@ def _gtin_or_sem_gtin(value: str | None) -> str:
     return digits if _valid_gtin(digits) else "SEM GTIN"
 
 
+def _optional_cest(value: str | None) -> str | None:
+    digits = _digits(value)
+    return digits if len(digits) == 7 else None
+
+
 def _text(parent: etree._Element, tag: str, value: object | None) -> etree._Element:
     child = etree.SubElement(parent, f"{{{NFE_NS}}}{tag}")
     child.text = "" if value is None else str(value)
@@ -384,8 +389,6 @@ def build_nfce_xml(
             ("cEAN", _gtin_or_sem_gtin(item.barcode)),
             ("xProd", homologation_product_name if tp_amb == "2" else item.description),
             ("NCM", _digits(getattr(item, "ncm", None) or (product.ncm if product else ""))),
-            ("CEST", _digits(getattr(item, "cest", None) or (getattr(product, "cest", None) if product else ""))),
-            ("cBenef", getattr(item, "cbenef", None)),
             ("CFOP", tax_profile.cfop if product else ""),
             ("uCom", (item.unit or "UN").upper()[:6]),
             ("qCom", _quantity(item.quantity)),
@@ -397,6 +400,15 @@ def build_nfce_xml(
             ("vUnTrib", _money(item.unit_price)),
         ]:
             _text(prod, tag, value)
+        cest = _optional_cest(
+            getattr(item, "cest", None)
+            or (getattr(product, "cest", None) if product else None)
+        )
+        if cest:
+            _text(prod, "CEST", cest)
+        cbenef = (getattr(item, "cbenef", None) or "").strip()
+        if cbenef:
+            _text(prod, "cBenef", cbenef)
         if Decimal(item.discount_amount or 0) > 0:
             _text(prod, "vDesc", _money(item.discount_amount))
         _text(prod, "indTot", "1")

@@ -37,11 +37,32 @@ from app.services.product_batches import apply_batch_out
 from app.services.product_costs import apply_stock_out, base_unit_cost, refresh_inventory_value
 from app.services.fiscal_assistant import learn_from_product
 from app.services.fiscal_stock import refresh_many_product_fiscal_balances
+from app.services.fiscal_queue import resume_fiscal_configuration_jobs
 from app.services.tenancy import normalize_company_code
 from app.services.unit_conversion import are_units_compatible
 from app.services.uploads import delete_public_file_if_safe
 
 router = APIRouter()
+
+FISCAL_CONFIGURATION_FIELDS = {
+    "ncm",
+    "cest",
+    "cfop_sale",
+    "origin",
+    "cst",
+    "csosn",
+    "icms_rate",
+    "pis_rate",
+    "cofins_rate",
+    "ibs_cbs_cst",
+    "ibs_cbs_classification",
+    "cbs_rate",
+    "ibs_state_rate",
+    "ibs_city_rate",
+    "selective_tax_cst",
+    "selective_tax_classification",
+    "selective_tax_rate",
+}
 
 COMPOSITION_COMPONENT_TYPES = {"materia_prima", "insumo", "embalagem", "peca"}
 STOCK_WITHDRAWAL_REASON_LABELS = {
@@ -734,6 +755,8 @@ def update_product(
 
     learn_from_product(db, product)
     ensure_initial_product_batch(db, product)
+    if FISCAL_CONFIGURATION_FIELDS.intersection(update_data):
+        resume_fiscal_configuration_jobs(db)
     db.commit()
     if "image_url" in update_data and old_image_url != product.image_url:
         _delete_product_image_if_orphan(db, old_image_url, product.id, credentials)

@@ -35,6 +35,13 @@ Modulo de ponto de venda para operacao de caixa, separado da tela administrativa
 - Esse app deve consumir a mesma API, mas autenticar o caixa por codigo/senha de operador em vez de exigir acesso completo ao ERP administrativo.
 - Registrar abertura, sangria, fechamento e auditoria do caixa no banco de dados.
 
+## Arquitetura fiscal e sincronizacao
+
+- A fila local duravel do PDV e a fila fiscal transacional do backend sao a garantia de entrega.
+- WebSocket apenas avisa sobre alteracoes; ao reconectar, o PDV sempre reconcilia pela API.
+- Numeracao fiscal pertence ao backend e e serializada por empresa, ambiente, modelo e serie.
+- A decisao completa e os criterios para uma futura migracao a RabbitMQ/servico gerenciado estao em [[2026-08-21 - Fila fiscal transacional e evolucao para broker]].
+
 ## Comprovante da venda
 
 - Toda venda finalizada no PDV deve gerar um comprovante.

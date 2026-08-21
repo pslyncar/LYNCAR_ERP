@@ -60,6 +60,24 @@ def _clean(value: Any) -> Any:
     return value
 
 
+def _product_value(product: Any, name: str) -> Any:
+    if product is None:
+        return None
+    if name == "cfop":
+        return _clean(getattr(product, "cfop_sale", None))
+    return _clean(getattr(product, name, None))
+
+
+def _first_configured(product: Any, rule: Any, name: str, default: Any = None) -> Any:
+    """Preserva o cadastro explícito e usa a regra apenas para completar lacunas."""
+
+    product_value = _product_value(product, name)
+    if product_value is not None:
+        return product_value
+    rule_value = _clean(getattr(rule, name, None)) if rule is not None else None
+    return rule_value if rule_value is not None else default
+
+
 class _OutputTaxProductProxy:
     def __init__(self, product: Any, profile: OutputTaxProfile):
         self._product = product
@@ -264,10 +282,10 @@ def resolve_output_tax_profile(
     operation_type: str = "sale",
     uf_destination: str | None = None,
 ) -> OutputTaxProfile:
-    """Resolve a tributacao de saida sem copiar tributacao de entrada.
+    """Resolve a tributacao de saida sem sobrescrever o cadastro do produto.
 
-    CFOP e ICMS sao definidos por regra de saida ou pelo padrao do emitente;
-    o cadastro do produto fornece somente os dados classificatorios.
+    A ordem de precedência é cadastro explícito, regra fiscal aplicável e,
+    por último, padrão seguro do emitente. A regra apenas completa lacunas.
     """
     rule = resolve_output_rule(
         setting,
@@ -287,55 +305,41 @@ def resolve_output_tax_profile(
     default_origin = "0"
 
     if rule is not None:
-        rule_csosn = digits(getattr(rule, "csosn", None)) or None
+        resolved_csosn = _first_configured(product, rule, "csosn")
         rule_product = type(
             "_RuleProduct",
             (),
-            {"csosn": rule_csosn},
+            {"csosn": digits(resolved_csosn) or None},
         )()
         return OutputTaxProfile(
-            cfop=_clean(getattr(rule, "cfop", None)) or default_cfop,
-            origin=_clean(getattr(rule, "origin", None)) or _clean(getattr(product, "origin", None)) or default_origin,
-            cst=_clean(getattr(rule, "cst", None)) or _clean(getattr(product, "cst", None)),
-            csosn=effective_csosn(setting, rule_product, model=model)
-            or effective_csosn(setting, product, model=model),
-            pis_cst=_clean(getattr(rule, "pis_cst", None)) or "07",
-            cofins_cst=_clean(getattr(rule, "cofins_cst", None)) or "07",
-            icms_rate=getattr(rule, "icms_rate", None)
-            if getattr(rule, "icms_rate", None) is not None
-            else getattr(product, "icms_rate", None),
-            pis_rate=getattr(rule, "pis_rate", None)
-            if getattr(rule, "pis_rate", None) is not None
-            else getattr(product, "pis_rate", None),
-            cofins_rate=getattr(rule, "cofins_rate", None)
-            if getattr(rule, "cofins_rate", None) is not None
-            else getattr(product, "cofins_rate", None),
-            ibs_cbs_cst=_clean(getattr(rule, "ibs_cbs_cst", None)) or _clean(getattr(product, "ibs_cbs_cst", None)),
-            ibs_cbs_classification=_clean(getattr(rule, "ibs_cbs_classification", None))
-            or _clean(getattr(product, "ibs_cbs_classification", None)),
-            cbs_rate=getattr(rule, "cbs_rate", None)
-            if getattr(rule, "cbs_rate", None) is not None
-            else getattr(product, "cbs_rate", None),
-            ibs_state_rate=getattr(rule, "ibs_state_rate", None)
-            if getattr(rule, "ibs_state_rate", None) is not None
-            else getattr(product, "ibs_state_rate", None),
-            ibs_city_rate=getattr(rule, "ibs_city_rate", None)
-            if getattr(rule, "ibs_city_rate", None) is not None
-            else getattr(product, "ibs_city_rate", None),
-            selective_tax_cst=_clean(getattr(rule, "selective_tax_cst", None))
-            or _clean(getattr(product, "selective_tax_cst", None)),
-            selective_tax_classification=_clean(getattr(rule, "selective_tax_classification", None))
-            or _clean(getattr(product, "selective_tax_classification", None)),
-            selective_tax_rate=getattr(rule, "selective_tax_rate", None)
-            if getattr(rule, "selective_tax_rate", None) is not None
-            else getattr(product, "selective_tax_rate", None),
+            cfop=_first_configured(product, rule, "cfop", default_cfop),
+            origin=_first_configured(product, rule, "origin", default_origin),
+            cst=_first_configured(product, rule, "cst"),
+            csosn=effective_csosn(setting, rule_product, model=model),
+            pis_cst=_first_configured(product, rule, "pis_cst", "07"),
+            cofins_cst=_first_configured(product, rule, "cofins_cst", "07"),
+            icms_rate=_first_configured(product, rule, "icms_rate"),
+            pis_rate=_first_configured(product, rule, "pis_rate"),
+            cofins_rate=_first_configured(product, rule, "cofins_rate"),
+            ibs_cbs_cst=_first_configured(product, rule, "ibs_cbs_cst"),
+            ibs_cbs_classification=_first_configured(
+                product, rule, "ibs_cbs_classification"
+            ),
+            cbs_rate=_first_configured(product, rule, "cbs_rate"),
+            ibs_state_rate=_first_configured(product, rule, "ibs_state_rate"),
+            ibs_city_rate=_first_configured(product, rule, "ibs_city_rate"),
+            selective_tax_cst=_first_configured(product, rule, "selective_tax_cst"),
+            selective_tax_classification=_first_configured(
+                product, rule, "selective_tax_classification"
+            ),
+            selective_tax_rate=_first_configured(product, rule, "selective_tax_rate"),
             source="fiscal_output_rule" if rule.__class__.__name__ == "FiscalOutputRule" else "product_tax_rule",
         )
 
     product_csosn = effective_csosn(setting, product, model=model)
     default_cst = "00" if crt == "3" else None
     return OutputTaxProfile(
-        cfop=default_cfop,
+        cfop=_product_value(product, "cfop") or default_cfop,
         origin=_clean(getattr(product, "origin", None)) or default_origin,
         cst=_clean(getattr(product, "cst", None)) or default_cst,
         csosn=product_csosn,

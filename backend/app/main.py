@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.router import api_router
 from app.core.config import get_settings
 from app.services.tenancy import seed_default_company
+from app.services.fiscal_queue import fiscal_queue_worker
 
 settings = get_settings()
 
@@ -23,6 +24,12 @@ app.mount("/public", StaticFiles(directory=str(upload_dir)), name="public")
 @app.on_event("startup")
 def startup_seed_master_company() -> None:
     seed_default_company()
+    fiscal_queue_worker.start()
+
+
+@app.on_event("shutdown")
+def shutdown_fiscal_queue_worker() -> None:
+    fiscal_queue_worker.stop()
 
 app.add_middleware(
     CORSMiddleware,

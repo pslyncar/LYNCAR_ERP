@@ -11,6 +11,7 @@ import '../services/fiscal_print.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
 import '../widgets/responsive_data_table.dart';
+import 'fiscal_document_correction_screen.dart';
 
 class FiscalDocumentsScreen extends StatefulWidget {
   const FiscalDocumentsScreen({
@@ -39,6 +40,8 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
   String _typeFilter = 'all';
   String _statusFilter = 'all';
   final _search = TextEditingController();
+  FiscalDocument? _editingDocument;
+  List<Client> _correctionClients = const [];
 
   bool get _canEmit => widget.session.can('fiscal:emit');
   bool get _canCancel => widget.session.can('fiscal:cancel');
@@ -174,6 +177,15 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final editingDocument = _editingDocument;
+    if (editingDocument != null) {
+      return FiscalDocumentCorrectionScreen(
+        document: editingDocument,
+        clients: _correctionClients,
+        onBack: () => setState(() => _editingDocument = null),
+        onSave: _saveCorrection,
+      );
+    }
     final filtered = _filteredDocuments;
     final authorized = _documents
         .where((document) => document.status == 'authorized')
@@ -182,6 +194,7 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         .where(
           (document) =>
               document.status == 'draft' ||
+              document.status == 'pending_configuration' ||
               document.status == 'pending_certificate' ||
               document.status == 'xml_generated' ||
               document.status == 'signed' ||
@@ -344,6 +357,10 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                             DropdownMenuItem(
                               value: 'draft',
                               child: Text('Preparada'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'pending_configuration',
+                              child: Text('Aguardando configuração fiscal'),
                             ),
                             DropdownMenuItem(
                               value: 'pending_certificate',
@@ -1997,7 +2014,10 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
     );
   }
 
-  Future<void> _reviewDocument(FiscalDocument document) async {
+  // Mantido temporariamente apenas como referência do editor antigo enquanto
+  // a tela dedicada cobre todos os campos fiscais.
+  // ignore: unused_element
+  Future<void> _reviewDocumentDialog(FiscalDocument document) async {
     final nature = TextEditingController(text: document.operationNature ?? '');
     final notes = TextEditingController(text: document.fiscalNotes ?? '');
     final itemControllers = [
@@ -2156,6 +2176,67 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         controllers.origin.dispose();
         controllers.csosn.dispose();
       }
+    }
+  }
+
+  Future<void> _reviewDocument(FiscalDocument document) async {
+    try {
+      final clients = await _api.listClients(widget.session.token);
+      if (!mounted) return;
+      setState(() {
+        _correctionClients = clients.where((client) => client.active).toList();
+        _editingDocument = document;
+        _error = null;
+      });
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    }
+  }
+
+  Future<void> _saveCorrection(
+    Map<String, dynamic> fields,
+    List<FiscalDraftItem> items,
+    bool resend,
+  ) async {
+    final document = _editingDocument;
+    if (document == null) return;
+    final extra = Map<String, dynamic>.from(fields);
+    final operationNature = extra.remove('operation_nature') as String?;
+    final fiscalNotes = extra.remove('fiscal_notes') as String?;
+    final updated = await _api.updateFiscalDocument(
+      widget.session.token,
+      document.id,
+      operationNature: operationNature,
+      fiscalNotes: fiscalNotes,
+      items: items,
+      additionalFields: extra,
+    );
+    if (resend) {
+      await _api.enqueueFiscalDocument(widget.session.token, document.id);
+    }
+    if (!mounted) return;
+    setState(() {
+      _documents = [
+        for (final item in _documents)
+          if (item.id == updated.id) updated else item,
+      ];
+      _editingDocument = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          resend
+              ? updated.number == null
+                    ? 'Correções salvas. A nota entrou na fila e receberá o próximo número ao transmitir.'
+                    : 'Correções salvas. O número ${updated.number} entrou na fila para reenvio.'
+              : 'Correções fiscais salvas.',
+        ),
+      ),
+    );
+    if (resend) {
+      Future<void>.delayed(const Duration(seconds: 2), () {
+        if (mounted) _load();
+      });
     }
   }
 }
@@ -2345,7 +2426,9 @@ class _StatusChip extends StatelessWidget {
       'authorized' => const Color(0xFF047857),
       'contingency_offline' => const Color(0xFFD97706),
       'rejected' || 'cancelled' => const Color(0xFFB91C1C),
-      'draft' || 'pending_certificate' => const Color(0xFFB45309),
+      'draft' ||
+      'pending_certificate' ||
+      'pending_configuration' => const Color(0xFFB45309),
       _ => const Color(0xFF475569),
     };
     return Container(
@@ -2490,6 +2573,7 @@ const _fiscalOperationOptions = [
 String _statusLabel(String status) => switch (status) {
   'draft' => 'Preparada',
   'pending_certificate' => 'Aguardando A1',
+  'pending_configuration' => 'Aguardando configuração fiscal',
   'xml_generated' => 'XML gerado',
   'signed' => 'Assinada',
   'sent' => 'Enviada',

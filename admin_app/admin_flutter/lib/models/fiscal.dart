@@ -253,11 +253,17 @@ class RtcIncompleteProduct {
     required this.name,
     required this.missingFields,
     this.internalCode,
+    this.ncm,
+    this.ruleSource,
+    this.ruleName,
   });
 
   final int id;
   final String name;
   final String? internalCode;
+  final String? ncm;
+  final String? ruleSource;
+  final String? ruleName;
   final List<String> missingFields;
 
   factory RtcIncompleteProduct.fromJson(Map<String, dynamic> json) {
@@ -265,6 +271,9 @@ class RtcIncompleteProduct {
       id: json['id'] as int,
       name: json['name'] as String? ?? 'Produto sem nome',
       internalCode: json['internal_code'] as String?,
+      ncm: json['ncm'] as String?,
+      ruleSource: json['rule_source'] as String?,
+      ruleName: json['rule_name'] as String?,
       missingFields: (json['missing_fields'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(growable: false),
@@ -550,6 +559,7 @@ class FiscalDocument {
     required this.createdAt,
     required this.updatedAt,
     this.saleId,
+    this.fiscalClientId,
     this.series,
     this.number,
     this.accessKey,
@@ -592,6 +602,7 @@ class FiscalDocument {
 
   final int id;
   final int? saleId;
+  final int? fiscalClientId;
   final String documentType;
   final String model;
   final int? series;
@@ -641,6 +652,7 @@ class FiscalDocument {
     return FiscalDocument(
       id: json['id'] as int,
       saleId: json['sale_id'] as int?,
+      fiscalClientId: json['fiscal_client_id'] as int?,
       documentType: json['document_type'] as String? ?? 'nfce',
       model: json['model'] as String? ?? '65',
       series: json['series'] as int?,

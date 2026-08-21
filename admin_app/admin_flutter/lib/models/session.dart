@@ -115,7 +115,9 @@ class Session {
   bool canMaster(String permission) =>
       permissions.contains('master:manage') || permissions.contains(permission);
 
-  bool get canUseFiscal => hasModule('fiscal') && _planAtLeastPro(planCode);
+  // O módulo já chega resolvido pela API considerando plano, segmento e
+  // liberações específicas da empresa. Não reaplique uma trava de plano aqui.
+  bool get canUseFiscal => hasModule('fiscal');
 
   bool get isTokenExpired {
     final expiresAt = _expiresAtFromToken(token);
@@ -133,16 +135,6 @@ class Session {
       return false;
     }
     return DateTime.now().toUtc().add(duration).isAfter(value);
-  }
-
-  static bool _planAtLeastPro(String value) {
-    final normalized = switch (value.trim().toLowerCase()) {
-      'starter' || 'erp' => 'start',
-      'premium' => 'business',
-      final code => code,
-    };
-    const order = {'start': 0, 'pro': 1, 'business': 2, 'enterprise': 3};
-    return (order[normalized] ?? 0) >= order['pro']!;
   }
 
   static String _roleFromToken(String token) {

@@ -79,6 +79,36 @@ def rtc_product_issues(setting: Any, product: Any, *, model: str) -> list[str]:
     return issues
 
 
+def fiscal_product_issues(
+    setting: Any,
+    product: Any,
+    *,
+    model: str,
+    issue_date: date | None = None,
+) -> list[str]:
+    """Retorna somente pendências exigíveis para a emissão na data informada."""
+
+    profile = resolve_output_tax_profile(setting, product, model=model)
+    issues: list[str] = []
+    if len(_digits(getattr(product, "ncm", None))) != 8:
+        issues.append("NCM deve ter 8 dígitos")
+    if len(_digits(profile.cfop)) != 4:
+        issues.append("CFOP de saída deve ter 4 dígitos")
+
+    crt = effective_crt(setting)
+    if crt == "3":
+        if len(_digits(profile.cst)) != 2:
+            issues.append("CST ICMS deve ter 2 dígitos")
+    elif len(_digits(profile.csosn)) != 3:
+        issues.append("CSOSN deve ter 3 dígitos")
+
+    if is_rtc_mandatory(setting, issue_date):
+        for issue in rtc_product_issues(setting, product, model=model):
+            if issue not in issues:
+                issues.append(issue)
+    return issues
+
+
 def validate_rtc_document(
     setting: Any,
     sale: Any,
@@ -86,13 +116,11 @@ def validate_rtc_document(
     model: str,
     issue_date: date | None = None,
 ) -> None:
-    """Validate all mandatory RTC data before sending a document to SEFAZ."""
+    """Valida dados fiscais exigíveis antes de reservar número e transmitir."""
 
     current_date = issue_date or date.today()
-    if not is_rtc_mandatory(setting, current_date):
-        return
-
-    rtc_rates_for(current_date)
+    if is_rtc_mandatory(setting, current_date):
+        rtc_rates_for(current_date)
     issues: list[str] = []
     for index, item in enumerate(getattr(sale, "items", None) or [], start=1):
         product = getattr(item, "product", None)
@@ -100,12 +128,17 @@ def validate_rtc_document(
         if product is None:
             issues.append(f"{label}: produto não encontrado")
             continue
-        for issue in rtc_product_issues(setting, product, model=model):
+        for issue in fiscal_product_issues(
+            setting,
+            product,
+            model=model,
+            issue_date=current_date,
+        ):
             issues.append(f"{label}: {issue}")
 
     if issues:
         unique_issues = list(dict.fromkeys(issues))
         raise RtcComplianceError(
-            "Emissão bloqueada: configuração IBS/CBS obrigatória incompleta. "
+            "Emissão aguardando configuração fiscal. "
             + "; ".join(unique_issues)
         )

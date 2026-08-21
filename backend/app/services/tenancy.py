@@ -13,7 +13,7 @@ from app.models import master_permission as _master_permission  # noqa: F401
 from app.models import master_support as _master_support  # noqa: F401
 from app.models.master_user import MasterUser
 from app.models.master_user_index import MasterUserIndex
-from app.services.company_modules import ALL_MODULES, filter_modules_by_plan
+from app.services.company_modules import ALL_MODULES, normalize_modules
 
 
 def normalize_company_code(value: str) -> str:
@@ -64,7 +64,10 @@ def get_enabled_modules_for_company(company_code: str) -> list[str]:
     company = get_company_by_code(company_code)
     if company is None:
         return ALL_MODULES
-    return filter_modules_by_plan(company.enabled_modules or ALL_MODULES, company.plan)
+    # enabled_modules é a decisão final do master: pode vir do plano, segmento
+    # ou de uma liberação específica. Refiltrar pelo plano aqui apagava a
+    # exceção individual concedida à empresa.
+    return normalize_modules(company.enabled_modules or ALL_MODULES)
 
 
 @lru_cache(maxsize=128)
