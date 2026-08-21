@@ -2,11 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:web/web.dart' as web;
 
 import '../models/marketplace.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
+import '../services/browser_redirect.dart';
 import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
 
@@ -109,7 +109,7 @@ class _MarketplacesScreenState extends State<MarketplacesScreen> {
         return;
       }
       await Clipboard.setData(ClipboardData(text: auth.authUrl));
-      web.window.open(authUrl, '_blank', 'noopener,noreferrer');
+      redirectToUrl(authUrl, newTab: true);
       _startMercadoLivrePolling();
     } on ApiException catch (error) {
       if (!mounted) return;

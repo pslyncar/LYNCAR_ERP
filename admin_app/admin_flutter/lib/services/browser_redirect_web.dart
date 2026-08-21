@@ -12,3 +12,11 @@ void redirectToUrl(String url, {bool newTab = false}) {
   }
   html.window.location.href = url;
 }
+
+void writeBrowserStorage(String key, String value) {
+  html.window.localStorage[key] = value;
+}
+
+void closeBrowserWindow() {
+  html.window.close();
+}

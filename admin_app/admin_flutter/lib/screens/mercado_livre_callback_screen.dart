@@ -3,7 +3,8 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:web/web.dart' as web;
+
+import '../services/browser_redirect.dart';
 
 class MercadoLivreCallbackApp extends StatelessWidget {
   const MercadoLivreCallbackApp({super.key});
@@ -75,7 +76,7 @@ class _MercadoLivreCallbackScreenState
         _setError(_extractError(response));
         return;
       }
-      web.window.localStorage.setItem(
+      writeBrowserStorage(
         'lynkar_mercado_livre_connected_at',
         DateTime.now().toIso8601String(),
       );
@@ -88,7 +89,7 @@ class _MercadoLivreCallbackScreenState
       });
       Timer(const Duration(seconds: 2), () {
         try {
-          web.window.close();
+          closeBrowserWindow();
         } catch (_) {
           // O navegador pode bloquear o fechamento quando a aba não foi aberta por script.
         }
@@ -185,7 +186,7 @@ class _MercadoLivreCallbackScreenState
                     ),
                     const SizedBox(height: 24),
                     FilledButton(
-                      onPressed: () => web.window.close(),
+                      onPressed: closeBrowserWindow,
                       child: const Text('Voltar para o LYNCAR'),
                     ),
                   ],
