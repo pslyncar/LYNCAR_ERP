@@ -189,6 +189,16 @@ class FiscalDocumentPrepare(BaseModel):
     fiscal_notes: str | None = Field(default=None, max_length=2000)
 
 
+class FiscalDocumentPrepareFromSales(BaseModel):
+    sale_ids: list[int] = Field(min_length=1, max_length=200)
+    fiscal_client_id: int = Field(gt=0)
+    document_type: FiscalDocumentType = "nfe"
+    consumer_cpf: str | None = Field(default=None, max_length=14)
+    operation_nature: str | None = Field(default=None, max_length=120)
+    payment_condition: Literal["vista", "prazo", "outros"] = "prazo"
+    fiscal_notes: str | None = Field(default=None, max_length=2000)
+
+
 class FiscalDocumentItemDraftRead(BaseModel):
     id: int | None = None
     sale_item_id: int | None = None
@@ -434,6 +444,8 @@ class FiscalDocumentRead(BaseModel):
     origin_document_id: int | None = None
     sale_id: int | None
     fiscal_client_id: int | None = None
+    source_sale_ids: list[int] = []
+    source_sale_numbers: list[str] = []
     document_type: FiscalDocumentType
     model: str
     series: int | None

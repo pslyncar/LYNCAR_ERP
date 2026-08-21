@@ -1,6 +1,8 @@
 from datetime import datetime
 from decimal import Decimal
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -24,6 +26,7 @@ class ReceivableManualCreate(BaseModel):
     amount: Decimal = Field(gt=0)
     due_date: datetime | None = None
     notes: str | None = None
+    entry_type: Literal["legacy", "service"] = "legacy"
 
 
 class ReceivablePaymentRead(BaseModel):
@@ -61,6 +64,12 @@ class ReceivableRead(BaseModel):
     created_at: datetime
     settled_at: datetime | None
     notes: str | None
+    entry_type: str = "legacy"
+    fiscal_document_id: int | None = None
+    fiscal_document_status: str | None = None
+    fiscal_document_type: str | None = None
+    fiscal_document_series: int | None = None
+    fiscal_document_number: int | None = None
     client_name: str | None = None
     sale_number: str | None = None
     sale_sold_at: datetime | None = None

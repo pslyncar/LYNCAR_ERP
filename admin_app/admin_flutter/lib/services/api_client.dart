@@ -2223,6 +2223,32 @@ class ApiClient {
     return FiscalDocument.fromJson(_decodeResponse(response));
   }
 
+  Future<FiscalDocument> prepareFiscalDocumentFromSales(
+    String token, {
+    required List<int> saleIds,
+    required int fiscalClientId,
+    String documentType = 'nfe',
+    String? consumerCpf,
+    String? operationNature,
+    String paymentCondition = 'prazo',
+    String? fiscalNotes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/fiscal/documents/prepare-from-sales'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'sale_ids': saleIds,
+        'fiscal_client_id': fiscalClientId,
+        'document_type': documentType,
+        'consumer_cpf': consumerCpf,
+        'operation_nature': operationNature,
+        'payment_condition': paymentCondition,
+        'fiscal_notes': fiscalNotes,
+      }),
+    );
+    return FiscalDocument.fromJson(_decodeResponse(response));
+  }
+
   Future<FiscalSaleDraft> getFiscalSaleDraft(
     String token,
     String saleNumber,

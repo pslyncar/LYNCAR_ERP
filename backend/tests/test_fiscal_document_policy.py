@@ -1,7 +1,10 @@
 from types import SimpleNamespace
 import unittest
 
-from app.services.fiscal_document_policy import choose_fiscal_document_policy
+from app.services.fiscal_document_policy import (
+    choose_fiscal_document_policy,
+    should_move_stock_for_fiscal_document,
+)
 
 
 class FiscalDocumentPolicyTests(unittest.TestCase):
@@ -31,6 +34,22 @@ class FiscalDocumentPolicyTests(unittest.TestCase):
 
         self.assertEqual(policy.model, "55")
         self.assertEqual(policy.document_type, "nfe")
+
+    def test_sale_based_document_never_moves_stock_again(self) -> None:
+        document = SimpleNamespace(
+            sale_id=123,
+            stock_deduction_on_authorize=False,
+        )
+
+        self.assertFalse(should_move_stock_for_fiscal_document(document))
+
+    def test_only_explicit_manual_document_moves_stock(self) -> None:
+        document = SimpleNamespace(
+            sale_id=None,
+            stock_deduction_on_authorize=True,
+        )
+
+        self.assertTrue(should_move_stock_for_fiscal_document(document))
 
 
 if __name__ == "__main__":

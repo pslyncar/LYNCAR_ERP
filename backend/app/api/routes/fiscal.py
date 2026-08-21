@@ -17,6 +17,7 @@ from app.models.fiscal import (
     CompanyFiscalSetting,
     FiscalDocument,
     FiscalDocumentItem,
+    FiscalDocumentSale,
     FiscalOutputRule,
     FiscalSettingsAuditLog,
     FiscalTransmissionJob,
@@ -31,6 +32,7 @@ from app.schemas.fiscal import (
     CompanyFiscalSettingUpdate,
     FiscalCertificateUploadRead,
     FiscalDocumentPrepare,
+    FiscalDocumentPrepareFromSales,
     FiscalDocumentDraftRead,
     FiscalDocumentItemDraftRead,
     FiscalDocumentPrepareWithItems,
@@ -65,6 +67,7 @@ from app.services.nfe_sp import _duplicate_nfe_key, authorize_nfe
 from app.services.nfe_protocol_sp import query_nfe_protocol
 from app.services.fiscal_xml import build_processed_nfe_xml, is_processed_nfe_xml
 from app.services.fiscal_output_rules import effective_crt, resolve_output_rule, resolve_output_tax_profile
+from app.services.fiscal_document_policy import should_move_stock_for_fiscal_document
 from app.services.rtc_compliance import (
     RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
     RTC_PRODUCTION_CRT3_MANDATORY_FROM,
@@ -1774,6 +1777,7 @@ def prepare_fiscal_document(
         operation_nature=operation_nature[:120],
         payment_condition=payload.payment_condition,
         fiscal_notes=fiscal_notes,
+        stock_deduction_on_authorize=False,
         status=status_value,
         sefaz_message="Documento preparado para assinatura A1 e envio a SEFAZ.",
     )
@@ -1822,6 +1826,7 @@ def prepare_fiscal_document_with_items(
         operation_nature=operation_nature[:120],
         payment_condition=payload.payment_condition,
         fiscal_notes=fiscal_notes,
+        stock_deduction_on_authorize=False,
         status=status_value,
         sefaz_message="Documento preparado com rascunho fiscal ajustavel. Venda original preservada.",
     )
@@ -1875,6 +1880,124 @@ def prepare_fiscal_document_with_items(
     return document
 
 
+@router.post(
+    "/documents/prepare-from-sales",
+    response_model=FiscalDocumentRead,
+    status_code=status.HTTP_201_CREATED,
+)
+def prepare_fiscal_document_from_sales(
+    payload: FiscalDocumentPrepareFromSales,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> FiscalDocument:
+    sale_ids = list(dict.fromkeys(payload.sale_ids))
+    sales = list(
+        db.scalars(
+            select(Sale)
+            .options(
+                selectinload(Sale.items).selectinload(SaleItem.product),
+                selectinload(Sale.payments),
+                selectinload(Sale.client),
+                selectinload(Sale.fiscal_documents),
+                selectinload(Sale.fiscal_document_links).selectinload(FiscalDocumentSale.document),
+            )
+            .where(Sale.id.in_(sale_ids))
+            .order_by(Sale.id)
+            .with_for_update()
+        ).all()
+    )
+    if len(sales) != len(sale_ids):
+        raise HTTPException(status_code=404, detail="Uma ou mais vendas nao foram encontradas.")
+    if any(sale.status != "finalizada" for sale in sales):
+        raise HTTPException(status_code=400, detail="Somente vendas finalizadas podem emitir nota.")
+    if any(sale.client_id != payload.fiscal_client_id for sale in sales):
+        raise HTTPException(status_code=400, detail="Todas as vendas precisam pertencer ao mesmo cliente.")
+    for sale in sales:
+        active_documents = [
+            *sale.fiscal_documents,
+            *(link.document for link in sale.fiscal_document_links if link.document is not None),
+        ]
+        if any(document.status != "cancelled" for document in active_documents):
+            raise HTTPException(
+                status_code=409,
+                detail=f"A venda {sale.number or sale.id} ja possui documento fiscal.",
+            )
+
+    setting = _get_or_create_settings(db)
+    if payload.document_type == "nfce" and not setting.nfce_enabled:
+        raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
+    if payload.document_type == "nfe" and not setting.nfe_enabled:
+        raise HTTPException(status_code=400, detail="NF-e nao esta habilitada para esta empresa.")
+    fiscal_client = _resolve_fiscal_client(db, payload.fiscal_client_id)
+    if fiscal_client is None:
+        raise HTTPException(status_code=400, detail="Selecione o cliente/destinatario fiscal.")
+    status_value = (
+        "draft"
+        if setting.certificate_encrypted_blob and setting.certificate_password_encrypted
+        else "pending_certificate"
+    )
+    document = FiscalDocument(
+        sale_id=sales[0].id if len(sales) == 1 else None,
+        fiscal_client_id=fiscal_client.id,
+        document_type=payload.document_type,
+        model="65" if payload.document_type == "nfce" else "55",
+        environment=setting.environment,
+        consumer_cpf=payload.consumer_cpf or fiscal_client.document_number,
+        recipient_document=fiscal_client.document_number,
+        recipient_name=fiscal_client.name,
+        operation_nature=(" ".join((payload.operation_nature or "").split()) or "VENDA DE MERCADORIA")[:120],
+        payment_condition=payload.payment_condition,
+        fiscal_notes=" ".join((payload.fiscal_notes or "").split()) or None,
+        stock_deduction_on_authorize=False,
+        status=status_value,
+        sefaz_message=(
+            f"Documento preparado a partir de {len(sales)} venda(s) ja concluida(s). "
+            "A emissao fiscal nao movimentara o estoque novamente."
+        ),
+    )
+    db.add(document)
+    db.flush()
+    for sale in sales:
+        db.add(FiscalDocumentSale(fiscal_document_id=document.id, sale_id=sale.id))
+        for item in sale.items:
+            product = item.product
+            db.add(
+                FiscalDocumentItem(
+                    fiscal_document_id=document.id,
+                    sale_item_id=item.id,
+                    original_product_id=item.product_id,
+                    fiscal_product_id=item.product_id,
+                    original_description=item.description,
+                    fiscal_description=(product.name if product is not None else item.description)[:220],
+                    quantity=Decimal(item.quantity or 0),
+                    unit=item.unit,
+                    unit_price=Decimal(item.unit_price or 0),
+                    discount_amount=Decimal(item.discount_amount or 0),
+                    total_price=Decimal(item.total_price or 0),
+                    barcode=item.barcode or (product.barcode if product is not None else None),
+                    included=True,
+                    adjustment_reason=f"Origem: venda {sale.number or sale.id}.",
+                    ncm=product.ncm if product is not None else None,
+                    cest=product.cest if product is not None else None,
+                    cfop=product.cfop_sale if product is not None else None,
+                    origin=product.origin if product is not None else None,
+                    cst=product.cst if product is not None else None,
+                    csosn=product.csosn if product is not None else None,
+                    created_by_user_id=current_user.id,
+                )
+            )
+    db.commit()
+    return db.scalar(
+        select(FiscalDocument)
+        .options(
+            selectinload(FiscalDocument.sale),
+            selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
+            selectinload(FiscalDocument.source_sale_links).selectinload(FiscalDocumentSale.sale),
+        )
+        .where(FiscalDocument.id == document.id)
+    )
+
+
 @router.post("/documents/prepare-manual", response_model=FiscalDocumentRead, status_code=status.HTTP_201_CREATED)
 def prepare_manual_fiscal_document(
     payload: FiscalDocumentPrepareManual,
@@ -1912,6 +2035,7 @@ def prepare_manual_fiscal_document(
         operation_nature=operation_nature[:120],
         payment_condition=payload.payment_condition,
         fiscal_notes=fiscal_notes,
+        stock_deduction_on_authorize=payload.stock_deduction_on_authorize,
         status=status_value,
         sefaz_message=(
             "Nota fiscal manual preparada. Ao autorizar, o estoque sera baixado pelos itens informados."
@@ -2240,7 +2364,7 @@ def authorize_fiscal_document(
     document.xml_authorized = result.authorized_xml
     if result.status == "authorized":
         document.authorized_at = datetime.utcnow()
-        if document.sale is None:
+        if should_move_stock_for_fiscal_document(document):
             _post_manual_document_stock_out(db, document, current_user.id)
         _refresh_document_fiscal_balances(db, document)
         if document.document_type == "nfce":
@@ -2316,7 +2440,7 @@ def transmit_contingency_fiscal_document(
     document.xml_authorized = result.authorized_xml
     if result.status == "authorized":
         document.authorized_at = datetime.utcnow()
-        if document.sale_id is None:
+        if should_move_stock_for_fiscal_document(document):
             _post_manual_document_stock_out(db, document, current_user.id)
         _refresh_document_fiscal_balances(db, document)
         setting.nfce_last_authorized_number = max(
@@ -2363,10 +2487,8 @@ def cancel_fiscal_document(
         document.status = "cancelled"
         document.cancelled_at = datetime.utcnow()
         document.sefaz_message = result.message
-        if document.sale_id is None:
+        if should_move_stock_for_fiscal_document(document):
             _post_manual_document_stock_return(db, document, current_user.id)
-        else:
-            _post_sale_stock_return(db, document, current_user.id)
         _refresh_document_fiscal_balances(db, document)
     db.commit()
     db.refresh(document)

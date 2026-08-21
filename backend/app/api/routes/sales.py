@@ -258,6 +258,7 @@ def sync_sale_financial_receivable(
             balance_amount=financial_amount,
             status="open",
             notes="Gerado automaticamente por alteracao da forma de pagamento da venda.",
+            entry_type="sale",
         )
         db.add(receivable)
         db.flush()
@@ -739,6 +740,7 @@ def create_sale(
                 status="open",
                 due_date=installment.due_date,
                 notes="Gerado automaticamente por venda parcelada.",
+                entry_type="sale",
             )
             db.add(receivable)
             db.flush()
@@ -753,6 +755,7 @@ def create_sale(
             balance_amount=financial_amount,
             status="open",
             notes="Gerado automaticamente por venda boleto/crediario.",
+            entry_type="sale",
         )
         db.add(receivable)
         db.flush()

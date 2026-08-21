@@ -241,6 +241,11 @@ FISCAL_DOCUMENT_COLUMNS = [
     ("volume_numbering", "VARCHAR(60)"),
     ("net_weight", "NUMERIC(12, 3)"),
     ("gross_weight", "NUMERIC(12, 3)"),
+    ("stock_deduction_on_authorize", "BOOLEAN NOT NULL DEFAULT false"),
+]
+
+RECEIVABLE_COLUMNS = [
+    ("entry_type", "VARCHAR(20) NOT NULL DEFAULT 'legacy'"),
 ]
 
 FISCAL_DOCUMENT_ITEM_COLUMNS = [
@@ -842,6 +847,17 @@ def add_fiscal_setting_columns(bind_engine=engine) -> None:
                 connection.execute(
                     text(f"ALTER TABLE fiscal_documents ADD COLUMN {column_name} {column_type}")
                 )
+        connection.execute(
+            text(
+                """
+                UPDATE fiscal_documents
+                SET stock_deduction_on_authorize = true
+                WHERE sale_id IS NULL
+                  AND COALESCE(sefaz_message, '') LIKE
+                      'Nota fiscal manual preparada. Ao autorizar%'
+                """
+            )
+        )
         for column_name, column_type in FISCAL_DOCUMENT_ITEM_COLUMNS:
             if not column_exists_in_connection(connection, "fiscal_document_items", column_name):
                 connection.execute(
@@ -910,6 +926,15 @@ def add_fiscal_setting_columns(bind_engine=engine) -> None:
                 "ON fiscal_documents(origin_document_id)"
             )
         )
+
+
+def add_receivable_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in RECEIVABLE_COLUMNS:
+            if not column_exists_in_connection(connection, "receivables", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE receivables ADD COLUMN {column_name} {column_type}")
+                )
 
 
 def add_production_order_columns(bind_engine=engine) -> None:
@@ -1116,6 +1141,7 @@ def migrate_registered_tenants() -> None:
             add_user_seller_columns(tenant_engine)
             add_service_order_columns(tenant_engine)
             add_fiscal_setting_columns(tenant_engine)
+            add_receivable_columns(tenant_engine)
             with tenant_engine.begin() as connection:
                 connection.execute(
                     text(
@@ -1220,6 +1246,7 @@ def main() -> None:
     normalize_sale_sources()
     add_user_seller_columns()
     add_fiscal_setting_columns()
+    add_receivable_columns()
     add_production_order_columns()
     backfill_product_batches()
     cleanup_orphan_product_images("tenant")

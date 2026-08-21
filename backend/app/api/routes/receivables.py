@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 from app.api.dependencies import require_any_permission, require_permission
 from app.core.database import get_db
 from app.models.client import Client
+from app.models.fiscal import FiscalDocumentSale
 from app.models.receivable import Receivable, ReceivablePayment
 from app.models.sale import Sale
 from app.models.service_order import ServiceOrder
@@ -71,6 +72,10 @@ def get_receivable_or_404(db: Session, receivable_id: int) -> Receivable:
             selectinload(Receivable.payments),
             selectinload(Receivable.client),
             selectinload(Receivable.sale).selectinload(Sale.items),
+            selectinload(Receivable.sale).selectinload(Sale.fiscal_documents),
+            selectinload(Receivable.sale)
+            .selectinload(Sale.fiscal_document_links)
+            .selectinload(FiscalDocumentSale.document),
         )
         .where(Receivable.id == receivable_id)
     )
@@ -97,6 +102,10 @@ def list_receivables(
             selectinload(Receivable.payments),
             selectinload(Receivable.client),
             selectinload(Receivable.sale).selectinload(Sale.items),
+            selectinload(Receivable.sale).selectinload(Sale.fiscal_documents),
+            selectinload(Receivable.sale)
+            .selectinload(Sale.fiscal_document_links)
+            .selectinload(FiscalDocumentSale.document),
         )
         .order_by(Receivable.created_at.desc(), Receivable.id.desc())
         .limit(limit)
@@ -127,6 +136,7 @@ def create_manual_receivable(
         status="open",
         due_date=receivable_in.due_date,
         notes=receivable_in.notes,
+        entry_type=receivable_in.entry_type,
     )
     db.add(receivable)
     db.flush()

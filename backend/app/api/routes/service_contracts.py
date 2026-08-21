@@ -809,6 +809,7 @@ def create_billing(
         status="open" if total > 0 else "paid",
         due_date=datetime.combine(due, time.min),
         notes=f"Faturamento variavel de {payload.period_start} a {payload.period_end}.",
+        entry_type="service",
     )
     db.add(receivable)
     db.flush()

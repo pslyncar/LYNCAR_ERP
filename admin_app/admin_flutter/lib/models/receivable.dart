@@ -18,6 +18,12 @@ class Receivable {
     this.dueDate,
     this.settledAt,
     this.notes,
+    this.entryType = 'legacy',
+    this.fiscalDocumentId,
+    this.fiscalDocumentStatus,
+    this.fiscalDocumentType,
+    this.fiscalDocumentSeries,
+    this.fiscalDocumentNumber,
   });
 
   final int id;
@@ -36,6 +42,12 @@ class Receivable {
   final DateTime createdAt;
   final DateTime? settledAt;
   final String? notes;
+  final String entryType;
+  final int? fiscalDocumentId;
+  final String? fiscalDocumentStatus;
+  final String? fiscalDocumentType;
+  final int? fiscalDocumentSeries;
+  final int? fiscalDocumentNumber;
   final List<ReceivableSaleItem> saleItems;
   final List<ReceivablePayment> payments;
 
@@ -63,6 +75,12 @@ class Receivable {
           ? null
           : DateTime.parse(json['settled_at'] as String).toLocal(),
       notes: json['notes'] as String?,
+      entryType: json['entry_type'] as String? ?? 'legacy',
+      fiscalDocumentId: json['fiscal_document_id'] as int?,
+      fiscalDocumentStatus: json['fiscal_document_status'] as String?,
+      fiscalDocumentType: json['fiscal_document_type'] as String?,
+      fiscalDocumentSeries: json['fiscal_document_series'] as int?,
+      fiscalDocumentNumber: json['fiscal_document_number'] as int?,
       saleItems: ((json['sale_items'] as List<dynamic>?) ?? [])
           .map(
             (item) => ReceivableSaleItem.fromJson(item as Map<String, dynamic>),
@@ -163,6 +181,7 @@ class ReceivableManualPayload {
     required this.description,
     this.dueDate,
     this.notes,
+    this.entryType = 'legacy',
   });
 
   final int clientId;
@@ -170,6 +189,7 @@ class ReceivableManualPayload {
   final String description;
   final DateTime? dueDate;
   final String? notes;
+  final String entryType;
 
   Map<String, dynamic> toJson() => {
     'client_id': clientId,
@@ -179,6 +199,7 @@ class ReceivableManualPayload {
         : description.trim(),
     'due_date': dueDate?.toIso8601String(),
     'notes': notes?.trim().isEmpty == true ? null : notes?.trim(),
+    'entry_type': entryType,
   };
 }
 

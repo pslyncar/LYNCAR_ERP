@@ -102,6 +102,11 @@ class FiscalDocument(Base):
     finality: Mapped[str] = mapped_column(String(1), nullable=False, default="1")
     payment_condition: Mapped[Optional[str]] = mapped_column(String(20))
     fiscal_notes: Mapped[Optional[str]] = mapped_column(Text)
+    stock_deduction_on_authorize: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
     freight_mode: Mapped[Optional[str]] = mapped_column(String(2))
     freight_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
     insurance_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False, default=0)
@@ -155,6 +160,61 @@ class FiscalDocument(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    source_sale_links = relationship(
+        "FiscalDocumentSale",
+        back_populates="document",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    @property
+    def source_sale_ids(self) -> list[int]:
+        ids = {link.sale_id for link in self.source_sale_links}
+        if self.sale_id is not None:
+            ids.add(self.sale_id)
+        return sorted(ids)
+
+    @property
+    def source_sale_numbers(self) -> list[str]:
+        numbers = {
+            link.sale.number
+            for link in self.source_sale_links
+            if link.sale is not None and link.sale.number
+        }
+        if self.sale is not None and self.sale.number:
+            numbers.add(self.sale.number)
+        return sorted(numbers)
+
+
+class FiscalDocumentSale(Base):
+    __tablename__ = "fiscal_document_sales"
+    __table_args__ = (
+        UniqueConstraint(
+            "fiscal_document_id",
+            "sale_id",
+            name="uq_fiscal_document_sale_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    fiscal_document_id: Mapped[int] = mapped_column(
+        ForeignKey("fiscal_documents.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    sale_id: Mapped[int] = mapped_column(
+        ForeignKey("sales.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    document = relationship("FiscalDocument", back_populates="source_sale_links")
+    sale = relationship("Sale", back_populates="fiscal_document_links", lazy="selectin")
 
 
 class FiscalTransmissionJob(Base):

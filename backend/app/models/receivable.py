@@ -28,6 +28,7 @@ class Receivable(Base):
     )
     settled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    entry_type: Mapped[str] = mapped_column(String(20), nullable=False, default="legacy")
 
     payments = relationship(
         "ReceivablePayment",
@@ -65,6 +66,39 @@ class Receivable(Base):
             }
             for item in self.sale.items
         ]
+
+    @property
+    def fiscal_document(self):
+        if self.sale is None:
+            return None
+        documents = list(self.sale.fiscal_documents)
+        documents.extend(
+            link.document
+            for link in self.sale.fiscal_document_links
+            if link.document is not None
+        )
+        active = [document for document in documents if document.status != "cancelled"]
+        return max(active, key=lambda document: document.id) if active else None
+
+    @property
+    def fiscal_document_id(self) -> int | None:
+        return self.fiscal_document.id if self.fiscal_document is not None else None
+
+    @property
+    def fiscal_document_status(self) -> str | None:
+        return self.fiscal_document.status if self.fiscal_document is not None else None
+
+    @property
+    def fiscal_document_type(self) -> str | None:
+        return self.fiscal_document.document_type if self.fiscal_document is not None else None
+
+    @property
+    def fiscal_document_series(self) -> int | None:
+        return self.fiscal_document.series if self.fiscal_document is not None else None
+
+    @property
+    def fiscal_document_number(self) -> int | None:
+        return self.fiscal_document.number if self.fiscal_document is not None else None
 
 
 class ReceivablePayment(Base):

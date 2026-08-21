@@ -17,6 +17,15 @@ class FiscalDocumentPolicy:
     reason: str
 
 
+def should_move_stock_for_fiscal_document(document: Any) -> bool:
+    """Only an explicitly stock-bearing manual document may move inventory.
+
+    Documents created from finalized sales never move stock: the sale already
+    posted the inventory movement. The same rule applies to fiscal cancellation.
+    """
+    return bool(getattr(document, "stock_deduction_on_authorize", False))
+
+
 def recipient_is_icms_taxpayer(client: Any | None) -> bool:
     if client is None:
         return False

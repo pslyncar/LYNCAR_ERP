@@ -53,6 +53,12 @@ class Sale(Base):
         lazy="selectin",
     )
     fiscal_documents = relationship("FiscalDocument", back_populates="sale", lazy="selectin")
+    fiscal_document_links = relationship(
+        "FiscalDocumentSale",
+        back_populates="sale",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     @property
     def seller_name(self) -> str | None:
