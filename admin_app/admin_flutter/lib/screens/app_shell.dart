@@ -532,7 +532,8 @@ class _AppShellState extends State<AppShell> {
                   final sectionDestinations =
                       groupedDestinations[section] ??
                       const <_IndexedDestination>[];
-                  if (sectionDestinations.length == 1) {
+                  if (section == AppNavigationSection.home &&
+                      sectionDestinations.isNotEmpty) {
                     selectDestination(sectionDestinations.single.index);
                     return;
                   }
