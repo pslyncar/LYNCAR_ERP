@@ -248,6 +248,12 @@ RECEIVABLE_COLUMNS = [
     ("entry_type", "VARCHAR(20) NOT NULL DEFAULT 'legacy'"),
 ]
 
+RECEIVABLE_PAYMENT_COLUMNS = [
+    ("reversed_at", "TIMESTAMP WITH TIME ZONE"),
+    ("reversed_by_user_id", "INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+    ("reversal_reason", "TEXT"),
+]
+
 FISCAL_DOCUMENT_ITEM_COLUMNS = [
     ("ncm", "VARCHAR(20)"), ("cest", "VARCHAR(20)"), ("cfop", "VARCHAR(10)"),
     ("origin", "VARCHAR(2)"), ("cst", "VARCHAR(10)"), ("csosn", "VARCHAR(10)"),
@@ -934,6 +940,11 @@ def add_receivable_columns(bind_engine=engine) -> None:
             if not column_exists_in_connection(connection, "receivables", column_name):
                 connection.execute(
                     text(f"ALTER TABLE receivables ADD COLUMN {column_name} {column_type}")
+                )
+        for column_name, column_type in RECEIVABLE_PAYMENT_COLUMNS:
+            if not column_exists_in_connection(connection, "receivable_payments", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE receivable_payments ADD COLUMN {column_name} {column_type}")
                 )
 
 

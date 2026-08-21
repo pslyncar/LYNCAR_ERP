@@ -17,6 +17,7 @@ from app.schemas.receivable import (
     ReceivableAccountPaymentCreate,
     ReceivableManualCreate,
     ReceivablePaymentCreate,
+    ReceivablePaymentReverseCreate,
     ReceivableRead,
 )
 from app.services.client_billing import sync_current_month_receivables
@@ -69,7 +70,8 @@ def get_receivable_or_404(db: Session, receivable_id: int) -> Receivable:
     receivable = db.scalar(
         select(Receivable)
         .options(
-            selectinload(Receivable.payments),
+            selectinload(Receivable.payments).selectinload(ReceivablePayment.user),
+            selectinload(Receivable.payments).selectinload(ReceivablePayment.reversed_by_user),
             selectinload(Receivable.client),
             selectinload(Receivable.sale).selectinload(Sale.items),
             selectinload(Receivable.sale).selectinload(Sale.fiscal_documents),
@@ -99,7 +101,8 @@ def list_receivables(
     query = (
         select(Receivable)
         .options(
-            selectinload(Receivable.payments),
+            selectinload(Receivable.payments).selectinload(ReceivablePayment.user),
+            selectinload(Receivable.payments).selectinload(ReceivablePayment.reversed_by_user),
             selectinload(Receivable.client),
             selectinload(Receivable.sale).selectinload(Sale.items),
             selectinload(Receivable.sale).selectinload(Sale.fiscal_documents),
@@ -188,6 +191,41 @@ def pay_receivable(
     return get_receivable_or_404(db, receivable.id)
 
 
+@router.post(
+    "/{receivable_id}/payments/{payment_id}/reverse",
+    response_model=ReceivableRead,
+)
+def reverse_receivable_payment(
+    receivable_id: int,
+    payment_id: int,
+    payload: ReceivablePaymentReverseCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("finance:receivables:pay")),
+) -> Receivable:
+    receivable = get_receivable_or_404(db, receivable_id)
+    if receivable.status == "canceled":
+        raise HTTPException(status_code=400, detail="Recebivel cancelado nao permite estorno de baixa.")
+    payment = next((item for item in receivable.payments if item.id == payment_id), None)
+    if payment is None:
+        raise HTTPException(status_code=404, detail="Baixa nao encontrada neste recebivel.")
+    if payment.reversed_at is not None:
+        return receivable
+    amount = _money(payment.amount)
+    if amount > _money(receivable.paid_amount):
+        raise HTTPException(status_code=409, detail="Saldo pago inconsistente para realizar o estorno.")
+
+    payment.reversed_at = datetime.utcnow()
+    payment.reversed_by_user_id = current_user.id
+    payment.reversal_reason = " ".join(payload.reason.split())
+    receivable.paid_amount = _money(receivable.paid_amount - amount)
+    receivable.balance_amount = _money(receivable.balance_amount + amount)
+    receivable.status = "partial" if receivable.paid_amount > 0 else "open"
+    receivable.settled_at = None
+    _sync_service_order_after_receivable_payment(db, receivable.sale)
+    db.commit()
+    return get_receivable_or_404(db, receivable.id)
+
+
 @router.post("/{receivable_id}/cancel", response_model=ReceivableRead)
 def cancel_receivable(
     receivable_id: int,
@@ -226,7 +264,8 @@ def pay_client_receivables(
         db.scalars(
             select(Receivable)
             .options(
-                selectinload(Receivable.payments),
+                selectinload(Receivable.payments).selectinload(ReceivablePayment.user),
+                selectinload(Receivable.payments).selectinload(ReceivablePayment.reversed_by_user),
                 selectinload(Receivable.client),
                 selectinload(Receivable.sale).selectinload(Sale.items),
             )

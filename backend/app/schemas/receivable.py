@@ -16,6 +16,10 @@ class ReceivableAccountPaymentCreate(ReceivablePaymentCreate):
     pass
 
 
+class ReceivablePaymentReverseCreate(BaseModel):
+    reason: str = Field(min_length=5, max_length=500)
+
+
 class ReceivableManualCreate(BaseModel):
     client_id: int = Field(gt=0)
     description: str = Field(
@@ -33,10 +37,15 @@ class ReceivablePaymentRead(BaseModel):
     id: int
     receivable_id: int
     user_id: int | None
+    user_name: str | None = None
     amount: Decimal
     method: str
     notes: str | None
     paid_at: datetime
+    reversed_at: datetime | None = None
+    reversed_by_user_id: int | None = None
+    reversed_by_user_name: str | None = None
+    reversal_reason: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

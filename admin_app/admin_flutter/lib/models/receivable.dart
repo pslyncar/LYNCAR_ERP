@@ -132,15 +132,26 @@ class ReceivablePayment {
     required this.method,
     required this.paidAt,
     this.userId,
+    this.userName,
     this.notes,
+    this.reversedAt,
+    this.reversedByUserId,
+    this.reversedByUserName,
+    this.reversalReason,
   });
 
   final int id;
   final int receivableId;
   final int? userId;
+  final String? userName;
   final double amount;
   final String method;
   final String? notes;
+  final DateTime? reversedAt;
+  final int? reversedByUserId;
+  final String? reversedByUserName;
+  final String? reversalReason;
+  bool get isReversed => reversedAt != null;
   final DateTime paidAt;
 
   factory ReceivablePayment.fromJson(Map<String, dynamic> json) {
@@ -148,9 +159,16 @@ class ReceivablePayment {
       id: json['id'] as int,
       receivableId: json['receivable_id'] as int,
       userId: json['user_id'] as int?,
+      userName: json['user_name'] as String?,
       amount: _toDouble(json['amount']),
       method: json['method'] as String? ?? 'dinheiro',
       notes: json['notes'] as String?,
+      reversedAt: json['reversed_at'] == null
+          ? null
+          : DateTime.parse(json['reversed_at'] as String).toLocal(),
+      reversedByUserId: json['reversed_by_user_id'] as int?,
+      reversedByUserName: json['reversed_by_user_name'] as String?,
+      reversalReason: json['reversal_reason'] as String?,
       paidAt: DateTime.parse(json['paid_at'] as String).toLocal(),
     );
   }

@@ -969,6 +969,8 @@ class _ClientStatementDialog extends StatefulWidget {
 }
 
 class _ClientStatementDialogState extends State<_ClientStatementDialog> {
+  String _statementView = 'open';
+
   List<Receivable> get _eligibleFiscalSales {
     final bySale = <int, Receivable>{};
     for (final receivable in widget.account.receivables) {
@@ -1047,10 +1049,45 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
     return true;
   }
 
+  Future<bool> _reversePayment(
+    Receivable receivable,
+    ReceivablePayment payment,
+  ) async {
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _PaymentReversalDialog(
+        api: widget.api,
+        token: widget.token,
+        receivable: receivable,
+        payment: payment,
+      ),
+    );
+    return changed == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final account = widget.account;
-    final statementEntries = _statementEntries(account.receivables);
+    final openReceivables = account.receivables
+        .where(
+          (item) =>
+              item.balanceAmount > 0.009 &&
+              item.status != 'paid' &&
+              item.status != 'canceled',
+        )
+        .toList();
+    final historyReceivables = account.receivables
+        .where(
+          (item) =>
+              item.balanceAmount <= 0.009 ||
+              item.status == 'paid' ||
+              item.status == 'canceled',
+        )
+        .toList();
+    final visibleReceivables = _statementView == 'open'
+        ? openReceivables
+        : historyReceivables;
+    final statementEntries = _statementEntries(visibleReceivables);
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
       child: ConstrainedBox(
@@ -1117,11 +1154,71 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                 ],
               ),
               const SizedBox(height: 14),
+              LayoutBuilder(
+                builder: (context, constraints) {
+                  final selector = SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    selected: {_statementView},
+                    onSelectionChanged: (value) =>
+                        setState(() => _statementView = value.first),
+                    segments: [
+                      ButtonSegment(
+                        value: 'open',
+                        icon: const Icon(Icons.pending_actions_outlined),
+                        label: Text('Em aberto (${openReceivables.length})'),
+                      ),
+                      ButtonSegment(
+                        value: 'history',
+                        icon: const Icon(Icons.history_outlined),
+                        label: Text('Histórico (${historyReceivables.length})'),
+                      ),
+                    ],
+                  );
+                  if (constraints.maxWidth >= 520) {
+                    return Align(
+                      alignment: Alignment.centerLeft,
+                      child: selector,
+                    );
+                  }
+                  return SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: selector,
+                  );
+                },
+              ),
+              const SizedBox(height: 14),
               Expanded(
                 child: SingleChildScrollView(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      if (statementEntries.isEmpty)
+                        AppCard(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 20),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  _statementView == 'open'
+                                      ? Icons.task_alt_outlined
+                                      : Icons.history_outlined,
+                                  size: 36,
+                                  color: const Color(0xFF64748B),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  _statementView == 'open'
+                                      ? 'Nenhum título em aberto.'
+                                      : 'Nenhum lançamento no histórico.',
+                                  style: const TextStyle(
+                                    color: Color(0xFF64748B),
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       for (final entry in statementEntries)
                         _buildStatementEntry(context, entry),
                     ],
@@ -1260,7 +1357,16 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
             const SizedBox(height: 10),
             _SaleItems(items: receivable.saleItems),
             const SizedBox(height: 10),
-            _PaymentHistory(payments: receivable.payments),
+            _PaymentHistory(
+              payments: receivable.payments,
+              canReverse: widget.canPay,
+              onReverse: (payment) async {
+                final navigator = Navigator.of(context);
+                final changed = await _reversePayment(receivable, payment);
+                if (!mounted) return;
+                if (changed) navigator.pop(true);
+              },
+            ),
           ],
         ),
       ),
@@ -1279,52 +1385,84 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
         border: Border.all(color: const Color(0xFFE2E8F0)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SizedBox(
-            width: 220,
-            child: Text(
-              title,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              SizedBox(
+                width: 220,
+                child: Text(
+                  title,
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              SizedBox(
+                width: 130,
+                child: Text('Vence ${_date(receivable.dueDate)}'),
+              ),
+              SizedBox(
+                width: 120,
+                child: Text(_statusLabel(receivable.status)),
+              ),
+              SizedBox(
+                width: 140,
+                child: Text(
+                  'Saldo ${_money(receivable.balanceAmount)}',
+                  style: const TextStyle(fontWeight: FontWeight.w900),
+                ),
+              ),
+              if (widget.canPay && receivable.balanceAmount > 0.009)
+                FilledButton.icon(
+                  onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final changed = await _pay(receivable);
+                    if (!mounted) return;
+                    if (changed) navigator.pop(true);
+                  },
+                  icon: const Icon(Icons.payments_outlined),
+                  label: const Text('Baixar'),
+                ),
+              if (widget.canPay && receivable.balanceAmount > 0.009)
+                IconButton(
+                  tooltip: 'Cancelar parcela',
+                  onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final changed = await _cancelReceivable(receivable);
+                    if (!mounted) return;
+                    if (changed) navigator.pop(true);
+                  },
+                  icon: const Icon(Icons.cancel_outlined),
+                ),
+            ],
           ),
-          SizedBox(
-            width: 130,
-            child: Text('Vence ${_date(receivable.dueDate)}'),
-          ),
-          SizedBox(width: 120, child: Text(_statusLabel(receivable.status))),
-          SizedBox(
-            width: 140,
-            child: Text(
-              'Saldo ${_money(receivable.balanceAmount)}',
-              style: const TextStyle(fontWeight: FontWeight.w900),
+          if (receivable.payments.isNotEmpty) ...[
+            const Divider(height: 18),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              childrenPadding: EdgeInsets.zero,
+              dense: true,
+              title: Text(
+                '${receivable.payments.length} baixa(s) registrada(s)',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+              children: [
+                _PaymentHistory(
+                  payments: receivable.payments,
+                  canReverse: widget.canPay,
+                  onReverse: (payment) async {
+                    final navigator = Navigator.of(context);
+                    final changed = await _reversePayment(receivable, payment);
+                    if (!mounted) return;
+                    if (changed) navigator.pop(true);
+                  },
+                ),
+              ],
             ),
-          ),
-          if (widget.canPay && receivable.balanceAmount > 0.009)
-            FilledButton.icon(
-              onPressed: () async {
-                final navigator = Navigator.of(context);
-                final changed = await _pay(receivable);
-                if (!mounted) return;
-                if (changed) navigator.pop(true);
-              },
-              icon: const Icon(Icons.payments_outlined),
-              label: const Text('Baixar'),
-            ),
-          if (widget.canPay && receivable.balanceAmount > 0.009)
-            IconButton(
-              tooltip: 'Cancelar parcela',
-              onPressed: () async {
-                final navigator = Navigator.of(context);
-                final changed = await _cancelReceivable(receivable);
-                if (!mounted) return;
-                if (changed) navigator.pop(true);
-              },
-              icon: const Icon(Icons.cancel_outlined),
-            ),
+          ],
         ],
       ),
     );
@@ -1507,6 +1645,108 @@ class _FiscalDocumentBadge extends StatelessWidget {
         avatar: const Icon(Icons.description_outlined, size: 17),
         label: Text(label),
       ),
+    );
+  }
+}
+
+class _PaymentReversalDialog extends StatefulWidget {
+  const _PaymentReversalDialog({
+    required this.api,
+    required this.token,
+    required this.receivable,
+    required this.payment,
+  });
+
+  final ApiClient api;
+  final String token;
+  final Receivable receivable;
+  final ReceivablePayment payment;
+
+  @override
+  State<_PaymentReversalDialog> createState() => _PaymentReversalDialogState();
+}
+
+class _PaymentReversalDialogState extends State<_PaymentReversalDialog> {
+  final _reason = TextEditingController();
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _reason.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final reason = _reason.text.trim();
+    if (reason.length < 5) {
+      setState(() => _error = 'Informe o motivo do estorno.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.api.reverseReceivablePayment(
+        widget.token,
+        receivableId: widget.receivable.id,
+        paymentId: widget.payment.id,
+        reason: reason,
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } catch (_) {
+      setState(() => _error = 'Não foi possível estornar a baixa.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Estornar baixa'),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'A baixa de ${_money(widget.payment.amount)} será estornada e o título voltará a ter saldo em aberto. O registro original será preservado.',
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _reason,
+              autofocus: true,
+              minLines: 2,
+              maxLines: 4,
+              decoration: const InputDecoration(
+                labelText: 'Motivo do estorno',
+                hintText: 'Ex.: baixa registrada no título incorreto',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: const TextStyle(color: Colors.red)),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _save,
+          icon: const Icon(Icons.undo),
+          label: Text(_saving ? 'Estornando...' : 'Confirmar estorno'),
+        ),
+      ],
     );
   }
 }
@@ -2137,9 +2377,15 @@ class _SaleItems extends StatelessWidget {
 }
 
 class _PaymentHistory extends StatelessWidget {
-  const _PaymentHistory({required this.payments});
+  const _PaymentHistory({
+    required this.payments,
+    required this.canReverse,
+    required this.onReverse,
+  });
 
   final List<ReceivablePayment> payments;
+  final bool canReverse;
+  final Future<void> Function(ReceivablePayment payment) onReverse;
 
   @override
   Widget build(BuildContext context) {
@@ -2155,19 +2401,75 @@ class _PaymentHistory extends StatelessWidget {
           const Text('Nenhum recebimento registrado.')
         else
           for (final payment in payments)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
+            Container(
+              margin: const EdgeInsets.only(bottom: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      '${_paymentLabel(payment.method)} - ${_dateTime(payment.paidAt)}',
+                    child: Wrap(
+                      spacing: 14,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(
+                          _paymentLabel(payment.method),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w800,
+                            decoration: payment.isReversed
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                        Text(
+                          'Baixa por ${payment.userName?.trim().isNotEmpty == true ? payment.userName : 'Usuário não identificado'}',
+                        ),
+                        Text(_dateTime(payment.paidAt)),
+                        Text(
+                          _money(payment.amount),
+                          style: TextStyle(
+                            fontWeight: FontWeight.w900,
+                            decoration: payment.isReversed
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                        if (payment.isReversed)
+                          Chip(
+                            avatar: const Icon(Icons.undo, size: 16),
+                            label: const Text('Estornada'),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        if (payment.isReversed)
+                          Text(
+                            'Por ${payment.reversedByUserName ?? 'Usuário não identificado'} em ${_dateTime(payment.reversedAt!)}${payment.reversalReason?.trim().isNotEmpty == true ? ' • ${payment.reversalReason}' : ''}',
+                            style: const TextStyle(color: Color(0xFF64748B)),
+                          ),
+                      ],
                     ),
                   ),
-                  Text(
-                    _money(payment.amount),
-                    style: const TextStyle(fontWeight: FontWeight.w800),
-                  ),
+                  if (canReverse && !payment.isReversed)
+                    PopupMenuButton<String>(
+                      tooltip: 'Ações da baixa',
+                      onSelected: (value) {
+                        if (value == 'reverse') onReverse(payment);
+                      },
+                      itemBuilder: (context) => const [
+                        PopupMenuItem(
+                          value: 'reverse',
+                          child: ListTile(
+                            leading: Icon(Icons.undo),
+                            title: Text('Estornar baixa'),
+                            contentPadding: EdgeInsets.zero,
+                          ),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),

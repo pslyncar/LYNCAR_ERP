@@ -1937,6 +1937,22 @@ class ApiClient {
     return Receivable.fromJson(_decodeResponse(response));
   }
 
+  Future<Receivable> reverseReceivablePayment(
+    String token, {
+    required int receivableId,
+    required int paymentId,
+    required String reason,
+  }) async {
+    final response = await http.post(
+      Uri.parse(
+        '$baseUrl/receivables/$receivableId/payments/$paymentId/reverse',
+      ),
+      headers: _authHeaders(token),
+      body: jsonEncode({'reason': reason.trim()}),
+    );
+    return Receivable.fromJson(_decodeResponse(response));
+  }
+
   Future<Receivable> cancelReceivable(String token, int receivableId) async {
     final response = await http.post(
       Uri.parse('$baseUrl/receivables/$receivableId/cancel'),

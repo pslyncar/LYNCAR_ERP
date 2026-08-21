@@ -115,5 +115,24 @@ class ReceivablePayment(Base):
         nullable=False,
         server_default=func.now(),
     )
+    reversed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    reversed_by_user_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL")
+    )
+    reversal_reason: Mapped[Optional[str]] = mapped_column(Text)
 
     receivable = relationship("Receivable", back_populates="payments")
+    user = relationship("User", foreign_keys=[user_id], lazy="selectin")
+    reversed_by_user = relationship(
+        "User",
+        foreign_keys=[reversed_by_user_id],
+        lazy="selectin",
+    )
+
+    @property
+    def user_name(self) -> str | None:
+        return self.user.name if self.user is not None else None
+
+    @property
+    def reversed_by_user_name(self) -> str | None:
+        return self.reversed_by_user.name if self.reversed_by_user is not None else None
