@@ -21,7 +21,7 @@ try {
 if (Test-Path $FlutterBin) {
     Write-Host "Gerando build web Flutter..."
     Push-Location $FlutterRoot
-    & $FlutterBin build web --no-web-resources-cdn --no-tree-shake-icons
+    & $FlutterBin build web --no-web-resources-cdn --no-tree-shake-icons --no-wasm-dry-run
     Pop-Location
 
     Write-Host "Versionando assets web para evitar cache..."
