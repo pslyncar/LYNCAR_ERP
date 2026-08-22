@@ -8,6 +8,7 @@ class SubscriptionPlanRead(BaseModel):
     monthly_price: str | None
     annual_price: str | None
     max_users: int | None
+    max_pdv_terminals: int | None
     database_limit_mb: int
     file_limit_mb: int
     multi_company_limit: int | None
@@ -26,6 +27,7 @@ class SubscriptionPlanUpdate(BaseModel):
     monthly_price: str | None = Field(default=None, max_length=30)
     annual_price: str | None = Field(default=None, max_length=30)
     max_users: int | None = Field(default=None, ge=1)
+    max_pdv_terminals: int | None = Field(default=None, ge=1)
     database_limit_mb: int = Field(ge=1)
     file_limit_mb: int = Field(ge=1)
     multi_company_limit: int | None = Field(default=None, ge=1)

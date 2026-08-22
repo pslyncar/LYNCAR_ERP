@@ -13,6 +13,7 @@ class SubscriptionPlan(MasterBase):
     monthly_price: Mapped[str | None] = mapped_column(String(30))
     annual_price: Mapped[str | None] = mapped_column(String(30))
     max_users: Mapped[int | None] = mapped_column(Integer)
+    max_pdv_terminals: Mapped[int | None] = mapped_column(Integer)
     database_limit_mb: Mapped[int] = mapped_column(Integer)
     file_limit_mb: Mapped[int] = mapped_column(Integer)
     multi_company_limit: Mapped[int | None] = mapped_column(Integer)

@@ -109,11 +109,14 @@ MASTER_SUPPORT_TICKET_COLUMNS = [
 SUBSCRIPTION_PLAN_COLUMNS = [
     ("default_modules", "JSON NOT NULL DEFAULT '[]'"),
     ("marketplace_listing_limit", "INTEGER"),
+    ("max_pdv_terminals", "INTEGER"),
 ]
 
 BUSINESS_SEGMENT_COLUMNS = [
     ("seller_role_enabled", "BOOLEAN NOT NULL DEFAULT false"),
     ("technician_role_enabled", "BOOLEAN NOT NULL DEFAULT false"),
+    ("max_users", "INTEGER"),
+    ("max_pdv_terminals", "INTEGER"),
 ]
 
 

@@ -90,6 +90,35 @@ class PdvTerminal {
   }
 }
 
+class CompanyResourceQuota {
+  const CompanyResourceQuota({
+    required this.companyCode,
+    required this.activeUsers,
+    this.maxUsers,
+    required this.pdvTerminals,
+    this.maxPdvTerminals,
+  });
+
+  final String companyCode;
+  final int activeUsers;
+  final int? maxUsers;
+  final int pdvTerminals;
+  final int? maxPdvTerminals;
+
+  bool get pdvLimitReached =>
+      maxPdvTerminals != null && pdvTerminals >= maxPdvTerminals!;
+
+  factory CompanyResourceQuota.fromJson(Map<String, dynamic> json) {
+    return CompanyResourceQuota(
+      companyCode: json['company_code'] as String,
+      activeUsers: json['active_users'] as int? ?? 0,
+      maxUsers: json['max_users'] as int?,
+      pdvTerminals: json['pdv_terminals'] as int? ?? 0,
+      maxPdvTerminals: json['max_pdv_terminals'] as int?,
+    );
+  }
+}
+
 class PdvBusinessDaySettings {
   const PdvBusinessDaySettings({required this.cutoffMinutes});
 

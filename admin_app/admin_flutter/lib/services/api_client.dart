@@ -1657,6 +1657,19 @@ class ApiClient {
         .toList();
   }
 
+  Future<CompanyResourceQuota> getMasterCompanyResourceQuota(
+    String token,
+    String companyCode,
+  ) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/master/pdv/resource-quota',
+      ).replace(queryParameters: {'company_code': companyCode}),
+      headers: _authHeaders(token),
+    );
+    return CompanyResourceQuota.fromJson(_decodeResponse(response));
+  }
+
   Future<PdvBusinessDaySettings> getMasterPdvBusinessDaySettings(
     String token,
     String companyCode,

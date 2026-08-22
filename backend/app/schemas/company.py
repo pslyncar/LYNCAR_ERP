@@ -20,6 +20,7 @@ def _parse_contract_date(value: object) -> object:
 
 class PlanOverride(BaseModel):
     max_users: int | None = Field(default=None, ge=1)
+    max_pdv_terminals: int | None = Field(default=None, ge=1)
     database_limit_mb: int | None = Field(default=None, ge=1)
     file_limit_mb: int | None = Field(default=None, ge=1)
     multi_company_limit: int | None = Field(default=None, ge=1)

@@ -4,6 +4,8 @@ class BusinessSegment {
     required this.code,
     required this.name,
     this.description,
+    this.maxUsers,
+    this.maxPdvTerminals,
     required this.defaultModules,
     required this.sellerRoleEnabled,
     required this.technicianRoleEnabled,
@@ -15,6 +17,8 @@ class BusinessSegment {
   final String code;
   final String name;
   final String? description;
+  final int? maxUsers;
+  final int? maxPdvTerminals;
   final List<String> defaultModules;
   final bool sellerRoleEnabled;
   final bool technicianRoleEnabled;
@@ -27,6 +31,8 @@ class BusinessSegment {
       code: json['code'] as String,
       name: json['name'] as String,
       description: json['description'] as String?,
+      maxUsers: json['max_users'] as int?,
+      maxPdvTerminals: json['max_pdv_terminals'] as int?,
       defaultModules: (json['default_modules'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(growable: false),
@@ -42,6 +48,8 @@ class BusinessSegment {
       'code': code,
       'name': name,
       'description': description,
+      'max_users': maxUsers,
+      'max_pdv_terminals': maxPdvTerminals,
       'default_modules': defaultModules,
       'seller_role_enabled': sellerRoleEnabled,
       'technician_role_enabled': technicianRoleEnabled,
@@ -54,6 +62,8 @@ class BusinessSegment {
     return {
       'name': name,
       'description': description,
+      'max_users': maxUsers,
+      'max_pdv_terminals': maxPdvTerminals,
       'default_modules': defaultModules,
       'seller_role_enabled': sellerRoleEnabled,
       'technician_role_enabled': technicianRoleEnabled,

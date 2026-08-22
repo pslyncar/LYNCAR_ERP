@@ -30,6 +30,7 @@ from app.schemas.pdv_terminal import (
     PdvBusinessDaySettings,
 )
 from app.services.business_day import company_cutoff_minutes, crossed_business_day
+from app.services.plan_limits import enforce_pdv_terminal_limit, lock_pdv_terminal_quota
 
 router = APIRouter()
 LOCAL_TIMEZONE = ZoneInfo("America/Sao_Paulo")
@@ -136,7 +137,10 @@ def create_pdv_terminal_activation_code(
     payload: PdvTerminalActivationCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_any_permission("pdv_operators:manage")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> PdvTerminalActivationCodeRead:
+    company_code = _tenant_company_code(credentials)
+    lock_pdv_terminal_quota(db, company_code)
     terminal = db.scalar(
         select(PdvTerminal).where(
             PdvTerminal.cash_register_number == payload.cash_register_number
@@ -144,14 +148,25 @@ def create_pdv_terminal_activation_code(
     )
     now = _utc_now()
     if terminal is None:
-        terminal = PdvTerminal(
-            cash_register_number=payload.cash_register_number,
-            terminal_key=f"pending:{secrets.token_urlsafe(24)}",
-            active=False,
-            current_status="pending",
-            created_at=now,
+        enforce_pdv_terminal_limit(
+            db,
+            company_code,
+            adding_new_terminal=True,
         )
-        db.add(terminal)
+        terminal = db.scalar(
+            select(PdvTerminal).where(
+                PdvTerminal.cash_register_number == payload.cash_register_number
+            )
+        )
+        if terminal is None:
+            terminal = PdvTerminal(
+                cash_register_number=payload.cash_register_number,
+                terminal_key=f"pending:{secrets.token_urlsafe(24)}",
+                active=False,
+                current_status="pending",
+                created_at=now,
+            )
+            db.add(terminal)
     code = _new_activation_code()
     expires_at = now + timedelta(hours=payload.expires_hours)
     terminal.activation_code_hash = hash_password(code)
@@ -173,8 +188,11 @@ def register_pdv_terminal(
     payload: PdvTerminalRegister,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_any_permission("sales:create", "pdv_operators:manage")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> PdvTerminal:
     now = _utc_now()
+    company_code = _tenant_company_code(credentials)
+    lock_pdv_terminal_quota(db, company_code)
     terminal = db.scalar(
         select(PdvTerminal).where(PdvTerminal.terminal_key == payload.terminal_key)
     )
@@ -194,6 +212,24 @@ def register_pdv_terminal(
             ),
         )
     if terminal is None:
+        enforce_pdv_terminal_limit(
+            db,
+            company_code,
+            adding_new_terminal=True,
+        )
+        number_owner = db.scalar(
+            select(PdvTerminal).where(
+                PdvTerminal.cash_register_number == payload.cash_register_number
+            )
+        )
+        if number_owner is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Caixa {payload.cash_register_number} ja esta cadastrado "
+                    "em outro PDV desta empresa."
+                ),
+            )
         terminal = PdvTerminal(
             cash_register_number=payload.cash_register_number,
             terminal_key=payload.terminal_key,

@@ -11,6 +11,8 @@ class BusinessSegment(MasterBase):
     code: Mapped[str] = mapped_column(String(60), unique=True, index=True)
     name: Mapped[str] = mapped_column(String(100))
     description: Mapped[str | None] = mapped_column(String(220))
+    max_users: Mapped[int | None] = mapped_column(Integer)
+    max_pdv_terminals: Mapped[int | None] = mapped_column(Integer)
     default_modules: Mapped[list[str]] = mapped_column(JSON, default=list)
     seller_role_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     technician_role_enabled: Mapped[bool] = mapped_column(Boolean, default=False)

@@ -29,6 +29,7 @@ class _MasterPdvTerminalsScreenState extends State<MasterPdvTerminalsScreen> {
 
   List<Company> _companies = [];
   List<PdvTerminal> _terminals = [];
+  CompanyResourceQuota? _quota;
   Company? _selectedCompany;
   bool _loading = true;
   bool _loadingTerminals = false;
@@ -103,6 +104,7 @@ class _MasterPdvTerminalsScreenState extends State<MasterPdvTerminalsScreen> {
       _selectedCompany = company;
       _lastCode = null;
       _terminals = [];
+      _quota = null;
       if (_label.text.trim().isEmpty || _label.text.trim() == 'PDV Windows') {
         _label.text = 'PDV Windows';
       }
@@ -122,13 +124,16 @@ class _MasterPdvTerminalsScreenState extends State<MasterPdvTerminalsScreen> {
           widget.session.token,
           company.code,
         ),
+        _api.getMasterCompanyResourceQuota(widget.session.token, company.code),
       ]);
       final terminals = results[0] as List<PdvTerminal>;
       final settings = results[1] as PdvBusinessDaySettings;
+      final quota = results[2] as CompanyResourceQuota;
       if (!mounted || _selectedCompany?.code != company.code) return;
       setState(() {
         _terminals = terminals;
         _cutoffMinutes = settings.cutoffMinutes;
+        _quota = quota;
       });
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -534,6 +539,7 @@ class _MasterPdvTerminalsScreenState extends State<MasterPdvTerminalsScreen> {
                       saving: _saving,
                       lastCode: _lastCode,
                       terminals: _terminals,
+                      quota: _quota,
                       loadingTerminals: _loadingTerminals,
                       onGenerate: _generateCode,
                       onRefreshTerminals: selected == null
@@ -763,6 +769,42 @@ class _PlanBlockedNotice extends StatelessWidget {
   }
 }
 
+class _QuotaReachedNotice extends StatelessWidget {
+  const _QuotaReachedNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFB923C)),
+      ),
+      child: const Padding(
+        padding: EdgeInsets.all(14),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.info_outline, color: Color(0xFFC2410C)),
+            Gap(10),
+            Expanded(
+              child: Text(
+                'Limite de PDVs atingido. Aumente a quantidade no plano, '
+                'segmento ou na configuração exclusiva deste cliente para '
+                'liberar um novo código.',
+                style: TextStyle(
+                  color: Color(0xFF9A3412),
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _ActivationPanel extends StatelessWidget {
   const _ActivationPanel({
     required this.company,
@@ -771,6 +813,7 @@ class _ActivationPanel extends StatelessWidget {
     required this.saving,
     required this.lastCode,
     required this.terminals,
+    required this.quota,
     required this.loadingTerminals,
     required this.onGenerate,
     required this.onRefreshTerminals,
@@ -789,6 +832,7 @@ class _ActivationPanel extends StatelessWidget {
   final bool saving;
   final PdvTerminalActivationCode? lastCode;
   final List<PdvTerminal> terminals;
+  final CompanyResourceQuota? quota;
   final bool loadingTerminals;
   final VoidCallback onGenerate;
   final VoidCallback? onRefreshTerminals;
@@ -805,6 +849,7 @@ class _ActivationPanel extends StatelessWidget {
     final selected = company;
     final hasPdvWindows =
         selected?.enabledModules.contains('pdv_windows') ?? false;
+    final quotaReached = quota?.pdvLimitReached ?? false;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -846,11 +891,25 @@ class _ActivationPanel extends StatelessWidget {
                             selected.state,
                           ].whereType<String>().join(' / '),
                         ),
+                      _InfoChip(
+                        icon: Icons.people_outline,
+                        label:
+                            'Usuários ${quota?.activeUsers ?? 0}/${quota?.maxUsers?.toString() ?? 'sem limite'}',
+                      ),
+                      _InfoChip(
+                        icon: Icons.point_of_sale_outlined,
+                        label:
+                            'PDVs ${quota?.pdvTerminals ?? terminals.length}/${quota?.maxPdvTerminals?.toString() ?? 'sem limite'}',
+                      ),
                     ],
                   ),
                 if (selected != null && !hasPdvWindows) ...[
                   const Gap(14),
                   const _PlanBlockedNotice(),
+                ],
+                if (selected != null && hasPdvWindows && quotaReached) ...[
+                  const Gap(14),
+                  const _QuotaReachedNotice(),
                 ],
               ],
             ),
@@ -871,7 +930,7 @@ class _ActivationPanel extends StatelessWidget {
                 const Gap(14),
                 TextField(
                   controller: cashNumber,
-                  enabled: !saving && hasPdvWindows,
+                  enabled: !saving && hasPdvWindows && !quotaReached,
                   keyboardType: TextInputType.number,
                   decoration: const InputDecoration(
                     labelText: 'Numero do caixa',
@@ -879,26 +938,30 @@ class _ActivationPanel extends StatelessWidget {
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.point_of_sale_outlined),
                   ),
-                  onSubmitted: (_) =>
-                      saving || !hasPdvWindows ? null : onGenerate(),
+                  onSubmitted: (_) => saving || !hasPdvWindows || quotaReached
+                      ? null
+                      : onGenerate(),
                 ),
                 const Gap(12),
                 TextField(
                   controller: label,
-                  enabled: !saving && hasPdvWindows,
+                  enabled: !saving && hasPdvWindows && !quotaReached,
                   decoration: const InputDecoration(
                     labelText: 'Identificacao',
                     border: OutlineInputBorder(),
                     prefixIcon: Icon(Icons.computer_outlined),
                   ),
-                  onSubmitted: (_) =>
-                      saving || !hasPdvWindows ? null : onGenerate(),
+                  onSubmitted: (_) => saving || !hasPdvWindows || quotaReached
+                      ? null
+                      : onGenerate(),
                 ),
                 const Gap(16),
                 Align(
                   alignment: Alignment.centerRight,
                   child: FilledButton.icon(
-                    onPressed: saving || !hasPdvWindows ? null : onGenerate,
+                    onPressed: saving || !hasPdvWindows || quotaReached
+                        ? null
+                        : onGenerate,
                     icon: saving
                         ? const SizedBox(
                             width: 18,

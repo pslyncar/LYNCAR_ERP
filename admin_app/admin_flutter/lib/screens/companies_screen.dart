@@ -1158,6 +1158,9 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
   late final _maxUsersOverride = TextEditingController(
     text: _overrideText('max_users'),
   );
+  late final _maxPdvTerminalsOverride = TextEditingController(
+    text: _overrideText('max_pdv_terminals'),
+  );
   late final _databaseLimitOverride = TextEditingController(
     text: _overrideText('database_limit_mb'),
   );
@@ -1221,6 +1224,7 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
     _billingDay.dispose();
     _paymentMethod.dispose();
     _maxUsersOverride.dispose();
+    _maxPdvTerminalsOverride.dispose();
     _databaseLimitOverride.dispose();
     _fileLimitOverride.dispose();
     _multiCompanyLimitOverride.dispose();
@@ -1590,10 +1594,14 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
   Map<String, dynamic>? _planOverrides() {
     final data = <String, dynamic>{};
     final maxUsers = _intOverride(_maxUsersOverride);
+    final maxPdvTerminals = _intOverride(_maxPdvTerminalsOverride);
     final databaseLimit = _intOverride(_databaseLimitOverride);
     final fileLimit = _intOverride(_fileLimitOverride);
     final multiCompanyLimit = _intOverride(_multiCompanyLimitOverride);
     if (maxUsers != null) data['max_users'] = maxUsers;
+    if (maxPdvTerminals != null) {
+      data['max_pdv_terminals'] = maxPdvTerminals;
+    }
     if (databaseLimit != null) data['database_limit_mb'] = databaseLimit;
     if (fileLimit != null) data['file_limit_mb'] = fileLimit;
     if (multiCompanyLimit != null) {
@@ -1684,7 +1692,7 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
       initialValue: selected.isEmpty ? '' : selected,
       decoration: InputDecoration(labelText: label),
       items: [
-        const DropdownMenuItem(value: '', child: Text('Usar plano')),
+        const DropdownMenuItem(value: '', child: Text('Usar plano/segmento')),
         for (final value in values)
           DropdownMenuItem(
             value: value.toString(),
@@ -2248,6 +2256,21 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
                       valueLabel: _storageLabel,
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _limitDropdown(
+                      controller: _maxPdvTerminalsOverride,
+                      label: 'Terminais PDV',
+                      options: const [1, 2, 3, 5, 10, 20, 50, 100],
+                      valueLabel: (value) => '$value PDV(s)',
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(child: SizedBox()),
                 ],
               ),
               const SizedBox(height: 12),

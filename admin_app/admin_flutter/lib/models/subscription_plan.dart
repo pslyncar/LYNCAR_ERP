@@ -6,6 +6,7 @@ class SubscriptionPlan {
     this.monthlyPrice,
     this.annualPrice,
     this.maxUsers,
+    this.maxPdvTerminals,
     required this.databaseLimitMb,
     required this.fileLimitMb,
     this.multiCompanyLimit,
@@ -23,6 +24,7 @@ class SubscriptionPlan {
   final String? monthlyPrice;
   final String? annualPrice;
   final int? maxUsers;
+  final int? maxPdvTerminals;
   final int databaseLimitMb;
   final int fileLimitMb;
   final int? multiCompanyLimit;
@@ -41,6 +43,7 @@ class SubscriptionPlan {
       monthlyPrice: json['monthly_price'] as String?,
       annualPrice: json['annual_price'] as String?,
       maxUsers: json['max_users'] as int?,
+      maxPdvTerminals: json['max_pdv_terminals'] as int?,
       databaseLimitMb: json['database_limit_mb'] as int,
       fileLimitMb: json['file_limit_mb'] as int,
       multiCompanyLimit: json['multi_company_limit'] as int?,
@@ -61,6 +64,7 @@ class SubscriptionPlan {
       'monthly_price': monthlyPrice,
       'annual_price': annualPrice,
       'max_users': maxUsers,
+      'max_pdv_terminals': maxPdvTerminals,
       'database_limit_mb': databaseLimitMb,
       'file_limit_mb': fileLimitMb,
       'multi_company_limit': multiCompanyLimit,

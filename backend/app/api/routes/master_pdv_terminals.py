@@ -14,6 +14,7 @@ from app.models.pdv_terminal_command import PdvTerminalCommand
 from app.schemas.pdv_terminal import (
     MasterPdvTerminalActivationCreate,
     PdvTerminalActivationCodeRead,
+    CompanyResourceQuotaRead,
     PdvTerminalCommandCreate,
     PdvTerminalCommandRead,
     PdvTerminalNumberUpdate,
@@ -22,6 +23,11 @@ from app.schemas.pdv_terminal import (
 )
 from app.services.business_day import company_cutoff_minutes, crossed_business_day
 from app.services.tenancy import normalize_company_code, session_for_company
+from app.services.plan_limits import (
+    company_resource_usage,
+    enforce_pdv_terminal_limit,
+    lock_pdv_terminal_quota,
+)
 
 router = APIRouter()
 
@@ -150,6 +156,18 @@ def list_master_pdv_terminals(
         return [_terminal_read(db, terminal, cutoff_minutes) for terminal in terminals]
 
 
+@router.get("/pdv/resource-quota", response_model=CompanyResourceQuotaRead)
+def get_master_company_resource_quota(
+    company_code: str,
+    _: dict = Depends(require_master_permission("master:pdv_terminals")),
+) -> CompanyResourceQuotaRead:
+    normalized = _require_company_code(company_code)
+    with session_for_company(normalized) as db:
+        return CompanyResourceQuotaRead.model_validate(
+            company_resource_usage(db, normalized)
+        )
+
+
 @router.get("/pdv/business-day-settings", response_model=PdvBusinessDaySettings)
 def get_master_pdv_business_day_settings(
     company_code: str,
@@ -184,20 +202,32 @@ def create_master_pdv_terminal_activation_code(
 
     now = _utc_now()
     with session_for_company(company_code) as db:
+        lock_pdv_terminal_quota(db, company_code)
         terminal = db.scalar(
             select(PdvTerminal).where(
                 PdvTerminal.cash_register_number == payload.cash_register_number
             )
         )
         if terminal is None:
-            terminal = PdvTerminal(
-                cash_register_number=payload.cash_register_number,
-                terminal_key=f"pending:{secrets.token_urlsafe(24)}",
-                active=False,
-                current_status="pending",
-                created_at=now,
+            enforce_pdv_terminal_limit(
+                db,
+                company_code,
+                adding_new_terminal=True,
             )
-            db.add(terminal)
+            terminal = db.scalar(
+                select(PdvTerminal).where(
+                    PdvTerminal.cash_register_number == payload.cash_register_number
+                )
+            )
+            if terminal is None:
+                terminal = PdvTerminal(
+                    cash_register_number=payload.cash_register_number,
+                    terminal_key=f"pending:{secrets.token_urlsafe(24)}",
+                    active=False,
+                    current_status="pending",
+                    created_at=now,
+                )
+                db.add(terminal)
         code = _new_activation_code()
         expires_at = now + timedelta(hours=payload.expires_hours)
         terminal.activation_code_hash = hash_password(code)

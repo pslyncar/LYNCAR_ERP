@@ -386,6 +386,7 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
           DataColumn(label: Text('Plano')),
           DataColumn(label: Text('Mensal')),
           DataColumn(label: Text('Usuarios')),
+          DataColumn(label: Text('PDVs')),
           DataColumn(label: Text('Dados')),
           DataColumn(label: Text('Arquivos')),
           DataColumn(label: Text('Mercado Livre')),
@@ -407,6 +408,13 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
                 DataCell(
                   Text(
                     plan.maxUsers == null ? 'Ilimitados' : '${plan.maxUsers}',
+                  ),
+                ),
+                DataCell(
+                  Text(
+                    plan.maxPdvTerminals == null
+                        ? 'Ilimitados'
+                        : '${plan.maxPdvTerminals}',
                   ),
                 ),
                 DataCell(Text(_storageLabel(plan.databaseLimitMb))),
@@ -449,6 +457,8 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
         columns: const [
           DataColumn(label: Text('Segmento')),
           DataColumn(label: Text('Codigo')),
+          DataColumn(label: Text('Usuarios')),
+          DataColumn(label: Text('PDVs')),
           DataColumn(label: Text('Modulos sugeridos')),
           DataColumn(label: Text('Status')),
           DataColumn(label: Text('')),
@@ -459,6 +469,10 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
               cells: [
                 DataCell(Text(segment.name)),
                 DataCell(Text(segment.code)),
+                DataCell(Text(segment.maxUsers?.toString() ?? 'Herdado')),
+                DataCell(
+                  Text(segment.maxPdvTerminals?.toString() ?? 'Herdado'),
+                ),
                 DataCell(Text(_modulesLabel(segment.defaultModules))),
                 DataCell(Text(segment.active ? 'Ativo' : 'Inativo')),
                 DataCell(
@@ -520,6 +534,9 @@ class _PlanDialogState extends State<_PlanDialog> {
   late final _users = TextEditingController(
     text: widget.plan?.maxUsers?.toString() ?? '',
   );
+  late final _pdvTerminals = TextEditingController(
+    text: widget.plan?.maxPdvTerminals?.toString() ?? '',
+  );
   late final _database = TextEditingController(
     text: widget.plan?.databaseLimitMb.toString() ?? '80',
   );
@@ -550,6 +567,7 @@ class _PlanDialogState extends State<_PlanDialog> {
     _monthly.dispose();
     _annual.dispose();
     _users.dispose();
+    _pdvTerminals.dispose();
     _database.dispose();
     _files.dispose();
     _multiCompany.dispose();
@@ -626,10 +644,28 @@ class _PlanDialogState extends State<_PlanDialog> {
                     child: TextField(
                       controller: _users,
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'Usuarios'),
+                      decoration: const InputDecoration(
+                        labelText: 'Usuarios',
+                        helperText: 'Vazio não limita',
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _pdvTerminals,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Terminais PDV',
+                        helperText: 'Vazio não limita',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
                   Expanded(
                     child: TextField(
                       controller: _database,
@@ -639,11 +675,7 @@ class _PlanDialogState extends State<_PlanDialog> {
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
+                  const SizedBox(width: 12),
                   Expanded(
                     child: TextField(
                       controller: _files,
@@ -653,7 +685,11 @@ class _PlanDialogState extends State<_PlanDialog> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
                   Expanded(
                     child: TextField(
                       controller: _multiCompany,
@@ -663,11 +699,7 @@ class _PlanDialogState extends State<_PlanDialog> {
                       ),
                     ),
                   ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
+                  const SizedBox(width: 12),
                   Expanded(
                     child: TextField(
                       controller: _marketplaceListingLimit,
@@ -742,6 +774,7 @@ class _PlanDialogState extends State<_PlanDialog> {
                 monthlyPrice: _emptyToNull(_monthly),
                 annualPrice: _emptyToNull(_annual),
                 maxUsers: _intOrNull(_users),
+                maxPdvTerminals: _intOrNull(_pdvTerminals),
                 databaseLimitMb: _requiredInt(
                   _database,
                   widget.plan?.databaseLimitMb ?? 80,
@@ -786,6 +819,12 @@ class _SegmentDialogState extends State<_SegmentDialog> {
   late final _description = TextEditingController(
     text: widget.segment?.description ?? '',
   );
+  late final _users = TextEditingController(
+    text: widget.segment?.maxUsers?.toString() ?? '',
+  );
+  late final _pdvTerminals = TextEditingController(
+    text: widget.segment?.maxPdvTerminals?.toString() ?? '',
+  );
   late final _sortOrder = TextEditingController(
     text: widget.segment?.sortOrder.toString() ?? '0',
   );
@@ -803,6 +842,8 @@ class _SegmentDialogState extends State<_SegmentDialog> {
     _code.dispose();
     _name.dispose();
     _description.dispose();
+    _users.dispose();
+    _pdvTerminals.dispose();
     _sortOrder.dispose();
     super.dispose();
   }
@@ -840,6 +881,32 @@ class _SegmentDialogState extends State<_SegmentDialog> {
               TextField(
                 controller: _description,
                 decoration: const InputDecoration(labelText: 'Descricao'),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _users,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Limite de usuarios',
+                        helperText: 'Vale o maior limite configurado',
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: TextField(
+                      controller: _pdvTerminals,
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Limite de PDVs',
+                        helperText: 'Vale o maior limite configurado',
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 12),
               TextField(
@@ -917,6 +984,8 @@ class _SegmentDialogState extends State<_SegmentDialog> {
                 code: code,
                 name: name,
                 description: _emptyToNull(_description),
+                maxUsers: int.tryParse(_users.text.trim()),
+                maxPdvTerminals: int.tryParse(_pdvTerminals.text.trim()),
                 defaultModules: _modules.toList()..sort(),
                 sellerRoleEnabled: _sellerRoleEnabled,
                 technicianRoleEnabled: _technicianRoleEnabled,

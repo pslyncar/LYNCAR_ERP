@@ -105,6 +105,14 @@ class PdvTerminalActivationCodeRead(BaseModel):
     expires_at: datetime
 
 
+class CompanyResourceQuotaRead(BaseModel):
+    company_code: str
+    active_users: int
+    max_users: int | None = None
+    pdv_terminals: int
+    max_pdv_terminals: int | None = None
+
+
 class PdvTerminalActivationRequest(BaseModel):
     activation_code: str = Field(min_length=6, max_length=40)
     app_version: str | None = Field(default=None, max_length=40)

@@ -51,6 +51,8 @@ def create_segment(
             code=code,
             name=segment_in.name.strip(),
             description=segment_in.description,
+            max_users=segment_in.max_users,
+            max_pdv_terminals=segment_in.max_pdv_terminals,
             default_modules=normalize_modules(segment_in.default_modules),
             seller_role_enabled=segment_in.seller_role_enabled,
             technician_role_enabled=segment_in.technician_role_enabled,
@@ -78,6 +80,8 @@ def update_segment(
             )
         segment.name = segment_in.name.strip()
         segment.description = segment_in.description
+        segment.max_users = segment_in.max_users
+        segment.max_pdv_terminals = segment_in.max_pdv_terminals
         segment.default_modules = normalize_modules(segment_in.default_modules)
         segment.seller_role_enabled = segment_in.seller_role_enabled
         segment.technician_role_enabled = segment_in.technician_role_enabled
