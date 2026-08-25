@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/client.dart';
 import '../models/payable.dart';
@@ -411,6 +412,7 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
   Client? _client;
   String _mode = 'products';
   final Map<int, _CreditProductLine> _productLines = {};
+  TextEditingController? _productSearchController;
   bool _saving = false;
   String? _error;
 
@@ -420,6 +422,9 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
     _description.dispose();
     _dueDate.dispose();
     _notes.dispose();
+    for (final line in _productLines.values) {
+      line.dispose();
+    }
     super.dispose();
   }
 
@@ -448,11 +453,26 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
     final amount = _mode == 'products'
         ? _productLines.values.fold<double>(
             0,
-            (sum, line) => sum + (line.quantity * line.unitPrice),
+            (sum, line) => sum + ((line.quantity ?? 0) * line.unitPrice),
           )
         : parseBrazilianNumber(_amount.text);
+    final invalidLine = _productLines.values.where((line) {
+      final quantity = line.quantity;
+      return quantity == null ||
+          quantity <= 0 ||
+          (_isUnitProduct(line.product) &&
+              quantity != quantity.roundToDouble());
+    }).firstOrNull;
     if (client == null) {
       setState(() => _error = 'Selecione o cliente.');
+      return;
+    }
+    if (_mode == 'products' && invalidLine != null) {
+      setState(
+        () => _error = _isUnitProduct(invalidLine.product)
+            ? 'Informe uma quantidade inteira para ${invalidLine.product.name}.'
+            : 'Informe uma quantidade válida para ${invalidLine.product.name}.',
+      );
       return;
     }
     if (amount <= 0) {
@@ -496,7 +516,7 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
                   productId: line.product.id,
                   barcode: line.product.barcode,
                   description: line.product.name,
-                  quantity: line.quantity,
+                  quantity: line.quantity!,
                   unitPrice: line.unitPrice,
                   discountAmount: 0,
                 ),
@@ -540,7 +560,7 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
   Widget build(BuildContext context) {
     final productTotal = _productLines.values.fold<double>(
       0,
-      (sum, line) => sum + (line.quantity * line.unitPrice),
+      (sum, line) => sum + ((line.quantity ?? 0) * line.unitPrice),
     );
     return AlertDialog(
       title: const Text('Novo lançamento no crediário'),
@@ -642,19 +662,22 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
                       product: product,
                       unitPrice: _effectiveProductPrice(product),
                     );
+                    _productSearchController?.clear();
                   }),
                   fieldViewBuilder:
-                      (context, controller, focusNode, onFieldSubmitted) =>
-                          TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            decoration: const InputDecoration(
-                              labelText: 'Adicionar produto',
-                              hintText: 'Pesquise por nome, código ou EAN',
-                              prefixIcon: Icon(Icons.search),
-                              border: OutlineInputBorder(),
-                            ),
+                      (context, controller, focusNode, onFieldSubmitted) {
+                        _productSearchController = controller;
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          decoration: const InputDecoration(
+                            labelText: 'Adicionar produto',
+                            hintText: 'Pesquise por nome, código ou EAN',
+                            prefixIcon: Icon(Icons.search),
+                            border: OutlineInputBorder(),
                           ),
+                        );
+                      },
                 ),
                 const SizedBox(height: 10),
                 if (_productLines.isEmpty)
@@ -685,27 +708,46 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
                               ),
                             ),
                           ),
-                          IconButton.outlined(
-                            tooltip: 'Diminuir',
-                            onPressed: () => setState(() {
-                              if (line.quantity > 1) line.quantity -= 1;
-                            }),
-                            icon: const Icon(Icons.remove),
+                          SizedBox(
+                            width: 148,
+                            child: TextField(
+                              key: Key('credit-quantity-${line.product.id}'),
+                              controller: line.quantityController,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                _QuantityInputFormatter(
+                                  decimal: !_isUnitProduct(line.product),
+                                ),
+                              ],
+                              textAlign: TextAlign.center,
+                              onTap: () {
+                                if (!_isUnitProduct(line.product)) {
+                                  line.quantityController.selection =
+                                      TextSelection(
+                                        baseOffset: 0,
+                                        extentOffset:
+                                            line.quantityController.text.length,
+                                      );
+                                }
+                              },
+                              decoration: InputDecoration(
+                                labelText: _isUnitProduct(line.product)
+                                    ? 'Quantidade (un)'
+                                    : 'Quantidade (${line.product.unit})',
+                                border: const OutlineInputBorder(),
+                              ),
+                              onChanged: (_) => setState(() => _error = null),
+                            ),
                           ),
-                          Text(
-                            '${line.quantity.toStringAsFixed(0)} ${line.product.unit}',
-                          ),
-                          IconButton.outlined(
-                            tooltip: 'Aumentar',
-                            onPressed: () => setState(() => line.quantity += 1),
-                            icon: const Icon(Icons.add),
-                          ),
-                          Text(_money(line.quantity * line.unitPrice)),
+                          Text(_money((line.quantity ?? 0) * line.unitPrice)),
                           IconButton(
                             tooltip: 'Remover',
-                            onPressed: () => setState(
-                              () => _productLines.remove(line.product.id),
-                            ),
+                            onPressed: () => setState(() {
+                              _productLines.remove(line.product.id)?.dispose();
+                            }),
                             icon: const Icon(Icons.delete_outline),
                           ),
                         ],
@@ -810,11 +852,45 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
 }
 
 class _CreditProductLine {
-  _CreditProductLine({required this.product, required this.unitPrice});
+  _CreditProductLine({required this.product, required this.unitPrice})
+    : quantityController = TextEditingController(
+        text: _isUnitProduct(product) ? '1' : '0,000',
+      );
 
   final Product product;
   final double unitPrice;
-  double quantity = 1;
+  final TextEditingController quantityController;
+  double? get quantity =>
+      double.tryParse(quantityController.text.replaceAll(',', '.'));
+  void dispose() => quantityController.dispose();
+}
+
+bool _isUnitProduct(Product product) {
+  const unitCodes = {'un', 'und', 'unidade', 'pc', 'pç', 'peca', 'peça'};
+  return unitCodes.contains(product.unit.trim().toLowerCase());
+}
+
+class _QuantityInputFormatter extends TextInputFormatter {
+  const _QuantityInputFormatter({required this.decimal});
+  final bool decimal;
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    if (!decimal) {
+      return RegExp(r'^\d*$').hasMatch(newValue.text) ? newValue : oldValue;
+    }
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.isEmpty) return const TextEditingValue(text: '0,000');
+    final normalized = digits.padLeft(4, '0');
+    final formatted =
+        '${normalized.substring(0, normalized.length - 3)},${normalized.substring(normalized.length - 3)}';
+    return TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+  }
 }
 
 double _effectiveProductPrice(Product product) {
