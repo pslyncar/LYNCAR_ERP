@@ -413,6 +413,7 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
   String _mode = 'products';
   final Map<int, _CreditProductLine> _productLines = {};
   TextEditingController? _productSearchController;
+  int _productAutocompleteEpoch = 0;
   bool _saving = false;
   String? _error;
 
@@ -642,6 +643,7 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
               const SizedBox(height: 12),
               if (_mode == 'products') ...[
                 Autocomplete<Product>(
+                  key: ValueKey(_productAutocompleteEpoch),
                   displayStringForOption: (product) => product.name,
                   optionsBuilder: (value) {
                     final term = _normalize(value.text);
@@ -663,6 +665,10 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
                       unitPrice: _effectiveProductPrice(product),
                     );
                     _productSearchController?.clear();
+                    // Limpar somente o controller não limpa o termo mantido
+                    // internamente pelo Autocomplete. A chave nova reinicia a
+                    // busca para que todos os produtos voltem a aparecer.
+                    _productAutocompleteEpoch += 1;
                   }),
                   fieldViewBuilder:
                       (context, controller, focusNode, onFieldSubmitted) {
@@ -881,7 +887,9 @@ class _QuantityInputFormatter extends TextInputFormatter {
     if (!decimal) {
       return RegExp(r'^\d*$').hasMatch(newValue.text) ? newValue : oldValue;
     }
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
+    final digits = newValue.text
+        .replaceAll(RegExp(r'\D'), '')
+        .replaceFirst(RegExp(r'^0+'), '');
     if (digits.isEmpty) return const TextEditingValue(text: '0,000');
     final normalized = digits.padLeft(4, '0');
     final formatted =
