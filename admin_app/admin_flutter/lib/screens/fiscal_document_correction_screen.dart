@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import '../models/client.dart';
 import '../models/fiscal.dart';
@@ -424,9 +423,9 @@ class _FiscalDocumentCorrectionScreenState
                             onChanged: (value) =>
                                 setState(() => _freightMode = value ?? '9'),
                           ),
-                          _field(_freight, 'Valor do frete', money: true),
-                          _field(_insurance, 'Seguro', money: true),
-                          _field(_expenses, 'Outras despesas', money: true),
+                          _field(_freight, 'Valor do frete'),
+                          _field(_insurance, 'Seguro'),
+                          _field(_expenses, 'Outras despesas'),
                           _field(_carrierName, 'Transportadora'),
                           _field(_carrierDocument, 'CPF/CNPJ transportadora'),
                           _field(_carrierIe, 'IE transportadora'),
@@ -495,10 +494,8 @@ class _FiscalDocumentCorrectionScreenState
     );
   }
 
-  Widget _field(TextEditingController controller, String label, {bool money = false}) => TextField(
+  Widget _field(TextEditingController controller, String label) => TextField(
     controller: controller,
-    keyboardType: money ? const TextInputType.numberWithOptions(decimal: true) : null,
-    inputFormatters: money ? const [_CurrencyInputFormatter()] : null,
     decoration: InputDecoration(
       labelText: label,
       border: const OutlineInputBorder(),
@@ -689,25 +686,6 @@ class _FieldGrid extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-class _CurrencyInputFormatter extends TextInputFormatter {
-  const _CurrencyInputFormatter();
-
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
-    if (digits.isEmpty) return const TextEditingValue(text: '0,00');
-    final cents = int.parse(digits);
-    final text = '${cents ~/ 100},${(cents % 100).toString().padLeft(2, '0')}';
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
     );
   }
 }
