@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/client.dart';
 import '../models/fiscal.dart';
 import '../widgets/app_card.dart';
+import '../widgets/fiscal_item_card.dart';
 
 class FiscalDocumentCorrectionScreen extends StatefulWidget {
   const FiscalDocumentCorrectionScreen({
@@ -369,11 +370,70 @@ class _FiscalDocumentCorrectionScreenState
                           index < _itemControllers.length;
                           index++
                         )
-                          _FiscalItemEditor(
+                          FiscalItemCard(
                             index: index,
-                            source: document.fiscalItems[index],
-                            controllers: _itemControllers[index],
+                            productField: InputDecorator(
+                              decoration: const InputDecoration(
+                                labelText: 'Produto fiscal',
+                                border: OutlineInputBorder(),
+                              ),
+                              child: Text(
+                                _itemControllers[index].description.text.isEmpty
+                                    ? 'Produto sem descrição'
+                                    : _itemControllers[index].description.text,
+                              ),
+                            ),
+                            description: _itemControllers[index].description,
+                            quantity: _itemControllers[index].quantity,
+                            unit: _itemControllers[index].unit,
+                            unitPrice: _itemControllers[index].unitPrice,
+                            discount: _itemControllers[index].discount,
+                            ncm: _itemControllers[index].ncm,
+                            cest: _itemControllers[index].cest,
+                            cfop: _itemControllers[index].cfop,
+                            origin: _itemControllers[index].origin,
+                            cst: _itemControllers[index].cst,
+                            csosn: _itemControllers[index].csosn,
+                            pisCst: _itemControllers[index].pisCst,
+                            cofinsCst: _itemControllers[index].cofinsCst,
+                            cbenef: _itemControllers[index].cbenef,
+                            total: _itemControllers[index].total,
+                            expanded: _itemControllers[index].expanded,
+                            onToggleExpanded: () => setState(
+                              () => _itemControllers[index].expanded =
+                                  !_itemControllers[index].expanded,
+                            ),
                             onChanged: () => setState(() {}),
+                            onValueChanged: (_) => setState(
+                              () => _itemControllers[index].markValueEdited(),
+                            ),
+                          ),
+                        if (_itemControllers.isNotEmpty &&
+                            _itemControllers.any(
+                              (item) => item.pendingFields.isNotEmpty,
+                            ))
+                          Card(
+                            color: const Color(0xFFFFF7ED),
+                            child: Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Pendências fiscais',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  for (final item in _itemControllers.where(
+                                    (item) => item.pendingFields.isNotEmpty,
+                                  ))
+                                    Text(
+                                      '${item.description.text.isEmpty ? 'Produto sem descrição' : item.description.text}: ${item.pendingFields.join(', ')}',
+                                    ),
+                                ],
+                              ),
+                            ),
                           ),
                         const SizedBox(height: 4),
                         Align(
@@ -423,9 +483,9 @@ class _FiscalDocumentCorrectionScreenState
                             onChanged: (value) =>
                                 setState(() => _freightMode = value ?? '9'),
                           ),
-                          _field(_freight, 'Valor do frete'),
-                          _field(_insurance, 'Seguro'),
-                          _field(_expenses, 'Outras despesas'),
+                          _field(_freight, 'Valor do frete', money: true),
+                          _field(_insurance, 'Seguro', money: true),
+                          _field(_expenses, 'Outras despesas', money: true),
                           _field(_carrierName, 'Transportadora'),
                           _field(_carrierDocument, 'CPF/CNPJ transportadora'),
                           _field(_carrierIe, 'IE transportadora'),
@@ -494,8 +554,16 @@ class _FiscalDocumentCorrectionScreenState
     );
   }
 
-  Widget _field(TextEditingController controller, String label) => TextField(
+  Widget _field(
+    TextEditingController controller,
+    String label, {
+    bool money = false,
+  }) => TextField(
     controller: controller,
+    keyboardType: money
+        ? const TextInputType.numberWithOptions(decimal: true)
+        : null,
+    inputFormatters: money ? const [CurrencyInputFormatter()] : null,
     decoration: InputDecoration(
       labelText: label,
       border: const OutlineInputBorder(),
@@ -506,7 +574,9 @@ class _FiscalDocumentCorrectionScreenState
 class _FiscalItemControllers {
   _FiscalItemControllers(FiscalDraftItem item)
     : description = TextEditingController(text: item.fiscalDescription),
-      quantity = TextEditingController(text: item.quantity.toString()),
+      quantity = TextEditingController(
+        text: formatFiscalQuantity(item.quantity, item.unit),
+      ),
       unit = TextEditingController(text: item.unit),
       unitPrice = TextEditingController(
         text: item.unitPrice.toStringAsFixed(2).replaceAll('.', ','),
@@ -522,8 +592,12 @@ class _FiscalItemControllers {
       csosn = TextEditingController(text: item.csosn ?? ''),
       pisCst = TextEditingController(text: item.pisCst ?? ''),
       cofinsCst = TextEditingController(text: item.cofinsCst ?? ''),
-      cbenef = TextEditingController(text: item.cbenef ?? '');
+      cbenef = TextEditingController(text: item.cbenef ?? ''),
+      originalTotal = item.totalPrice;
 
+  bool expanded = false;
+  bool _valueEdited = false;
+  final double originalTotal;
   final TextEditingController description;
   final TextEditingController quantity;
   final TextEditingController unit;
@@ -539,17 +613,29 @@ class _FiscalItemControllers {
   final TextEditingController cofinsCst;
   final TextEditingController cbenef;
 
-  double _decimal(TextEditingController value) =>
-      double.tryParse(value.text.trim().replaceAll(',', '.')) ?? 0;
+  void markValueEdited() => _valueEdited = true;
 
-  double get total => _decimal(quantity) * _decimal(unitPrice) - _decimal(discount);
+  double get calculatedTotal =>
+      parseFiscalDecimal(quantity.text) * parseFiscalDecimal(unitPrice.text) -
+      parseFiscalDecimal(discount.text);
+
+  double get total => _valueEdited ? calculatedTotal : originalTotal;
+
+  List<String> get pendingFields => [
+    if (description.text.trim().isEmpty) 'descrição fiscal',
+    if (parseFiscalDecimal(quantity.text) <= 0) 'quantidade',
+    if (parseFiscalDecimal(unitPrice.text) <= 0) 'valor unitário',
+    if (ncm.text.trim().isEmpty) 'NCM',
+    if (cfop.text.trim().isEmpty) 'CFOP',
+  ];
 
   FiscalDraftItem buildItem(FiscalDraftItem source) => source.copyWith(
     fiscalDescription: description.text.trim(),
-    quantity: _decimal(quantity),
+    quantity: parseFiscalDecimal(quantity.text),
     unit: unit.text.trim(),
-    unitPrice: _decimal(unitPrice),
-    discountAmount: _decimal(discount),
+    unitPrice: parseFiscalDecimal(unitPrice.text),
+    discountAmount: parseFiscalDecimal(discount.text),
+    totalPrice: total,
     ncm: ncm.text.trim(),
     cest: cest.text.trim(),
     cfop: cfop.text.trim(),
@@ -581,85 +667,6 @@ class _FiscalItemControllers {
       controller.dispose();
     }
   }
-}
-
-class _FiscalItemEditor extends StatelessWidget {
-  const _FiscalItemEditor({
-    required this.index,
-    required this.source,
-    required this.controllers,
-    required this.onChanged,
-  });
-
-  final int index;
-  final FiscalDraftItem source;
-  final _FiscalItemControllers controllers;
-  final VoidCallback onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Material(
-        color: Colors.white,
-        clipBehavior: Clip.antiAlias,
-        shape: RoundedRectangleBorder(
-          side: const BorderSide(color: Color(0xFFDCE5F0)),
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: ExpansionTile(
-          initiallyExpanded: false,
-          title: Text(
-            '${index + 1}. ${source.fiscalDescription}',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          subtitle: Text(
-            'Qtd. ${controllers.quantity.text} ${controllers.unit.text} • '
-            'Total R\$ ${controllers.total.toStringAsFixed(2).replaceAll('.', ',')}\n'
-            'NCM ${source.ncm?.isNotEmpty == true ? source.ncm : 'pendente'} • CFOP ${source.cfop?.isNotEmpty == true ? source.cfop : 'automático'}',
-          ),
-          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            _FieldGrid(
-              children: [
-                _text(controllers.description, 'Descrição fiscal'),
-                _text(controllers.quantity, 'Quantidade'),
-                _text(controllers.unit, 'Unidade'),
-                _text(controllers.unitPrice, 'Valor unitário'),
-                _text(controllers.discount, 'Desconto'),
-                _text(controllers.ncm, 'NCM'),
-                _text(controllers.cest, 'CEST'),
-                _text(controllers.cfop, 'CFOP'),
-                _text(controllers.origin, 'Origem da mercadoria'),
-                _text(controllers.cst, 'CST ICMS'),
-                _text(controllers.csosn, 'CSOSN'),
-                _text(controllers.pisCst, 'CST PIS'),
-                _text(controllers.cofinsCst, 'CST COFINS'),
-                _text(controllers.cbenef, 'Código de benefício fiscal'),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                'Total do item: R\$ ${(controllers.total).toStringAsFixed(2).replaceAll('.', ',')}',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _text(TextEditingController controller, String label) => TextField(
-    controller: controller,
-    onChanged: (_) => onChanged(),
-    decoration: InputDecoration(
-      labelText: label,
-      border: const OutlineInputBorder(),
-    ),
-  );
 }
 
 class _FieldGrid extends StatelessWidget {

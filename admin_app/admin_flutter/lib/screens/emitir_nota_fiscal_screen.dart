@@ -6,6 +6,7 @@ import '../models/fiscal.dart';
 import '../models/product.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
+import '../widgets/fiscal_item_card.dart';
 
 /// Conteúdo fiscal exibido dentro do [AppShell]. Não é uma rota/modal: o menu
 /// lateral permanece disponível enquanto o usuário prepara a nota.
@@ -374,9 +375,24 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
                       },
                       (v) => setState(() => _freightMode = v),
                     ),
-                    _field(_freight, 'Valor do frete', number: true),
-                    _field(_insurance, 'Seguro', number: true),
-                    _field(_expenses, 'Outras despesas', number: true),
+                    _field(
+                      _freight,
+                      'Valor do frete',
+                      number: true,
+                      inputFormatters: const [CurrencyInputFormatter()],
+                    ),
+                    _field(
+                      _insurance,
+                      'Seguro',
+                      number: true,
+                      inputFormatters: const [CurrencyInputFormatter()],
+                    ),
+                    _field(
+                      _expenses,
+                      'Outras despesas',
+                      number: true,
+                      inputFormatters: const [CurrencyInputFormatter()],
+                    ),
                     _field(_carrierName, 'Transportadora'),
                     _field(
                       _carrierDocument,
@@ -612,61 +628,32 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
       },
     ),
   );
-  Widget _itemCard(_ItemEditor item) => Card(
-    color: const Color(0xFFF8FAFC),
-    child: Padding(
-      padding: const EdgeInsets.all(12),
-      child: Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          _productSelector(item),
-          _field(
-            item.quantity,
-            'Quantidade (${item.unit})',
-            number: true,
-            inputFormatters: item.isWeight
-                ? [_WeightInputFormatter()]
-                : [FilteringTextInputFormatter.digitsOnly],
-            onChanged: (_) => setState(() {}),
-          ),
-          _field(
-            item.unitPrice,
-            'Valor unitário',
-            number: true,
-            onChanged: (_) => setState(() {}),
-          ),
-          Text(
-            'Total do item: R\$ ${item.total.toStringAsFixed(2).replaceAll('.', ',')}',
-            style: const TextStyle(fontWeight: FontWeight.w800),
-          ),
-          OutlinedButton.icon(
-            onPressed: () => setState(() => item.expanded = !item.expanded),
-            icon: Icon(item.expanded ? Icons.expand_less : Icons.tune),
-            label: Text(
-              item.expanded ? 'Ocultar dados fiscais' : 'Editar dados fiscais',
-            ),
-          ),
-          if (item.expanded) ...[
-            _field(item.description, 'Descrição fiscal *'),
-            _field(item.ncm, 'NCM'),
-            _field(item.cfop, 'CFOP'),
-            _field(item.origin, 'Origem'),
-            _field(item.cst, 'CST'),
-            _field(item.csosn, 'CSOSN'),
-            _field(item.pis, 'PIS CST'),
-            _field(item.cofins, 'COFINS CST'),
-          ],
-          IconButton(
-            onPressed: () => setState(() {
-              _items.remove(item);
-              item.dispose();
-            }),
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
-      ),
-    ),
+  Widget _itemCard(_ItemEditor item) => FiscalItemCard(
+    index: _items.indexOf(item),
+    productField: _productSelector(item),
+    description: item.description,
+    quantity: item.quantity,
+    unit: item.unit,
+    unitPrice: item.unitPrice,
+    discount: item.discount,
+    ncm: item.ncm,
+    cest: item.cest,
+    cfop: item.cfop,
+    origin: item.origin,
+    cst: item.cst,
+    csosn: item.csosn,
+    pisCst: item.pis,
+    cofinsCst: item.cofins,
+    cbenef: item.cbenef,
+    total: item.total,
+    expanded: item.expanded,
+    onToggleExpanded: () => setState(() => item.expanded = !item.expanded),
+    onChanged: () => setState(() {}),
+    onValueChanged: (_) => setState(() {}),
+    onDelete: () => setState(() {
+      _items.remove(item);
+      item.dispose();
+    }),
   );
 
   Widget _productSelector(_ItemEditor item) => Autocomplete<Product>(
@@ -727,28 +714,37 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
 
 class _ItemEditor {
   bool expanded = false;
-  String unit = 'UN';
-  bool get isWeight => unit == 'KG' || unit == 'KGS';
-  double get total =>
-      (double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0) *
-      (double.tryParse(unitPrice.text.replaceAll(',', '.')) ?? 0);
   final productId = TextEditingController();
   final description = TextEditingController();
   final quantity = TextEditingController(text: '1');
+  final unit = TextEditingController(text: 'UN');
   final unitPrice = TextEditingController(text: '0');
+  final discount = TextEditingController(text: '0,00');
   final ncm = TextEditingController();
+  final cest = TextEditingController();
   final cfop = TextEditingController();
   final origin = TextEditingController();
   final cst = TextEditingController();
   final csosn = TextEditingController();
   final pis = TextEditingController();
   final cofins = TextEditingController();
+  final cbenef = TextEditingController();
+
+  bool get isWeight {
+    final normalized = unit.text.trim().toUpperCase();
+    return normalized == 'KG' || normalized == 'KGS';
+  }
+
+  double get total =>
+      parseFiscalDecimal(quantity.text) * parseFiscalDecimal(unitPrice.text) -
+      parseFiscalDecimal(discount.text);
+
   void applyProduct(Product p) {
     productId.text = '${p.id}';
     description.text = p.description?.trim().isNotEmpty == true
         ? p.description!.trim()
         : p.name;
-    unit = p.unit.trim().toUpperCase().isEmpty
+    unit.text = p.unit.trim().toUpperCase().isEmpty
         ? 'UN'
         : p.unit.trim().toUpperCase();
     quantity.text = isWeight ? '0,001' : '1';
@@ -763,74 +759,48 @@ class _ItemEditor {
   List<String> get pendingFields => [
     if (productId.text.trim().isEmpty) 'produto',
     if (description.text.trim().isEmpty) 'descrição fiscal',
-    if (double.tryParse(quantity.text.replaceAll(',', '.')) == null ||
-        double.tryParse(quantity.text.replaceAll(',', '.'))! <= 0)
-      'quantidade',
-    if (double.tryParse(unitPrice.text.replaceAll(',', '.')) == null ||
-        double.tryParse(unitPrice.text.replaceAll(',', '.'))! <= 0)
-      'valor unitário',
+    if (parseFiscalDecimal(quantity.text) <= 0) 'quantidade',
+    if (parseFiscalDecimal(unitPrice.text) <= 0) 'valor unitário',
     if (ncm.text.trim().isEmpty) 'NCM',
     if (cfop.text.trim().isEmpty) 'CFOP',
   ];
   FiscalDraftItem toFiscalItem() => FiscalDraftItem(
     fiscalProductId: int.tryParse(productId.text.trim()),
     fiscalDescription: description.text.trim(),
-    quantity: double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0,
-    unit: unit,
-    unitPrice: double.tryParse(unitPrice.text.replaceAll(',', '.')) ?? 0,
-    discountAmount: 0,
-    totalPrice:
-        (double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0) *
-        (double.tryParse(unitPrice.text.replaceAll(',', '.')) ?? 0),
+    quantity: parseFiscalDecimal(quantity.text),
+    unit: unit.text.trim().toUpperCase(),
+    unitPrice: parseFiscalDecimal(unitPrice.text),
+    discountAmount: parseFiscalDecimal(discount.text),
+    totalPrice: total,
     ncm: ncm.text.trim(),
+    cest: cest.text.trim(),
     cfop: cfop.text.trim(),
     origin: origin.text.trim(),
     cst: cst.text.trim(),
     csosn: csosn.text.trim(),
     pisCst: pis.text.trim(),
     cofinsCst: cofins.text.trim(),
+    cbenef: cbenef.text.trim(),
   );
   void dispose() {
     for (final c in [
       productId,
       description,
       quantity,
+      unit,
       unitPrice,
+      discount,
       ncm,
+      cest,
       cfop,
       origin,
       cst,
       csosn,
       pis,
       cofins,
+      cbenef,
     ]) {
       c.dispose();
     }
-  }
-}
-
-class _WeightInputFormatter extends TextInputFormatter {
-  @override
-  TextEditingValue formatEditUpdate(
-    TextEditingValue oldValue,
-    TextEditingValue newValue,
-  ) {
-    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.isEmpty) {
-      return newValue.copyWith(
-        text: '0,000',
-        selection: const TextSelection.collapsed(offset: 5),
-      );
-    }
-    final padded = digits.padLeft(4, '0');
-    final integer = padded
-        .substring(0, padded.length - 3)
-        .replaceFirst(RegExp(r'^0+(?=\d)'), '');
-    final text =
-        '${integer.isEmpty ? '0' : integer},${padded.substring(padded.length - 3)}';
-    return TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
   }
 }
