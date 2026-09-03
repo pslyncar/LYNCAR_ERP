@@ -1059,7 +1059,9 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
     final bySale = <int, Receivable>{};
     for (final receivable in widget.account.receivables) {
       final saleId = receivable.saleId;
-      if (saleId != null && receivable.fiscalDocumentId == null) {
+      final isOpen =
+          receivable.status == 'open' && receivable.balanceAmount > 0.009;
+      if (saleId != null && receivable.fiscalDocumentId == null && isOpen) {
         bySale.putIfAbsent(saleId, () => receivable);
       }
     }
@@ -1172,6 +1174,7 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
         ? openReceivables
         : historyReceivables;
     final statementEntries = _statementEntries(visibleReceivables);
+    final eligibleFiscalSales = _eligibleFiscalSales;
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
       child: ConstrainedBox(
@@ -1207,12 +1210,12 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                     icon: const Icon(Icons.close),
                   ),
                   if (widget.canEmitFiscal &&
-                      _eligibleFiscalSales.isNotEmpty) ...[
+                      eligibleFiscalSales.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: () async {
                         final navigator = Navigator.of(context);
-                        final changed = await _issueSales(_eligibleFiscalSales);
+                        final changed = await _issueSales(eligibleFiscalSales);
                         if (!mounted) return;
                         if (changed) navigator.pop(true);
                       },
