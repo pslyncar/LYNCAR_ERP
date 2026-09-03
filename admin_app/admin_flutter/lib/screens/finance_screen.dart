@@ -1588,7 +1588,12 @@ class _FiscalSalesSelectionDialogState
         saleIds: _selectedSaleIds.toList(),
         fiscalClientId: widget.client.id,
         documentType: _documentType,
-        consumerCpf: widget.client.documentNumber,
+        // NF-e uses the fiscal client's document as recipient_document. The
+        // consumer CPF field is only applicable to NFC-e and is limited to 14
+        // characters by the API.
+        consumerCpf: _documentType == 'nfce'
+            ? widget.client.documentNumber?.replaceAll(RegExp(r'\D'), '')
+            : null,
         paymentCondition: 'prazo',
         fiscalNotes:
             'Documento originado do extrato financeiro. Estoque ja movimentado pelas vendas.',
