@@ -246,6 +246,7 @@ class FiscalDocumentItemOverride(BaseModel):
     unit: str | None = Field(default=None, max_length=20)
     unit_price: Decimal = Field(ge=0)
     discount_amount: Decimal = Field(default=0, ge=0)
+    total_price: Decimal | None = Field(default=None, ge=0)
     included: bool = True
     adjustment_reason: str | None = Field(default=None, max_length=1000)
     ncm: str | None = Field(default=None, max_length=20)

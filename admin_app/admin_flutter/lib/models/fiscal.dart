@@ -853,6 +853,7 @@ class FiscalDraftItem {
     'unit': unit,
     'unit_price': unitPrice,
     'discount_amount': discountAmount,
+    'total_price': totalPrice,
     'included': included,
     'adjustment_reason': adjustmentReason,
     'ncm': ncm,

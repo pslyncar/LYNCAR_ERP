@@ -62,6 +62,11 @@ def _weight(value: Decimal | int | float | None) -> str:
     return f"{amount:.3f}"
 
 
+def _unit_amount(value: Decimal | int | float | None) -> str:
+    amount = Decimal(value or 0).quantize(Decimal("0.0000000001"), rounding=ROUND_HALF_UP)
+    return f"{amount:.10f}".rstrip("0").rstrip(".")
+
+
 def _allocate_line_amounts(
     total: Decimal | int | float | None,
     weights: list[Decimal],
@@ -328,7 +333,11 @@ def build_nfe_xml(
 
     sale_items = list(sale.items)
     allocation_weights = [
-        max(Decimal(item.quantity or 0) * Decimal(item.unit_price or 0), Decimal("0"))
+        max(
+            Decimal(getattr(item, "total_price", None) or 0)
+            + Decimal(getattr(item, "discount_amount", None) or 0),
+            Decimal("0"),
+        )
         for item in sale_items
     ]
     freight_by_item = _allocate_line_amounts(document.freight_amount, allocation_weights)
@@ -344,9 +353,15 @@ def build_nfe_xml(
         product = item.product
         quantity = Decimal(item.quantity or 0)
         unit_price = Decimal(item.unit_price or 0)
-        line_total = quantity * unit_price
+        discount_amount = Decimal(item.discount_amount or 0)
+        line_total = Decimal(getattr(item, "total_price", None) or 0) + discount_amount
+        fiscal_unit_price = (
+            line_total / quantity
+            if quantity
+            else unit_price
+        )
         total_products += line_total
-        total_discount += Decimal(item.discount_amount or 0)
+        total_discount += discount_amount
 
         det = etree.SubElement(inf, f"{{{NFE_NS}}}det", nItem=str(index))
         prod = etree.SubElement(det, f"{{{NFE_NS}}}prod")
@@ -384,12 +399,12 @@ def build_nfe_xml(
             ("CFOP", tax_profile.cfop if product else ""),
             ("uCom", (item.unit or "UN").upper()[:6]),
             ("qCom", _quantity(quantity)),
-            ("vUnCom", _money(unit_price)),
+            ("vUnCom", _unit_amount(fiscal_unit_price)),
             ("vProd", _money(line_total)),
             ("cEANTrib", _gtin_or_sem_gtin(item.barcode)),
             ("uTrib", (item.unit or "UN").upper()[:6]),
             ("qTrib", _quantity(quantity)),
-            ("vUnTrib", _money(unit_price)),
+            ("vUnTrib", _unit_amount(fiscal_unit_price)),
         ]:
             _text(prod, tag, value)
         if freight_by_item[index - 1] > 0:
@@ -479,14 +494,28 @@ def build_nfe_xml(
         _text(transporta, "xEnder", document.carrier_address)
         _text(transporta, "xMun", document.carrier_city)
         _text(transporta, "UF", document.carrier_uf)
-    if document.volume_quantity is not None or document.net_weight is not None or document.gross_weight is not None:
+    has_volume_details = (
+        Decimal(document.volume_quantity or 0) > 0
+        or Decimal(document.net_weight or 0) > 0
+        or Decimal(document.gross_weight or 0) > 0
+        or bool((document.volume_species or "").strip())
+        or bool((document.volume_brand or "").strip())
+        or bool((document.volume_numbering or "").strip())
+    )
+    if has_volume_details:
         vol = etree.SubElement(transp, f"{{{NFE_NS}}}vol")
-        _text(vol, "qVol", int(Decimal(document.volume_quantity or 0)))
-        _text(vol, "esp", document.volume_species)
-        _text(vol, "marca", document.volume_brand)
-        _text(vol, "nVol", document.volume_numbering)
-        _text(vol, "pesoL", _weight(document.net_weight or 0))
-        _text(vol, "pesoB", _weight(document.gross_weight or 0))
+        if Decimal(document.volume_quantity or 0) > 0:
+            _text(vol, "qVol", int(Decimal(document.volume_quantity or 0)))
+        if (document.volume_species or "").strip():
+            _text(vol, "esp", document.volume_species)
+        if (document.volume_brand or "").strip():
+            _text(vol, "marca", document.volume_brand)
+        if (document.volume_numbering or "").strip():
+            _text(vol, "nVol", document.volume_numbering)
+        if Decimal(document.net_weight or 0) > 0:
+            _text(vol, "pesoL", _weight(document.net_weight or 0))
+        if Decimal(document.gross_weight or 0) > 0:
+            _text(vol, "pesoB", _weight(document.gross_weight or 0))
     pag = etree.SubElement(inf, f"{{{NFE_NS}}}pag")
     payments = list(sale.payments)
     fiscal_additions = (

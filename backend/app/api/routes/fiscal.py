@@ -860,11 +860,16 @@ def _replace_document_items(
             raise HTTPException(status_code=400, detail="Item incluido precisa ter produto fiscal vinculado.")
         included_count += int(override.included)
         quantity, unit_price, discount = (Decimal(override.quantity), Decimal(override.unit_price), Decimal(override.discount_amount))
+        total_price = (
+            Decimal(override.total_price)
+            if override.total_price is not None
+            else _line_total(quantity, unit_price, discount)
+        )
         description = " ".join((override.fiscal_description or "").split()) or (product.name if product else "Item fiscal")
         document.fiscal_items.append(FiscalDocumentItem(
             fiscal_product_id=product.id if product else None, fiscal_description=description[:220],
             quantity=quantity, unit=(" ".join((override.unit or "").split()) or (product.unit if product else "un"))[:20],
-            unit_price=unit_price, discount_amount=discount, total_price=_line_total(quantity, unit_price, discount),
+            unit_price=unit_price, discount_amount=discount, total_price=total_price,
             barcode=product.barcode if product else None, included=override.included,
             adjustment_reason=override.adjustment_reason, created_by_user_id=current_user.id,
             **_clean_item_tax_overrides(override),
