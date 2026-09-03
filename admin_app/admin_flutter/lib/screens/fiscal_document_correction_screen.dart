@@ -373,19 +373,7 @@ class _FiscalDocumentCorrectionScreenState
                             index: index,
                             source: document.fiscalItems[index],
                             controllers: _itemControllers[index],
-                            onChanged: () => setState(() {}),
                           ),
-                        const SizedBox(height: 4),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: Text(
-                            'Total da nota: R\$ ${_itemControllers.fold<double>(0, (sum, item) => sum + item.total).toStringAsFixed(2).replaceAll('.', ',')}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
                       ],
                     ),
                   ),
@@ -542,8 +530,6 @@ class _FiscalItemControllers {
   double _decimal(TextEditingController value) =>
       double.tryParse(value.text.trim().replaceAll(',', '.')) ?? 0;
 
-  double get total => _decimal(quantity) * _decimal(unitPrice) - _decimal(discount);
-
   FiscalDraftItem buildItem(FiscalDraftItem source) => source.copyWith(
     fiscalDescription: description.text.trim(),
     quantity: _decimal(quantity),
@@ -588,13 +574,11 @@ class _FiscalItemEditor extends StatelessWidget {
     required this.index,
     required this.source,
     required this.controllers,
-    required this.onChanged,
   });
 
   final int index;
   final FiscalDraftItem source;
   final _FiscalItemControllers controllers;
-  final VoidCallback onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -636,14 +620,6 @@ class _FiscalItemEditor extends StatelessWidget {
                 _text(controllers.cbenef, 'Código de benefício fiscal'),
               ],
             ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerRight,
-              child: Text(
-                'Total do item: R\$ ${(controllers.total).toStringAsFixed(2).replaceAll('.', ',')}',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-            ),
           ],
         ),
       ),
@@ -652,7 +628,6 @@ class _FiscalItemEditor extends StatelessWidget {
 
   Widget _text(TextEditingController controller, String label) => TextField(
     controller: controller,
-    onChanged: (_) => onChanged(),
     decoration: InputDecoration(
       labelText: label,
       border: const OutlineInputBorder(),
