@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/client.dart';
 import '../models/fiscal.dart';
+import '../models/product.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 
@@ -48,6 +49,7 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
   String _nature = '';
   Client? _fiscalClient;
   List<Client> _clients = const [];
+  List<Product> _products = const [];
   bool _saving = false;
   String? _error;
   final List<_ItemEditor> _items = [];
@@ -65,6 +67,17 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
   void initState() {
     super.initState();
     _loadClients();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    try {
+      final products = await _api.listProducts(
+        widget.session.token,
+        active: true,
+      );
+      if (mounted) setState(() => _products = products);
+    } catch (_) {}
   }
 
   Future<void> _loadClients() async {
@@ -300,6 +313,29 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     for (final item in _items) _itemCard(item),
+                    if (_items.isNotEmpty &&
+                        _items.any((item) => item.pendingFields.isNotEmpty))
+                      Card(
+                        color: const Color(0xFFFFF7ED),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Pendências fiscais',
+                                style: TextStyle(fontWeight: FontWeight.w800),
+                              ),
+                              for (final item in _items.where(
+                                (item) => item.pendingFields.isNotEmpty,
+                              ))
+                                Text(
+                                  '${item.description.text.isEmpty ? 'Produto sem descrição' : item.description.text}: ${item.pendingFields.join(', ')}',
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     OutlinedButton.icon(
                       onPressed: () =>
                           setState(() => _items.add(_ItemEditor())),
@@ -570,7 +606,7 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          _field(item.productId, 'ID produto *', number: true),
+          _productSelector(item),
           _field(item.description, 'Descrição fiscal *'),
           _field(item.quantity, 'Qtd *', number: true),
           _field(item.unitPrice, 'Valor unitário *', number: true),
@@ -592,6 +628,61 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
       ),
     ),
   );
+
+  Widget _productSelector(_ItemEditor item) => Autocomplete<Product>(
+    displayStringForOption: (p) => '${p.name} (#${p.id})',
+    optionsBuilder: (value) {
+      final q = value.text.trim().toLowerCase();
+      return _products
+          .where(
+            (p) =>
+                q.isEmpty ||
+                [
+                  p.name,
+                  p.internalCode,
+                  p.barcode,
+                ].whereType<String>().join(' ').toLowerCase().contains(q),
+          )
+          .take(30);
+    },
+    onSelected: (product) => setState(() => item.applyProduct(product)),
+    fieldViewBuilder: (context, controller, focusNode, onSubmit) {
+      if (item.productId.text.isNotEmpty && controller.text.isEmpty) {
+        controller.text = item.description.text;
+      }
+      return TextField(
+        controller: controller,
+        focusNode: focusNode,
+        decoration: const InputDecoration(
+          labelText: 'Adicionar produto',
+          hintText: 'Nome, código ou código de barras',
+          border: OutlineInputBorder(),
+          suffixIcon: Icon(Icons.search),
+        ),
+      );
+    },
+    optionsViewBuilder: (context, onSelected, options) => Align(
+      alignment: Alignment.topLeft,
+      child: Material(
+        elevation: 6,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520, maxHeight: 280),
+          child: ListView(
+            children: [
+              for (final p in options)
+                ListTile(
+                  title: Text(p.name),
+                  subtitle: Text(
+                    'ID ${p.id} • Estoque ${p.stockQuantity} ${p.unit}',
+                  ),
+                  onTap: () => onSelected(p),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _ItemEditor {
@@ -606,6 +697,31 @@ class _ItemEditor {
   final csosn = TextEditingController();
   final pis = TextEditingController();
   final cofins = TextEditingController();
+  void applyProduct(Product p) {
+    productId.text = '${p.id}';
+    description.text = p.description?.trim().isNotEmpty == true
+        ? p.description!.trim()
+        : p.name;
+    unitPrice.text = p.salePrice.toStringAsFixed(2).replaceAll('.', ',');
+    ncm.text = p.ncm ?? '';
+    cfop.text = p.cfopSale ?? '';
+    origin.text = p.origin ?? '';
+    cst.text = p.cst ?? '';
+    csosn.text = p.csosn ?? '';
+  }
+
+  List<String> get pendingFields => [
+    if (productId.text.trim().isEmpty) 'produto',
+    if (description.text.trim().isEmpty) 'descrição fiscal',
+    if (double.tryParse(quantity.text.replaceAll(',', '.')) == null ||
+        double.tryParse(quantity.text.replaceAll(',', '.'))! <= 0)
+      'quantidade',
+    if (double.tryParse(unitPrice.text.replaceAll(',', '.')) == null ||
+        double.tryParse(unitPrice.text.replaceAll(',', '.'))! <= 0)
+      'valor unitário',
+    if (ncm.text.trim().isEmpty) 'NCM',
+    if (cfop.text.trim().isEmpty) 'CFOP',
+  ];
   FiscalDraftItem toFiscalItem() => FiscalDraftItem(
     fiscalProductId: int.tryParse(productId.text.trim()),
     fiscalDescription: description.text.trim(),
