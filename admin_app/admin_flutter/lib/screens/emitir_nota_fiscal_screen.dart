@@ -816,11 +816,12 @@ class _WeightInputFormatter extends TextInputFormatter {
     TextEditingValue newValue,
   ) {
     final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
-    if (digits.isEmpty)
+    if (digits.isEmpty) {
       return newValue.copyWith(
         text: '0,000',
         selection: const TextSelection.collapsed(offset: 5),
       );
+    }
     final padded = digits.padLeft(4, '0');
     final integer = padded
         .substring(0, padded.length - 3)
