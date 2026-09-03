@@ -608,12 +608,14 @@ class _FiscalItemEditor extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
         ),
         child: ExpansionTile(
-          initiallyExpanded: index == 0,
+          initiallyExpanded: false,
           title: Text(
             '${index + 1}. ${source.fiscalDescription}',
             style: const TextStyle(fontWeight: FontWeight.w800),
           ),
           subtitle: Text(
+            'Qtd. ${controllers.quantity.text} ${controllers.unit.text} • '
+            'Total R\$ ${controllers.total.toStringAsFixed(2).replaceAll('.', ',')}\n'
             'NCM ${source.ncm?.isNotEmpty == true ? source.ncm : 'pendente'} • CFOP ${source.cfop?.isNotEmpty == true ? source.cfop : 'automático'}',
           ),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
