@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../models/client.dart';
 import '../models/fiscal.dart';
@@ -342,6 +343,17 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
                       icon: const Icon(Icons.add),
                       label: const Text('Adicionar produto fiscal'),
                     ),
+                    if (_items.isNotEmpty)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: Text(
+                          'Total da nota: R\$ ${_items.fold<double>(0, (sum, item) => sum + item.total).toStringAsFixed(2).replaceAll('.', ',')}',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -556,6 +568,7 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
     bool number = false,
     int? max,
     int lines = 1,
+    List<TextInputFormatter>? inputFormatters,
     ValueChanged<String>? onChanged,
   }) => TextField(
     controller: c,
@@ -565,6 +578,7 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
     maxLength: max,
     minLines: lines,
     maxLines: lines,
+    inputFormatters: inputFormatters,
     onChanged: onChanged,
     decoration: InputDecoration(
       labelText: label,
@@ -607,8 +621,25 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
         runSpacing: 8,
         children: [
           _productSelector(item),
-          _field(item.quantity, 'Quantidade (${item.unit})', number: true),
-          _field(item.unitPrice, 'Valor unitário', number: true),
+          _field(
+            item.quantity,
+            'Quantidade (${item.unit})',
+            number: true,
+            inputFormatters: item.isWeight
+                ? [_WeightInputFormatter()]
+                : [FilteringTextInputFormatter.digitsOnly],
+            onChanged: (_) => setState(() {}),
+          ),
+          _field(
+            item.unitPrice,
+            'Valor unitário',
+            number: true,
+            onChanged: (_) => setState(() {}),
+          ),
+          Text(
+            'Total do item: R\$ ${item.total.toStringAsFixed(2).replaceAll('.', ',')}',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
           OutlinedButton.icon(
             onPressed: () => setState(() => item.expanded = !item.expanded),
             icon: Icon(item.expanded ? Icons.expand_less : Icons.tune),
@@ -697,6 +728,10 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
 class _ItemEditor {
   bool expanded = false;
   String unit = 'UN';
+  bool get isWeight => unit == 'KG' || unit == 'KGS';
+  double get total =>
+      (double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0) *
+      (double.tryParse(unitPrice.text.replaceAll(',', '.')) ?? 0);
   final productId = TextEditingController();
   final description = TextEditingController();
   final quantity = TextEditingController(text: '1');
@@ -716,6 +751,7 @@ class _ItemEditor {
     unit = p.unit.trim().toUpperCase().isEmpty
         ? 'UN'
         : p.unit.trim().toUpperCase();
+    quantity.text = isWeight ? '0,001' : '1';
     unitPrice.text = p.salePrice.toStringAsFixed(2).replaceAll('.', ',');
     ncm.text = p.ncm ?? '';
     cfop.text = p.cfopSale ?? '';
@@ -770,5 +806,30 @@ class _ItemEditor {
     ]) {
       c.dispose();
     }
+  }
+}
+
+class _WeightInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+    TextEditingValue oldValue,
+    TextEditingValue newValue,
+  ) {
+    final digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.isEmpty)
+      return newValue.copyWith(
+        text: '0,000',
+        selection: const TextSelection.collapsed(offset: 5),
+      );
+    final padded = digits.padLeft(4, '0');
+    final integer = padded
+        .substring(0, padded.length - 3)
+        .replaceFirst(RegExp(r'^0+(?=\d)'), '');
+    final text =
+        '${integer.isEmpty ? '0' : integer},${padded.substring(padded.length - 3)}';
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 }
