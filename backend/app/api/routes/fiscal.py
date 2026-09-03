@@ -1960,35 +1960,52 @@ def prepare_fiscal_document_from_sales(
     )
     db.add(document)
     db.flush()
+    aggregated_items: dict[tuple[int | None, str], FiscalDocumentItem] = {}
     for sale in sales:
         db.add(FiscalDocumentSale(fiscal_document_id=document.id, sale_id=sale.id))
         for item in sale.items:
             product = item.product
-            db.add(
-                FiscalDocumentItem(
-                    fiscal_document_id=document.id,
-                    sale_item_id=item.id,
-                    original_product_id=item.product_id,
-                    fiscal_product_id=item.product_id,
-                    original_description=item.description,
-                    fiscal_description=(product.name if product is not None else item.description)[:220],
-                    quantity=Decimal(item.quantity or 0),
-                    unit=item.unit,
-                    unit_price=Decimal(item.unit_price or 0),
-                    discount_amount=Decimal(item.discount_amount or 0),
-                    total_price=Decimal(item.total_price or 0),
-                    barcode=item.barcode or (product.barcode if product is not None else None),
-                    included=True,
-                    adjustment_reason=f"Origem: venda {sale.number or sale.id}.",
-                    ncm=product.ncm if product is not None else None,
-                    cest=product.cest if product is not None else None,
-                    cfop=product.cfop_sale if product is not None else None,
-                    origin=product.origin if product is not None else None,
-                    cst=product.cst if product is not None else None,
-                    csosn=product.csosn if product is not None else None,
-                    created_by_user_id=current_user.id,
-                )
+            key = (item.product_id, (item.unit or "un").strip().lower())
+            existing = aggregated_items.get(key)
+            quantity = Decimal(item.quantity or 0)
+            total_price = Decimal(item.total_price or 0)
+            discount_amount = Decimal(item.discount_amount or 0)
+            if existing is not None:
+                existing.quantity += quantity
+                existing.total_price += total_price
+                existing.discount_amount += discount_amount
+                existing.unit_price = (
+                    existing.total_price / existing.quantity
+                    if existing.quantity
+                    else Decimal("0")
+                ).quantize(Decimal("0.01"))
+                existing.adjustment_reason = f"Origem: {existing.adjustment_reason}; venda {sale.number or sale.id}."
+                continue
+            fiscal_item = FiscalDocumentItem(
+                fiscal_document_id=document.id,
+                sale_item_id=item.id,
+                original_product_id=item.product_id,
+                fiscal_product_id=item.product_id,
+                original_description=item.description,
+                fiscal_description=(product.name if product is not None else item.description)[:220],
+                quantity=quantity,
+                unit=item.unit,
+                unit_price=Decimal(item.unit_price or 0),
+                discount_amount=discount_amount,
+                total_price=total_price,
+                barcode=item.barcode or (product.barcode if product is not None else None),
+                included=True,
+                adjustment_reason=f"Origem: venda {sale.number or sale.id}.",
+                ncm=product.ncm if product is not None else None,
+                cest=product.cest if product is not None else None,
+                cfop=product.cfop_sale if product is not None else None,
+                origin=product.origin if product is not None else None,
+                cst=product.cst if product is not None else None,
+                csosn=product.csosn if product is not None else None,
+                created_by_user_id=current_user.id,
             )
+            aggregated_items[key] = fiscal_item
+            db.add(fiscal_item)
     db.commit()
     return db.scalar(
         select(FiscalDocument)
