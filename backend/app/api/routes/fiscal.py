@@ -1942,7 +1942,10 @@ def prepare_fiscal_document_from_sales(
         document_type=payload.document_type,
         model="65" if payload.document_type == "nfce" else "55",
         environment=setting.environment,
-        consumer_cpf=payload.consumer_cpf or fiscal_client.document_number,
+        # For NF-e the recipient document is stored separately. Do not copy a
+        # formatted CPF/CNPJ into consumer_cpf (VARCHAR(14)); that field is
+        # only meaningful for NFC-e consumers.
+        consumer_cpf=(payload.consumer_cpf if payload.document_type == "nfce" else None),
         recipient_document=fiscal_client.document_number,
         recipient_name=fiscal_client.name,
         operation_nature=(" ".join((payload.operation_nature or "").split()) or "VENDA DE MERCADORIA")[:120],
