@@ -115,6 +115,16 @@ class _FiscalDocumentCorrectionScreenState
   double _decimal(TextEditingController controller) =>
       double.tryParse(controller.text.trim().replaceAll(',', '.')) ?? 0;
 
+  String? _optionalText(TextEditingController controller) {
+    final value = controller.text.trim();
+    return value.isEmpty ? null : value;
+  }
+
+  String? _optionalUpperText(TextEditingController controller) {
+    final value = controller.text.trim().toUpperCase();
+    return value.isEmpty ? null : value;
+  }
+
   @override
   void dispose() {
     for (final controller in [
@@ -153,23 +163,23 @@ class _FiscalDocumentCorrectionScreenState
     try {
       final fields = <String, dynamic>{
         if (_clientId != null) 'fiscal_client_id': _clientId,
-        'consumer_cpf': _cpf.text.trim(),
+        'consumer_cpf': _optionalText(_cpf),
         'finality': _finality,
         'payment_condition': _payment,
         'freight_mode': _freightMode,
         'freight_amount': _decimal(_freight),
         'insurance_amount': _decimal(_insurance),
         'other_expenses_amount': _decimal(_expenses),
-        'carrier_name': _carrierName.text.trim(),
-        'carrier_document': _carrierDocument.text.trim(),
-        'carrier_state_registration': _carrierIe.text.trim(),
-        'carrier_address': _carrierAddress.text.trim(),
-        'carrier_city': _carrierCity.text.trim(),
-        'carrier_uf': _carrierUf.text.trim().toUpperCase(),
+        'carrier_name': _optionalText(_carrierName),
+        'carrier_document': _optionalText(_carrierDocument),
+        'carrier_state_registration': _optionalText(_carrierIe),
+        'carrier_address': _optionalText(_carrierAddress),
+        'carrier_city': _optionalText(_carrierCity),
+        'carrier_uf': _optionalUpperText(_carrierUf),
         'volume_quantity': _decimal(_volumeQuantity),
-        'volume_species': _volumeSpecies.text.trim(),
-        'volume_brand': _volumeBrand.text.trim(),
-        'volume_numbering': _volumeNumbering.text.trim(),
+        'volume_species': _optionalText(_volumeSpecies),
+        'volume_brand': _optionalText(_volumeBrand),
+        'volume_numbering': _optionalText(_volumeNumbering),
         'net_weight': _decimal(_netWeight),
         'gross_weight': _decimal(_grossWeight),
       };
@@ -180,8 +190,8 @@ class _FiscalDocumentCorrectionScreenState
       await widget.onSave(
         {
           ...fields,
-          'operation_nature': _nature.text.trim(),
-          'fiscal_notes': _notes.text.trim(),
+          'operation_nature': _optionalText(_nature),
+          'fiscal_notes': _optionalText(_notes),
         },
         items,
         resend,

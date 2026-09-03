@@ -2,7 +2,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 FiscalEnvironment = Literal["homologacao", "producao"]
 FiscalDocumentType = Literal["nfce", "nfe"]
@@ -298,6 +298,28 @@ class FiscalDocumentUpdate(BaseModel):
     volume_brand: str | None = Field(default=None, max_length=60)
     volume_numbering: str | None = Field(default=None, max_length=60)
     items: list[FiscalDocumentItemOverride] | None = Field(default=None, min_length=1)
+
+    @field_validator(
+        "consumer_cpf",
+        "operation_nature",
+        "fiscal_notes",
+        "freight_mode",
+        "carrier_name",
+        "carrier_document",
+        "carrier_state_registration",
+        "carrier_address",
+        "carrier_city",
+        "carrier_uf",
+        "volume_species",
+        "volume_brand",
+        "volume_numbering",
+        mode="before",
+    )
+    @classmethod
+    def _blank_optional_strings_to_none(cls, value: object) -> object:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
 
 
 class FiscalProductLookupRead(BaseModel):

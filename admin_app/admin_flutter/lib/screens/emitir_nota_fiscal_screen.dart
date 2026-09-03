@@ -130,6 +130,16 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
       0;
   int? get _fiscalClientId => _fiscalClient?.id;
 
+  String? _optionalText(TextEditingController controller) {
+    final value = controller.text.trim();
+    return value.isEmpty ? null : value;
+  }
+
+  String? _optionalUpperText(TextEditingController controller) {
+    final value = controller.text.trim().toUpperCase();
+    return value.isEmpty ? null : value;
+  }
+
   Future<void> _prepare() async {
     if (_nature.isEmpty) {
       setState(() => _error = 'Selecione a natureza da operação.');
@@ -157,10 +167,10 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
               items: items,
               documentType: _type,
               fiscalClientId: _fiscalClientId,
-              consumerCpf: _type == 'nfce' ? _cpf.text.trim() : null,
+              consumerCpf: _type == 'nfce' ? _optionalText(_cpf) : null,
               operationNature: _nature,
               paymentCondition: _payment,
-              fiscalNotes: _notes.text.trim(),
+              fiscalNotes: _optionalText(_notes),
             )
           : await _api.prepareFiscalDocumentWithItems(
               widget.session.token,
@@ -170,10 +180,10 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
               items: items,
               documentType: _type,
               fiscalClientId: _fiscalClientId,
-              consumerCpf: _type == 'nfce' ? _cpf.text.trim() : null,
+              consumerCpf: _type == 'nfce' ? _optionalText(_cpf) : null,
               operationNature: _nature,
               paymentCondition: _payment,
-              fiscalNotes: _notes.text.trim(),
+              fiscalNotes: _optionalText(_notes),
             );
       await _api.updateFiscalDocument(
         widget.session.token,
@@ -205,16 +215,16 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
     'freight_amount': _number(_freight.text),
     'insurance_amount': _number(_insurance.text),
     'other_expenses_amount': _number(_expenses.text),
-    'carrier_name': _carrierName.text.trim(),
-    'carrier_document': _carrierDocument.text.trim(),
-    'carrier_state_registration': _carrierIe.text.trim(),
-    'carrier_address': _carrierAddress.text.trim(),
-    'carrier_city': _carrierCity.text.trim(),
-    'carrier_uf': _carrierUf.text.trim().toUpperCase(),
+    'carrier_name': _optionalText(_carrierName),
+    'carrier_document': _optionalText(_carrierDocument),
+    'carrier_state_registration': _optionalText(_carrierIe),
+    'carrier_address': _optionalText(_carrierAddress),
+    'carrier_city': _optionalText(_carrierCity),
+    'carrier_uf': _optionalUpperText(_carrierUf),
     'volume_quantity': _number(_volumeQuantity.text),
-    'volume_species': _volumeSpecies.text.trim(),
-    'volume_brand': _volumeBrand.text.trim(),
-    'volume_numbering': _volumeNumbering.text.trim(),
+    'volume_species': _optionalText(_volumeSpecies),
+    'volume_brand': _optionalText(_volumeBrand),
+    'volume_numbering': _optionalText(_volumeNumbering),
     'net_weight': _number(_netWeight.text),
     'gross_weight': _number(_grossWeight.text),
   };
