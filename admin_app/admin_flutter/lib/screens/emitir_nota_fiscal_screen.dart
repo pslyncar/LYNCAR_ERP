@@ -607,16 +607,25 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
         runSpacing: 8,
         children: [
           _productSelector(item),
-          _field(item.description, 'Descrição fiscal *'),
-          _field(item.quantity, 'Qtd *', number: true),
-          _field(item.unitPrice, 'Valor unitário *', number: true),
-          _field(item.ncm, 'NCM'),
-          _field(item.cfop, 'CFOP'),
-          _field(item.origin, 'Origem'),
-          _field(item.cst, 'CST'),
-          _field(item.csosn, 'CSOSN'),
-          _field(item.pis, 'PIS CST'),
-          _field(item.cofins, 'COFINS CST'),
+          _field(item.quantity, 'Quantidade (${item.unit})', number: true),
+          _field(item.unitPrice, 'Valor unitário', number: true),
+          OutlinedButton.icon(
+            onPressed: () => setState(() => item.expanded = !item.expanded),
+            icon: Icon(item.expanded ? Icons.expand_less : Icons.tune),
+            label: Text(
+              item.expanded ? 'Ocultar dados fiscais' : 'Editar dados fiscais',
+            ),
+          ),
+          if (item.expanded) ...[
+            _field(item.description, 'Descrição fiscal *'),
+            _field(item.ncm, 'NCM'),
+            _field(item.cfop, 'CFOP'),
+            _field(item.origin, 'Origem'),
+            _field(item.cst, 'CST'),
+            _field(item.csosn, 'CSOSN'),
+            _field(item.pis, 'PIS CST'),
+            _field(item.cofins, 'COFINS CST'),
+          ],
           IconButton(
             onPressed: () => setState(() {
               _items.remove(item);
@@ -686,6 +695,8 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
 }
 
 class _ItemEditor {
+  bool expanded = false;
+  String unit = 'UN';
   final productId = TextEditingController();
   final description = TextEditingController();
   final quantity = TextEditingController(text: '1');
@@ -702,6 +713,9 @@ class _ItemEditor {
     description.text = p.description?.trim().isNotEmpty == true
         ? p.description!.trim()
         : p.name;
+    unit = p.unit.trim().toUpperCase().isEmpty
+        ? 'UN'
+        : p.unit.trim().toUpperCase();
     unitPrice.text = p.salePrice.toStringAsFixed(2).replaceAll('.', ',');
     ncm.text = p.ncm ?? '';
     cfop.text = p.cfopSale ?? '';
@@ -726,7 +740,7 @@ class _ItemEditor {
     fiscalProductId: int.tryParse(productId.text.trim()),
     fiscalDescription: description.text.trim(),
     quantity: double.tryParse(quantity.text.replaceAll(',', '.')) ?? 0,
-    unit: 'UN',
+    unit: unit,
     unitPrice: double.tryParse(unitPrice.text.replaceAll(',', '.')) ?? 0,
     discountAmount: 0,
     totalPrice:
