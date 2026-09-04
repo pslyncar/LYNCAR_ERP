@@ -2133,10 +2133,10 @@ def update_fiscal_document(
         client = _resolve_fiscal_client(db, payload.fiscal_client_id)
         document.fiscal_client_id = client.id
         document.recipient_document, document.recipient_name = client.document_number, client.name
+    sent_fields = payload.model_fields_set
     for name in ("consumer_cpf", "operation_nature", "finality", "payment_condition", "fiscal_notes", "freight_mode", "freight_amount", "insurance_amount", "other_expenses_amount", "carrier_name", "carrier_document", "carrier_state_registration", "carrier_address", "carrier_city", "carrier_uf", "volume_quantity", "volume_species", "volume_brand", "volume_numbering", "net_weight", "gross_weight"):
-        value = getattr(payload, name)
-        if value is not None:
-            setattr(document, name, value)
+        if name in sent_fields:
+            setattr(document, name, getattr(payload, name))
     if payload.items is not None:
         _replace_document_items(db, document, payload.items, current_user)
     # Se a SEFAZ ja recebeu esta tentativa, o numero permanece no documento.

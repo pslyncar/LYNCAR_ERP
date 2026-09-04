@@ -58,6 +58,7 @@ class _FiscalDocumentCorrectionScreenState
   late final TextEditingController _volumeNumbering;
   late final TextEditingController _netWeight;
   late final TextEditingController _grossWeight;
+  late final List<FiscalDraftItem> _items;
   late final List<_FiscalItemControllers> _itemControllers;
   late String _finality;
   late String _payment;
@@ -100,9 +101,8 @@ class _FiscalDocumentCorrectionScreenState
     _payment = document.paymentCondition ?? 'vista';
     _freightMode = document.freightMode ?? '9';
     _clientId = document.fiscalClientId;
-    _itemControllers = document.fiscalItems
-        .map(_FiscalItemControllers.new)
-        .toList();
+    _items = List<FiscalDraftItem>.from(document.fiscalItems);
+    _itemControllers = _items.map(_FiscalItemControllers.new).toList();
   }
 
   TextEditingController _moneyController(double value) => TextEditingController(
@@ -184,8 +184,8 @@ class _FiscalDocumentCorrectionScreenState
         'gross_weight': _decimal(_grossWeight),
       };
       final items = <FiscalDraftItem>[
-        for (var index = 0; index < widget.document.fiscalItems.length; index++)
-          _itemControllers[index].buildItem(widget.document.fiscalItems[index]),
+        for (var index = 0; index < _itemControllers.length; index++)
+          _itemControllers[index].buildItem(_items[index]),
       ];
       await widget.onSave(
         {
@@ -417,6 +417,13 @@ class _FiscalDocumentCorrectionScreenState
                             onValueChanged: (_) => setState(
                               () => _itemControllers[index].markValueEdited(),
                             ),
+                            onDelete: _itemControllers.length <= 1
+                                ? null
+                                : () => setState(() {
+                                    _itemControllers[index].dispose();
+                                    _itemControllers.removeAt(index);
+                                    _items.removeAt(index);
+                                  }),
                           ),
                         if (_itemControllers.isNotEmpty &&
                             _itemControllers.any(
