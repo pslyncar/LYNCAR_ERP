@@ -65,7 +65,10 @@ class _FiscalScreenState extends State<FiscalScreen> {
 
       RtcCompliance? rtcCompliance;
       try {
-        rtcCompliance = await _api.getRtcCompliance(widget.session.token);
+        rtcCompliance = await _api.getRtcCompliance(
+          widget.session.token,
+          model: settings.nfeEnabled ? '55' : '65',
+        );
       } on ApiException {
         // Esta consulta e complementar e nunca deve ocultar os dados fiscais.
       }
@@ -190,7 +193,6 @@ class _FiscalScreenState extends State<FiscalScreen> {
       });
       setState(() => _settings = updated);
       await _refreshChecklist();
-      await _refreshChecklist();
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } finally {
@@ -203,7 +205,22 @@ class _FiscalScreenState extends State<FiscalScreen> {
       final checklist = await _api.getFiscalSetupChecklist(
         widget.session.token,
       );
-      if (mounted) setState(() => _checklist = checklist);
+      RtcCompliance? rtcCompliance;
+      final settings = _settings;
+      try {
+        rtcCompliance = await _api.getRtcCompliance(
+          widget.session.token,
+          model: settings?.nfeEnabled == true ? '55' : '65',
+        );
+      } on ApiException {
+        rtcCompliance = _rtcCompliance;
+      }
+      if (mounted) {
+        setState(() {
+          _checklist = checklist;
+          _rtcCompliance = rtcCompliance;
+        });
+      }
     } on ApiException {
       // Mantem o ultimo checklist visivel se a consulta complementar falhar.
     }
@@ -1526,6 +1543,16 @@ class _PendingProductActionRow extends StatelessWidget {
     final title = product.internalCode?.isNotEmpty == true
         ? '${product.internalCode} - ${product.name}'
         : product.name;
+    final issueMessages = product.issues.isNotEmpty
+        ? product.issues.map((issue) => issue.message).toList(growable: false)
+        : product.missingFields;
+    final ruleLabel = product.ruleName?.isNotEmpty == true
+        ? 'Regra: ${product.ruleName}'
+        : _ruleSourceLabel(product.ruleSource);
+    final statusLabel = _fiscalStatusLabel(product.status);
+    final statusColor = product.status == 'suggested'
+        ? const Color(0xFFB45309)
+        : const Color(0xFFB42318);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1553,15 +1580,61 @@ class _PendingProductActionRow extends StatelessWidget {
                       title,
                       style: const TextStyle(fontWeight: FontWeight.w900),
                     ),
-                    const SizedBox(height: 3),
-                    Text(product.missingFields.join(' • ')),
-                    const SizedBox(height: 3),
-                    Text(
-                      product.ncm?.isNotEmpty == true
-                          ? 'NCM atual: ${product.ncm}'
-                          : 'NCM não informado',
-                      style: const TextStyle(color: Color(0xFF64748B)),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        _SmallStatusChip(
+                          label: statusLabel,
+                          color: statusColor,
+                        ),
+                        _SmallStatusChip(
+                          label: product.ncm?.isNotEmpty == true
+                              ? 'NCM ${product.ncm}'
+                              : 'Sem NCM',
+                          color: const Color(0xFF475569),
+                        ),
+                        if (ruleLabel != null)
+                          _SmallStatusChip(
+                            label: ruleLabel,
+                            color: const Color(0xFF075985),
+                          ),
+                      ],
                     ),
+                    const SizedBox(height: 8),
+                    for (final message in issueMessages)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 3),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '• ',
+                              style: TextStyle(color: Color(0xFFB42318)),
+                            ),
+                            Expanded(
+                              child: Text(
+                                message,
+                                style: const TextStyle(
+                                  color: Color(0xFFB42318),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (product.issues.any((issue) => issue.owner.isNotEmpty))
+                      Text(
+                        'Responsável: ${product.issues.map((issue) => issue.owner).toSet().join(', ')}',
+                        style: const TextStyle(color: Color(0xFF64748B)),
+                      ),
+                    if (issueMessages.isEmpty)
+                      const Text(
+                        'Produto exige revisão fiscal antes de emitir.',
+                        style: TextStyle(color: Color(0xFF64748B)),
+                      ),
                   ],
                 ),
               ),
@@ -1602,6 +1675,51 @@ class _PendingProductActionRow extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+
+  static String _fiscalStatusLabel(String? status) {
+    return switch (status) {
+      'confirmed' => 'Fiscal confirmado',
+      'suggested' => 'Resolvido por regra',
+      'review' => 'Revisar',
+      'incomplete' || _ => 'Fiscal incompleto',
+    };
+  }
+
+  static String? _ruleSourceLabel(String? source) {
+    return switch (source) {
+      'fiscal_output_rule' => 'Matriz fiscal',
+      'product_tax_rule' => 'Regra do produto',
+      'product_or_default' => 'Cadastro/produto',
+      _ => null,
+    };
+  }
+}
+
+class _SmallStatusChip extends StatelessWidget {
+  const _SmallStatusChip({required this.label, required this.color});
+
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: .22)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }

@@ -72,6 +72,14 @@ def _digits(value: str | None) -> str:
     return re.sub(r"\D", "", value or "")
 
 
+def _valid_ncm(value: str | None) -> str | None:
+    """Normalize only a real eight-digit NCM item code."""
+    code = _digits(value)
+    if len(code) != 8 or code.startswith("00"):
+        return None
+    return code
+
+
 def _money(value: Decimal | int | float | None) -> str:
     amount = Decimal(value or 0).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     return f"{amount:.2f}"
@@ -223,8 +231,8 @@ def _require_sale(sale: Sale, setting: CompanyFiscalSetting | None = None, *, mo
             tax_profile = resolve_output_tax_profile(setting, product, model=model) if setting is not None else None
             if tax_profile is not None:
                 tax_profile = apply_draft_tax_overrides(tax_profile, item)
-            if not _digits(getattr(item, "ncm", None) or product.ncm):
-                missing.append("NCM")
+            if not _valid_ncm(getattr(item, "ncm", None) or product.ncm):
+                missing.append("NCM valido de 8 digitos")
             if not (tax_profile.cfop if tax_profile is not None else getattr(item, "cfop", None)):
                 missing.append("CFOP de venda")
             if not (tax_profile.origin if tax_profile is not None else getattr(item, "origin", None)):
@@ -377,9 +385,17 @@ def build_nfce_xml(
     homologation_product_name = "NOTA FISCAL EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL"
     for index, item in enumerate(sale.items, start=1):
         product = item.product
-        line_total = Decimal(item.total_price or 0)
-        total_products += (Decimal(item.quantity or 0) * Decimal(item.unit_price or 0))
-        total_discount += Decimal(item.discount_amount or 0)
+        quantity = Decimal(item.quantity or 0)
+        unit_price = Decimal(item.unit_price or 0)
+        discount_amount = Decimal(item.discount_amount or 0)
+        line_total = Decimal(item.total_price or 0) + discount_amount
+        fiscal_unit_price = (
+            line_total / quantity
+            if quantity
+            else unit_price
+        )
+        total_products += line_total
+        total_discount += discount_amount
         det = etree.SubElement(inf, f"{{{NFE_NS}}}det", nItem=str(index))
         prod = etree.SubElement(det, f"{{{NFE_NS}}}prod")
         tax_profile = resolve_output_tax_profile(setting, product, model="65")
@@ -388,16 +404,16 @@ def build_nfce_xml(
             ("cProd", product.internal_code if product and product.internal_code else item.product_id or index),
             ("cEAN", _gtin_or_sem_gtin(item.barcode)),
             ("xProd", homologation_product_name if tp_amb == "2" else item.description),
-            ("NCM", _digits(getattr(item, "ncm", None) or (product.ncm if product else ""))),
+            ("NCM", _valid_ncm(getattr(item, "ncm", None) or (product.ncm if product else ""))),
             ("CFOP", tax_profile.cfop if product else ""),
             ("uCom", (item.unit or "UN").upper()[:6]),
             ("qCom", _quantity(item.quantity)),
-            ("vUnCom", _money(item.unit_price)),
-            ("vProd", _money(Decimal(item.quantity or 0) * Decimal(item.unit_price or 0))),
+            ("vUnCom", _money(fiscal_unit_price)),
+            ("vProd", _money(line_total)),
             ("cEANTrib", _gtin_or_sem_gtin(item.barcode)),
             ("uTrib", (item.unit or "UN").upper()[:6]),
             ("qTrib", _quantity(item.quantity)),
-            ("vUnTrib", _money(item.unit_price)),
+            ("vUnTrib", _money(fiscal_unit_price)),
         ]:
             _text(prod, tag, value)
         cest = _optional_cest(

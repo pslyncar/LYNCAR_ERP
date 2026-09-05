@@ -68,6 +68,43 @@ class FiscalNcmSuggestion(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class FiscalCollectiveSuggestionRead(BaseModel):
+    """A cross-company aggregate. It must always be explicitly selected."""
+
+    id: int
+    normalized_description: str
+    barcode: str | None = None
+    unit: str | None = None
+    ncm: str | None = None
+    cest: str | None = None
+    cfop: str | None = None
+    origin: str | None = None
+    cst: str | None = None
+    csosn: str | None = None
+    ibs_cbs_cst: str | None = None
+    ibs_cbs_classification: str | None = None
+    selective_tax_cst: str | None = None
+    selective_tax_classification: str | None = None
+    confirmations_count: int
+    companies_count: int
+    requires_confirmation: bool = True
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FiscalIbsCbsSuggestion(BaseModel):
+    cst: str
+    cst_description: str | None = None
+    cclass_trib: str
+    name: str | None = None
+    description: str | None = None
+    group_type: str | None = None
+    requires_gibscbs: bool = True
+    source: str = "portal_nfe_it_2025_002"
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class FiscalReferenceImportRequest(BaseModel):
     source_type: str
     source_url: str | None = None
@@ -77,5 +114,7 @@ class FiscalReferenceImportRequest(BaseModel):
 class FiscalAssistantProductResponse(BaseModel):
     legal_notice: str = LEGAL_FISCAL_ASSISTANT_NOTICE
     suggestions: list[FiscalSuggestionRead] = []
+    collective_suggestions: list[FiscalCollectiveSuggestionRead] = []
     ncm_official_suggestions: list[FiscalNcmSuggestion] = []
+    ibs_cbs_official_suggestions: list[FiscalIbsCbsSuggestion] = []
     alerts: list[FiscalAlert] = []

@@ -292,6 +292,10 @@ class FiscalDocumentItem(Base):
     pis_cst: Mapped[Optional[str]] = mapped_column(String(10))
     cofins_cst: Mapped[Optional[str]] = mapped_column(String(10))
     cbenef: Mapped[Optional[str]] = mapped_column(String(20))
+    ibs_cbs_cst: Mapped[Optional[str]] = mapped_column(String(10))
+    ibs_cbs_classification: Mapped[Optional[str]] = mapped_column(String(20))
+    selective_tax_cst: Mapped[Optional[str]] = mapped_column(String(10))
+    selective_tax_classification: Mapped[Optional[str]] = mapped_column(String(20))
     created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

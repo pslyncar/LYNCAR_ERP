@@ -364,7 +364,18 @@ def apply_draft_tax_overrides(profile: OutputTaxProfile, item: Any) -> OutputTax
     """Aplica somente valores explicitamente gravados no item do rascunho."""
     values = {
         name: _clean(getattr(item, name, None))
-        for name in ("cfop", "origin", "cst", "csosn", "pis_cst", "cofins_cst")
+        for name in (
+            "cfop",
+            "origin",
+            "cst",
+            "csosn",
+            "pis_cst",
+            "cofins_cst",
+            "ibs_cbs_cst",
+            "ibs_cbs_classification",
+            "selective_tax_cst",
+            "selective_tax_classification",
+        )
         if _clean(getattr(item, name, None)) is not None
     }
     if not values:

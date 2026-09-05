@@ -12,7 +12,15 @@ from app.services.rtc_compliance import (
     rtc_rates_for,
     validate_rtc_document,
 )
-from app.services.fiscal_output_rules import resolve_output_tax_profile
+from app.services.fiscal_output_rules import (
+    OutputTaxProfile,
+    apply_draft_tax_overrides,
+    resolve_output_tax_profile,
+)
+from app.services.fiscal_resolver import (
+    fiscal_snapshot_from_resolution,
+    resolve_fiscal_product,
+)
 
 
 def setting(*, crt: str, tax_regime: str = "") -> SimpleNamespace:
@@ -63,6 +71,33 @@ def sale(*products: SimpleNamespace) -> SimpleNamespace:
 
 
 class RtcComplianceTests(unittest.TestCase):
+    def test_document_item_ibscbs_override_wins_over_product_profile(self) -> None:
+        profile = OutputTaxProfile(
+            cfop="5102",
+            origin="0",
+            cst=None,
+            csosn="102",
+            ibs_cbs_cst="200",
+            ibs_cbs_classification="200003",
+        )
+        draft_item = SimpleNamespace(
+            cfop=None,
+            origin=None,
+            cst=None,
+            csosn=None,
+            pis_cst=None,
+            cofins_cst=None,
+            ibs_cbs_cst="000",
+            ibs_cbs_classification="000001",
+            selective_tax_cst=None,
+            selective_tax_classification=None,
+        )
+
+        result = apply_draft_tax_overrides(profile, draft_item)
+
+        self.assertEqual(result.ibs_cbs_cst, "000")
+        self.assertEqual(result.ibs_cbs_classification, "000001")
+
     def test_crt3_is_mandatory_in_homologation_from_official_date(self) -> None:
         issuer = setting(crt="3", tax_regime="regime_normal")
         issuer.environment = "homologacao"
@@ -297,6 +332,44 @@ class RtcComplianceTests(unittest.TestCase):
         self.assertEqual(profile.cst, "60")
         self.assertEqual(profile.icms_rate, Decimal("18"))
         self.assertEqual(profile.ibs_cbs_cst, "200")
+
+    def test_fiscal_resolver_respects_item_snapshot_before_product(self) -> None:
+        issuer = setting(crt="4", tax_regime="mei")
+        current = product("Produto antigo", ncm="11111111", cfop="5102")
+        item = SimpleNamespace(
+            product=current,
+            description="Produto corrigido na pré-nota",
+            ncm="22222222",
+            cfop="5405",
+            origin="1",
+            csosn="500",
+        )
+
+        resolution = resolve_fiscal_product(issuer, current, item=item, model="55")
+        snapshot = fiscal_snapshot_from_resolution(resolution)
+
+        self.assertEqual(resolution.status, "confirmed")
+        self.assertEqual(snapshot["ncm"], "22222222")
+        self.assertEqual(snapshot["cfop"], "5405")
+        self.assertEqual(snapshot["origin"], "1")
+        self.assertEqual(snapshot["csosn"], "500")
+
+    def test_fiscal_resolver_reports_human_product_pending_fields(self) -> None:
+        issuer = setting(crt="4", tax_regime="mei")
+        current = product("Coca-Cola 2L", ncm=None, cfop=None)
+        current.origin = None
+
+        with self.assertRaises(RtcComplianceError) as context:
+            validate_rtc_document(
+                issuer,
+                sale(current),
+                model="55",
+                issue_date=date(2026, 8, 8),
+            )
+
+        message = str(context.exception)
+        self.assertIn("Coca-Cola 2L: NCM deve ter 8 dígitos", message)
+        self.assertIn("Coca-Cola 2L: origem da mercadoria deve ser informada", message)
 
 
 if __name__ == "__main__":

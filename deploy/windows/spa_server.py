@@ -5,6 +5,16 @@ from urllib.parse import urlsplit
 
 
 class SpaRequestHandler(SimpleHTTPRequestHandler):
+    def end_headers(self) -> None:
+        # The local Flutter build reuses asset names such as main.dart.js.
+        # Caching one generation while index.html points at another causes a
+        # blank Flutter page after a refresh.  This local/SP A server must
+        # always serve one coherent generation while developing or testing.
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+        self.send_header("Pragma", "no-cache")
+        self.send_header("Expires", "0")
+        super().end_headers()
+
     def send_head(self):
         requested_path = urlsplit(self.path).path
         translated_path = self.translate_path(requested_path)

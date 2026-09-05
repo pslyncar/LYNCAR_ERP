@@ -1,8 +1,11 @@
-import re
+import json
+import hashlib
+import logging
 import unicodedata
 import csv
 import io
 import re
+from tempfile import SpooledTemporaryFile
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
@@ -14,7 +17,10 @@ from sqlalchemy.orm import Session
 import requests
 
 from app.models.fiscal_assistant import FiscalSuggestion
+from app.core.master_database import MasterSessionLocal
 from app.models.master_fiscal_reference import (
+    MasterFiscalCollectiveObservation,
+    MasterFiscalCollectiveSuggestion,
     MasterIbsCbsClassTrib,
     MasterFiscalCestCode,
     MasterFiscalCfopCode,
@@ -25,6 +31,9 @@ from app.models.fiscal import CompanyFiscalSetting
 from app.models.product import Product
 from app.models.stock_entry import StockEntry, StockEntryItem
 from app.schemas.fiscal_assistant import FiscalAlert
+
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_fiscal_description(value: str | None) -> str:
@@ -48,6 +57,141 @@ def _digits(value: str | None) -> str | None:
         return None
     result = "".join(char for char in value if char.isdigit())
     return result or None
+
+
+def _is_valid_ncm_code(value: str | None) -> bool:
+    """Return true only for an eight-digit NCM item code.
+
+    Four-digit chapters (for example 1006 for rice) are present in some
+    official exports and must never be offered as a product NCM.  Padding
+    them to ``00001006`` makes the value look like eight digits but SEFAZ
+    correctly rejects it.
+    """
+    code = _digits(value)
+    return bool(code and len(code) == 8 and code[:2] != "00")
+
+
+def _collective_signature(payload: dict[str, Any]) -> str:
+    """Stable signature for an aggregate fiscal classification."""
+    parts = [
+        str(payload.get(field) or "")
+        for field in (
+            "normalized_description", "barcode", "ncm", "cest", "cfop",
+            "origin", "cst", "csosn", "ibs_cbs_cst",
+            "ibs_cbs_classification", "selective_tax_cst",
+            "selective_tax_classification",
+        )
+    ]
+    return hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _company_fingerprint(db: Session) -> str | None:
+    """Return an irreversible company fingerprint; never copy company data."""
+    setting = fiscal_context_for_company(db)
+    company_id = _digits(setting.cnpj) if setting is not None else None
+    if not company_id:
+        return None
+    return hashlib.sha256(
+        f"lyncar-fiscal-collective-v1|{company_id}".encode("utf-8")
+    ).hexdigest()
+
+
+def _learn_collectively(db: Session, payload: dict[str, Any]) -> None:
+    """Store anonymous aggregate evidence without affecting another tenant."""
+    if not _is_valid_ncm_code(payload.get("ncm")):
+        return
+    fingerprint = _company_fingerprint(db)
+    if fingerprint is None:
+        return
+    signature = _collective_signature(payload)
+    values = {
+        field: payload.get(field)
+        for field in (
+            "normalized_description", "barcode", "unit", "ncm", "cest", "cfop",
+            "origin", "cst", "csosn", "ibs_cbs_cst",
+            "ibs_cbs_classification", "selective_tax_cst",
+            "selective_tax_classification",
+        )
+    }
+    try:
+        with MasterSessionLocal() as master_db:
+            aggregate = master_db.scalar(
+                select(MasterFiscalCollectiveSuggestion).where(
+                    MasterFiscalCollectiveSuggestion.signature == signature
+                )
+            )
+            if aggregate is None:
+                aggregate = MasterFiscalCollectiveSuggestion(
+                    signature=signature,
+                    confirmations_count=1,
+                    companies_count=0,
+                    **values,
+                )
+                master_db.add(aggregate)
+            else:
+                aggregate.confirmations_count = (aggregate.confirmations_count or 0) + 1
+                aggregate.last_confirmed_at = datetime.now(timezone.utc)
+
+            observation = master_db.scalar(
+                select(MasterFiscalCollectiveObservation).where(
+                    MasterFiscalCollectiveObservation.suggestion_signature == signature,
+                    MasterFiscalCollectiveObservation.company_fingerprint == fingerprint,
+                )
+            )
+            if observation is None:
+                master_db.add(MasterFiscalCollectiveObservation(
+                    suggestion_signature=signature,
+                    company_fingerprint=fingerprint,
+                    confirmations_count=1,
+                ))
+                aggregate.companies_count = (aggregate.companies_count or 0) + 1
+            else:
+                observation.confirmations_count = (observation.confirmations_count or 0) + 1
+                observation.last_confirmed_at = datetime.now(timezone.utc)
+            master_db.commit()
+    except Exception:
+        # A temporary master outage must not block stock/product operations.
+        logger.exception("Falha ao registrar aprendizado fiscal coletivo")
+
+
+def collective_fiscal_suggestions(
+    *, description: str | None, barcode: str | None = None, limit: int = 5
+) -> list[MasterFiscalCollectiveSuggestion]:
+    """Return only cross-company aggregates, never tenant data or auto-fill."""
+    search_description = normalize_fiscal_description(description)
+    search_barcode = _clean(barcode)
+    clauses = []
+    if search_barcode:
+        clauses.append(MasterFiscalCollectiveSuggestion.barcode == search_barcode)
+    if search_description:
+        words = [word for word in search_description.split() if len(word) >= 3][:5]
+        if words:
+            clauses.append(and_(*[
+                MasterFiscalCollectiveSuggestion.normalized_description.ilike(f"%{word}%")
+                for word in words
+            ]))
+    if not clauses:
+        return []
+    try:
+        with MasterSessionLocal() as master_db:
+            return list(master_db.scalars(
+                select(MasterFiscalCollectiveSuggestion)
+                .where(
+                    MasterFiscalCollectiveSuggestion.active.is_(True),
+                    MasterFiscalCollectiveSuggestion.companies_count >= 2,
+                    MasterFiscalCollectiveSuggestion.confirmations_count >= 2,
+                    or_(*clauses),
+                )
+                .order_by(
+                    MasterFiscalCollectiveSuggestion.companies_count.desc(),
+                    MasterFiscalCollectiveSuggestion.confirmations_count.desc(),
+                    MasterFiscalCollectiveSuggestion.last_confirmed_at.desc(),
+                )
+                .limit(limit)
+            ).all())
+    except Exception:
+        logger.exception("Falha ao consultar sugestões fiscais coletivas")
+        return []
 
 
 def fiscal_context_for_company(db: Session) -> CompanyFiscalSetting | None:
@@ -168,16 +312,30 @@ def _upsert_sync_status(
 
 def sync_ncm_from_json_payload(db: Session, payload: Any, *, source_url: str | None = None) -> int:
     records = _as_list(payload)
-    loaded = 0
-    seen_codes: set[str] = set()
+    # The Siscomex download contains the complete NCM tree: chapter, heading,
+    # subheading and item.  An item description can be only "Polido ou
+    # brunido", while its parent is "Arroz".  Preserve that official path in
+    # the search index so commercial names work for *all* sectors, not only
+    # for hand-maintained synonym lists.
+    official_tree: list[tuple[str, str]] = []
     for item in records:
-        code = _digits(str(_first_value(item, "Codigo", "codigo", "co_ncm", "ncm", "code") or ""))
+        raw_code = _digits(str(_first_value(item, "Codigo", "codigo", "co_ncm", "ncm", "code") or ""))
         description = _clean(
             str(_first_value(item, "Descricao", "descricao", "no_ncm_por", "description", "nome") or "")
         )
+        if raw_code and description:
+            official_tree.append((raw_code, description))
+
+    loaded = 0
+    seen_codes: set[str] = set()
+    for code, description in official_tree:
         if not code or not description:
             continue
-        code = code.zfill(8) if len(code) < 8 else code
+        # Do not import headings/subheadings as product NCMs.  In
+        # particular, zfilling a four-digit chapter creates invalid values
+        # such as 00001006, which must not reach a fiscal document.
+        if len(code) != 8 or not _is_valid_ncm_code(code):
+            continue
         if code in seen_codes:
             continue
         seen_codes.add(code)
@@ -186,7 +344,12 @@ def sync_ncm_from_json_payload(db: Session, payload: Any, *, source_url: str | N
             row = MasterFiscalNcmCode(code=code, description=description, normalized_description="")
             db.add(row)
         row.description = description
-        row.normalized_description = normalize_fiscal_description(description)
+        hierarchy = [
+            ancestor_description
+            for ancestor_code, ancestor_description in official_tree
+            if len(ancestor_code) <= len(code) and code.startswith(ancestor_code)
+        ]
+        row.normalized_description = normalize_fiscal_description(" ".join(hierarchy))
         row.start_date = _clean(str(_first_value(item, "Data_Inicio", "data_inicio", "inicio") or "")) or row.start_date
         row.end_date = _clean(str(_first_value(item, "Data_Fim", "data_fim", "fim") or "")) or row.end_date
         row.active = row.end_date in (None, "", "31/12/9999", "9999-12-31")
@@ -318,6 +481,14 @@ def sync_ibs_cbs_class_trib_from_rows(
         )
         row.group_type = _clean(str(_first_value(item, "Grupo", "grupo", "group_type") or ""))
         row.requires_gibscbs = cst not in {"400", "410"}
+        cst_reduction = _first_value(item, "IndReducaoAliq", "ind_reducao_aliq")
+        ibs_reduction = _first_value(item, "PercRedIbs", "perc_red_ibs")
+        cbs_reduction = _first_value(item, "PercRedCbs", "perc_red_cbs")
+        row.ibs_rate_reduction_percent = Decimal(str(ibs_reduction or 0))
+        row.cbs_rate_reduction_percent = Decimal(str(cbs_reduction or 0))
+        row.requires_rate_reduction = bool(cst_reduction) or bool(
+            row.ibs_rate_reduction_percent or row.cbs_rate_reduction_percent
+        )
         row.active = True
         loaded += 1
     _upsert_sync_status(
@@ -422,6 +593,76 @@ def _cest_rows_from_official_html(text: str) -> list[dict[str, Any]]:
     return rows
 
 
+def _ibs_cbs_rows_from_official_html(text: str) -> list[dict[str, Any]]:
+    rows = _rows_from_html_table(text)
+    if rows:
+        table_rows = [
+            row
+            for row in rows
+            if _digits(str(_first_value(row, "cClassTrib", "CodClassTrib", "Classificacao") or ""))
+        ]
+        if table_rows:
+            return table_rows
+
+    match = re.search(r"var\s+dadosOriginais\s*=\s*", text)
+    if match is None:
+        return []
+
+    decoder = json.JSONDecoder()
+    try:
+        payload, _ = decoder.raw_decode(text[match.end() :])
+    except json.JSONDecodeError:
+        return []
+
+    parsed_rows: list[dict[str, Any]] = []
+    for cst_group in _as_list(payload):
+        cst = str(cst_group.get("Cst") or cst_group.get("CST") or "")
+        cst_description = str(cst_group.get("NomeCst") or cst_group.get("Descricao CST") or "")
+        for item in _as_list(cst_group.get("ClassificacoesTributarias")):
+            parsed_rows.append(
+                {
+                    "CST": item.get("Cst") or cst,
+                    "Descricao CST": cst_description,
+                    "cClassTrib": item.get("CodClassTrib"),
+                    "Nome": item.get("NomeReduzido") or item.get("NomeClassTrib"),
+                    "Descricao": item.get("NomeClassTrib") or item.get("NomeReduzido"),
+                    "Grupo": item.get("TipoAliq"),
+                    "IndReducaoAliq": cst_group.get("IndReducaoAliq"),
+                    "PercRedIbs": item.get("PercRedIbs"),
+                    "PercRedCbs": item.get("PercRedCbs"),
+                }
+            )
+    return parsed_rows
+
+
+def _rows_from_xlsx(content: bytes) -> list[dict[str, Any]]:
+    try:
+        from openpyxl import load_workbook
+    except ImportError as exc:  # pragma: no cover - depende do pacote instalado no deploy
+        raise RuntimeError(
+            "Importacao XLSX exige openpyxl instalado no backend."
+        ) from exc
+
+    with SpooledTemporaryFile(max_size=10_000_000) as handle:
+        handle.write(content)
+        handle.seek(0)
+        workbook = load_workbook(handle, read_only=True, data_only=True)
+        worksheet = workbook.active
+        headers: list[str] = []
+        rows: list[dict[str, Any]] = []
+        for raw_row in worksheet.iter_rows(values_only=True):
+            values = ["" if value is None else str(value).strip() for value in raw_row]
+            if not any(values):
+                continue
+            if not headers:
+                headers = values
+                continue
+            if len(values) < len(headers):
+                values.extend([""] * (len(headers) - len(values)))
+            rows.append(dict(zip(headers, values, strict=False)))
+        return rows
+
+
 def sync_reference_from_url(db: Session, source_type: str, source_url: str) -> int:
     response = requests.get(
         source_url,
@@ -435,7 +676,13 @@ def sync_reference_from_url(db: Session, source_type: str, source_url: str) -> i
     content_type = response.headers.get("content-type", "").lower()
     if source_type == "ncm":
         return sync_ncm_from_json_payload(db, response.json(), source_url=source_url)
-    if "json" in content_type or source_url.lower().endswith(".json"):
+    if (
+        "spreadsheet" in content_type
+        or "excel" in content_type
+        or source_url.lower().endswith((".xlsx", ".xlsm"))
+    ):
+        rows = _rows_from_xlsx(response.content)
+    elif "json" in content_type or source_url.lower().endswith(".json"):
         rows = _as_list(response.json())
     else:
         text = response.content.decode(response.encoding or "utf-8-sig", errors="replace")
@@ -444,6 +691,8 @@ def sync_reference_from_url(db: Session, source_type: str, source_url: str) -> i
                 rows = _cfop_rows_from_official_html(text)
             elif source_type == "cest":
                 rows = _cest_rows_from_official_html(text)
+            elif source_type in {"ibs_cbs_class_trib", "cclass_trib", "cclasstrib"}:
+                rows = _ibs_cbs_rows_from_official_html(text)
             else:
                 rows = _rows_from_html_table(text)
         else:
@@ -465,22 +714,155 @@ def fiscal_reference_status(db: Session) -> list[MasterFiscalReferenceSync]:
     )
 
 
-def ncm_suggestions(db: Session, description: str | None, *, limit: int = 5) -> list[MasterFiscalNcmCode]:
+def ncm_suggestions(db: Session, description: str | None, *, limit: int = 20) -> list[MasterFiscalNcmCode]:
+    """Return official NCM candidates from the complete official hierarchy.
+
+    The user needs to see the alternatives within a family (for example
+    common, parboiled and broken rice) instead of the first textual hit being
+    mistaken for an automatic classification.
+    """
     normalized = normalize_fiscal_description(description)
-    words = [word for word in normalized.split(" ") if len(word) >= 3][:6]
+    # Ignore packaging/quantity tokens such as 5KG, 500ML and 12UN.  They are
+    # commercial presentation, not NCM classification terms, and otherwise
+    # create accidental matches in unrelated official descriptions.
+    words = [
+        word
+        for word in normalized.split(" ")
+        if len(word) >= 3 and len(re.findall(r"[A-Z]", word)) >= 3
+    ][:8]
     if not words:
         return []
-    return list(
+
+    base_filter = (
+        MasterFiscalNcmCode.active.is_(True),
+        ~MasterFiscalNcmCode.code.startswith("00"),
+    )
+    # Prefer a match in the item's own official description.  The hierarchy
+    # has legal exclusions in some chapter text ("except rice", for example),
+    # which must not turn an unrelated chapter into a rice candidate.
+    direct_rows = list(
         db.scalars(
             select(MasterFiscalNcmCode)
             .where(
-                MasterFiscalNcmCode.active.is_(True),
-                and_(*[MasterFiscalNcmCode.normalized_description.ilike(f"%{word}%") for word in words]),
+                *base_filter,
+                or_(*[MasterFiscalNcmCode.description.ilike(f"%{word}%") for word in words]),
             )
             .order_by(MasterFiscalNcmCode.code.asc())
-            .limit(limit)
+            .limit(limit * 5)
         ).all()
     )
+    family_prefixes = {row.code[:4] for row in direct_rows if len(row.code) == 8}
+    if family_prefixes:
+        rows = list(
+            db.scalars(
+                select(MasterFiscalNcmCode)
+                .where(
+                    *base_filter,
+                    or_(*[MasterFiscalNcmCode.code.startswith(prefix) for prefix in family_prefixes]),
+                )
+                .order_by(MasterFiscalNcmCode.code.asc())
+                .limit(limit * 5)
+            ).all()
+        )
+    else:
+        rows = list(
+            db.scalars(
+                select(MasterFiscalNcmCode)
+                .where(
+                    *base_filter,
+                    or_(
+                        *[
+                            MasterFiscalNcmCode.normalized_description.ilike(f"%{word}%")
+                            for word in words
+                        ],
+                    ),
+                )
+                .order_by(MasterFiscalNcmCode.code.asc())
+                .limit(limit * 25)
+            ).all()
+        )
+
+    sale_product_words = {
+        "BISCOITO",
+        "BOLACHA",
+        "CHOCOLATE",
+        "PAO",
+        "BOLO",
+        "ARROZ",
+        "FEIJAO",
+        "LEITE",
+        "QUEIJO",
+        "MUSSARELA",
+        "ACUCAR",
+        "TRIGO",
+        "CARNE",
+        "FRANGO",
+        "BEBIDA",
+        "REFRIGERANTE",
+    }
+    industrial_words = {
+        "MAQUINA",
+        "MAQUINAS",
+        "APARELHO",
+        "APARELHOS",
+        "FABRICAR",
+        "FABRICACAO",
+        "INDUSTRIA",
+        "INDUSTRIAS",
+        "PRODUCAO",
+    }
+
+    def score(row: MasterFiscalNcmCode) -> tuple[int, int, int, int]:
+        row_description = normalize_fiscal_description(row.description)
+        matches = sum(1 for word in words if word in row_description)
+        consecutive_bonus = 0
+        for size in range(min(4, len(words)), 1, -1):
+            phrase = " ".join(words[:size])
+            if phrase in row_description:
+                consecutive_bonus = size
+                break
+        sale_product_bonus = 1 if any(word in sale_product_words for word in words) and row.code.startswith(("02", "03", "04", "07", "08", "09", "10", "11", "12", "15", "16", "17", "18", "19", "20", "21", "22")) else 0
+        industrial_penalty = 1 if any(word in row_description for word in industrial_words) and not any(word in industrial_words for word in words) else 0
+        return (-matches, -consecutive_bonus, industrial_penalty, -sale_product_bonus)
+
+    rows.sort(key=score)
+    return [row for row in rows if _is_valid_ncm_code(row.code)][:limit]
+
+
+def ibs_cbs_class_trib_suggestions(
+    db: Session,
+    description: str | None,
+    *,
+    cst: str | None = None,
+    ncm: str | None = None,
+    limit: int = 5,
+) -> list[MasterIbsCbsClassTrib]:
+    # A descrição ajuda a encontrar NCM, mas não prova um tratamento IBS/CBS
+    # especial. Sem uma tabela oficial que relacione o NCM à hipótese fiscal,
+    # sugerir Cesta Básica por termos como "biscoito" ou "chocolate" induz o
+    # usuário a uma redução indevida. Por isso, as opções especiais só são
+    # exibidas quando o CST já foi definido de forma explícita no produto.
+    clean_cst = _digits(cst)
+    if clean_cst and clean_cst != "000":
+        return list(
+            db.scalars(
+                select(MasterIbsCbsClassTrib)
+                .where(
+                    MasterIbsCbsClassTrib.active.is_(True),
+                    MasterIbsCbsClassTrib.cst == clean_cst,
+                )
+                .order_by(MasterIbsCbsClassTrib.cclass_trib.asc())
+                .limit(limit)
+            ).all()
+        )
+
+    standard = db.scalar(
+        select(MasterIbsCbsClassTrib).where(
+            MasterIbsCbsClassTrib.active.is_(True),
+            MasterIbsCbsClassTrib.cclass_trib == "000001",
+        )
+    )
+    return [standard] if standard is not None else []
 
 
 def learn_from_stock_entry_item(
@@ -556,6 +938,7 @@ def learn_from_stock_entry_item(
         },
     )
     db.execute(statement)
+    _learn_collectively(db, payload)
 
 
 def learn_from_product(db: Session, product: Product, *, source: str = "product") -> None:
@@ -618,6 +1001,7 @@ def learn_from_product(db: Session, product: Product, *, source: str = "product"
         },
     )
     db.execute(statement)
+    _learn_collectively(db, payload)
 
 
 def fiscal_suggestions_for_product(
@@ -723,6 +1107,9 @@ def fiscal_alerts_for_product(
         alerts.append(FiscalAlert(severity="warning", field="ncm", message="Produto sem NCM informado."))
     elif db is not None:
         ncm_code = _digits(product.ncm)
+        if not _is_valid_ncm_code(ncm_code):
+            alerts.append(FiscalAlert(severity="error", field="ncm", message=f"NCM {product.ncm} invalido: informe um codigo NCM de 8 digitos especifico (nao um capitulo como 1006)."))
+            ncm_code = None
         exists = db.scalar(select(MasterFiscalNcmCode).where(MasterFiscalNcmCode.code == ncm_code))
         if ncm_code and exists is None and db.scalar(select(func.count(MasterFiscalNcmCode.id))) > 0:
             alerts.append(FiscalAlert(severity="warning", field="ncm", message=f"NCM {product.ncm} nao encontrado na tabela NCM oficial central."))

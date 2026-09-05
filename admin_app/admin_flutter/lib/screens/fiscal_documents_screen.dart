@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../models/client.dart';
 import '../models/fiscal.dart';
+import '../models/fiscal_assistant.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../services/file_download.dart';
@@ -184,6 +185,8 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         clients: _correctionClients,
         onBack: () => setState(() => _editingDocument = null),
         onSave: _saveCorrection,
+        onLoadFiscalSuggestion: _loadItemFiscalSuggestion,
+        onSaveFiscalToProduct: _saveItemFiscalToProduct,
       );
     }
     final filtered = _filteredDocuments;
@@ -318,6 +321,7 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                         width: 160,
                         child: DropdownButtonFormField<String>(
                           initialValue: _typeFilter,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Tipo',
                             border: OutlineInputBorder(),
@@ -325,13 +329,25 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                           items: const [
                             DropdownMenuItem(
                               value: 'all',
-                              child: Text('Todos'),
+                              child: Text(
+                                'Todos',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'nfce',
-                              child: Text('NFC-e'),
+                              child: Text(
+                                'NFC-e',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
-                            DropdownMenuItem(value: 'nfe', child: Text('NF-e')),
+                            DropdownMenuItem(
+                              value: 'nfe',
+                              child: Text(
+                                'NF-e',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
                           ],
                           onChanged: (value) =>
                               setState(() => _typeFilter = value ?? 'all'),
@@ -341,6 +357,7 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                         width: 190,
                         child: DropdownButtonFormField<String>(
                           initialValue: _statusFilter,
+                          isExpanded: true,
                           decoration: const InputDecoration(
                             labelText: 'Status',
                             border: OutlineInputBorder(),
@@ -348,35 +365,59 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                           items: const [
                             DropdownMenuItem(
                               value: 'all',
-                              child: Text('Todos'),
+                              child: Text(
+                                'Todos',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'authorized',
-                              child: Text('Autorizada'),
+                              child: Text(
+                                'Autorizada',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'draft',
-                              child: Text('Preparada'),
+                              child: Text(
+                                'Preparada',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'pending_configuration',
-                              child: Text('Aguardando configuração fiscal'),
+                              child: Text(
+                                'Aguardando configuração fiscal',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'pending_certificate',
-                              child: Text('Aguardando A1'),
+                              child: Text(
+                                'Aguardando A1',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'rejected',
-                              child: Text('Rejeitada'),
+                              child: Text(
+                                'Rejeitada',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'contingency_offline',
-                              child: Text('Contingência'),
+                              child: Text(
+                                'Contingência',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             DropdownMenuItem(
                               value: 'cancelled',
-                              child: Text('Cancelada'),
+                              child: Text(
+                                'Cancelada',
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                           ],
                           onChanged: (value) =>
@@ -483,7 +524,7 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                                           value: 'review',
                                           child: _ActionLine(
                                             icon: Icons.edit_note_outlined,
-                                            label: 'Revisar / editar rascunho',
+                                            label: 'Editar / revisar rascunho',
                                           ),
                                         ),
                                       if (_canAuthorize(document))
@@ -563,6 +604,44 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  String? _emptyToNull(String? value) {
+    final cleaned = value?.trim();
+    return cleaned == null || cleaned.isEmpty ? null : cleaned;
+  }
+
+  Future<void> _saveItemFiscalToProduct(FiscalDraftItem item) async {
+    final productId = item.fiscalProductId ?? item.originalProductId;
+    if (productId == null) {
+      throw Exception('Item sem produto cadastrado.');
+    }
+    await _api.updateProductTaxProfile(widget.session.token, productId, {
+      'ncm': _emptyToNull(item.ncm),
+      'cest': _emptyToNull(item.cest),
+      'cfop_sale': _emptyToNull(item.cfop),
+      'origin': _emptyToNull(item.origin),
+      'cst': _emptyToNull(item.cst),
+      'csosn': _emptyToNull(item.csosn),
+      'ibs_cbs_cst': _emptyToNull(item.ibsCbsCst),
+      'ibs_cbs_classification': _emptyToNull(item.ibsCbsClassification),
+      'selective_tax_cst': _emptyToNull(item.selectiveTaxCst),
+      'selective_tax_classification': _emptyToNull(
+        item.selectiveTaxClassification,
+      ),
+    });
+  }
+
+  Future<FiscalAssistantResponse> _loadItemFiscalSuggestion(
+    FiscalDraftItem item,
+  ) {
+    final productId = item.fiscalProductId ?? item.originalProductId;
+    return _api.getFiscalAssistantProductSuggestions(
+      widget.session.token,
+      productId: productId,
+      description: item.fiscalDescription,
+      barcode: item.barcode,
     );
   }
 
@@ -2220,7 +2299,9 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         for (final item in _documents)
           if (item.id == updated.id) updated else item,
       ];
-      _editingDocument = null;
+      if (!resend) {
+        _editingDocument = null;
+      }
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(

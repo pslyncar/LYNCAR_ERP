@@ -5,6 +5,7 @@ from app.api.dependencies import get_db, require_permission
 from app.core.master_database import MasterSessionLocal
 from app.models.product import Product
 from app.models.user import User
+from app.models.master_fiscal_reference import MasterFiscalNcmCode
 from app.schemas.fiscal_assistant import (
     FiscalAssistantProductResponse,
     FiscalReferenceImportRequest,
@@ -14,8 +15,10 @@ from app.services.fiscal_assistant import (
     default_tax_suggestion_for_product,
     fiscal_alerts_for_product,
     fiscal_context_for_company,
+    collective_fiscal_suggestions,
     fiscal_reference_status,
     fiscal_suggestions_for_product,
+    ibs_cbs_class_trib_suggestions,
     ncm_suggestions,
     sync_cest_from_rows,
     sync_cfop_from_rows,
@@ -59,10 +62,31 @@ def get_product_fiscal_suggestions(
             reference_db,
             description or (product.name if product else None),
         )
+        product_ncm = "".join(
+            char for char in ((product.ncm or "") if product else "") if char.isdigit()
+        )
+        if product_ncm:
+            saved_ncm = reference_db.query(MasterFiscalNcmCode).filter(
+                MasterFiscalNcmCode.active.is_(True),
+                MasterFiscalNcmCode.code == product_ncm,
+            ).first()
+            if saved_ncm is not None and all(item.code != saved_ncm.code for item in official_ncm):
+                official_ncm = [saved_ncm, *official_ncm]
+        official_ibs_cbs = ibs_cbs_class_trib_suggestions(
+            reference_db,
+            description or (product.name if product else None),
+            cst=product.ibs_cbs_cst if product else None,
+            ncm=product.ncm if product else None,
+        )
         alerts = fiscal_alerts_for_product(product, suggestions, db=reference_db)
     return FiscalAssistantProductResponse(
         suggestions=suggestions,
+        collective_suggestions=collective_fiscal_suggestions(
+            description=description or (product.name if product else None),
+            barcode=barcode or (product.barcode if product else None),
+        ),
         ncm_official_suggestions=official_ncm,
+        ibs_cbs_official_suggestions=official_ibs_cbs,
         alerts=alerts,
     )
 

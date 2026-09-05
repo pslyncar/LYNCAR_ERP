@@ -48,7 +48,7 @@ Start-Process `
 
 Start-Process `
     -FilePath $backendPython `
-    -ArgumentList "-m", "http.server", "5000", "--bind", "0.0.0.0" `
+    -ArgumentList (Join-Path $root "deploy\windows\spa_server.py"), "--port", "5000", "--bind", "0.0.0.0" `
     -WorkingDirectory $webRoot `
     -RedirectStandardOutput (Join-Path $root "admin_app\admin_flutter\web.lan.out.log") `
     -RedirectStandardError (Join-Path $root "admin_app\admin_flutter\web.lan.err.log") `

@@ -17,6 +17,7 @@ FiscalDocumentStatus = Literal[
     "pending_return",
     "not_found_after_timeout",
     "duplicate_authorization_review",
+    "pending_configuration",
     "authorized",
     "rejected",
     "cancelled",
@@ -225,6 +226,10 @@ class FiscalDocumentItemDraftRead(BaseModel):
     pis_cst: str | None = None
     cofins_cst: str | None = None
     cbenef: str | None = None
+    ibs_cbs_cst: str | None = None
+    ibs_cbs_classification: str | None = None
+    selective_tax_cst: str | None = None
+    selective_tax_classification: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -258,6 +263,10 @@ class FiscalDocumentItemOverride(BaseModel):
     pis_cst: str | None = Field(default=None, max_length=10)
     cofins_cst: str | None = Field(default=None, max_length=10)
     cbenef: str | None = Field(default=None, max_length=20)
+    ibs_cbs_cst: str | None = Field(default=None, max_length=10)
+    ibs_cbs_classification: str | None = Field(default=None, max_length=20)
+    selective_tax_cst: str | None = Field(default=None, max_length=10)
+    selective_tax_classification: str | None = Field(default=None, max_length=20)
 
 
 class FiscalDocumentPrepareWithItems(FiscalDocumentPrepare):
@@ -320,6 +329,41 @@ class FiscalDocumentUpdate(BaseModel):
     def _blank_optional_strings_to_none(cls, value: object) -> object:
         if isinstance(value, str) and not value.strip():
             return None
+        return value
+
+
+class FiscalProductTaxProfileUpdate(BaseModel):
+    ncm: str | None = Field(default=None, max_length=20)
+    cest: str | None = Field(default=None, max_length=20)
+    cfop_sale: str | None = Field(default=None, max_length=10)
+    origin: str | None = Field(default=None, max_length=2)
+    cst: str | None = Field(default=None, max_length=10)
+    csosn: str | None = Field(default=None, max_length=10)
+    ibs_cbs_cst: str | None = Field(default=None, max_length=10)
+    ibs_cbs_classification: str | None = Field(default=None, max_length=20)
+    selective_tax_cst: str | None = Field(default=None, max_length=10)
+    selective_tax_classification: str | None = Field(default=None, max_length=20)
+    fiscal_notes: str | None = None
+
+    @field_validator(
+        "ncm",
+        "cest",
+        "cfop_sale",
+        "origin",
+        "cst",
+        "csosn",
+        "ibs_cbs_cst",
+        "ibs_cbs_classification",
+        "selective_tax_cst",
+        "selective_tax_classification",
+        "fiscal_notes",
+        mode="before",
+    )
+    @classmethod
+    def _blank_optional_strings_to_none(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
         return value
 
 

@@ -252,9 +252,12 @@ class RtcIncompleteProduct {
     required this.id,
     required this.name,
     required this.missingFields,
+    required this.issues,
     this.internalCode,
     this.ncm,
+    this.status,
     this.ruleSource,
+    this.ruleId,
     this.ruleName,
   });
 
@@ -262,9 +265,12 @@ class RtcIncompleteProduct {
   final String name;
   final String? internalCode;
   final String? ncm;
+  final String? status;
   final String? ruleSource;
+  final int? ruleId;
   final String? ruleName;
   final List<String> missingFields;
+  final List<FiscalProductIssue> issues;
 
   factory RtcIncompleteProduct.fromJson(Map<String, dynamic> json) {
     return RtcIncompleteProduct(
@@ -272,11 +278,46 @@ class RtcIncompleteProduct {
       name: json['name'] as String? ?? 'Produto sem nome',
       internalCode: json['internal_code'] as String?,
       ncm: json['ncm'] as String?,
+      status: json['status'] as String?,
       ruleSource: json['rule_source'] as String?,
+      ruleId: json['rule_id'] as int?,
       ruleName: json['rule_name'] as String?,
       missingFields: (json['missing_fields'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(growable: false),
+      issues: (json['issues'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(FiscalProductIssue.fromJson)
+          .toList(growable: false),
+    );
+  }
+}
+
+class FiscalProductIssue {
+  const FiscalProductIssue({
+    required this.field,
+    required this.message,
+    required this.severity,
+    required this.owner,
+    required this.blocksNfe,
+    required this.blocksNfce,
+  });
+
+  final String field;
+  final String message;
+  final String severity;
+  final String owner;
+  final bool blocksNfe;
+  final bool blocksNfce;
+
+  factory FiscalProductIssue.fromJson(Map<String, dynamic> json) {
+    return FiscalProductIssue(
+      field: json['field'] as String? ?? '',
+      message: json['message'] as String? ?? '',
+      severity: json['severity'] as String? ?? 'error',
+      owner: json['owner'] as String? ?? 'contador',
+      blocksNfe: json['blocks_nfe'] as bool? ?? false,
+      blocksNfce: json['blocks_nfce'] as bool? ?? false,
     );
   }
 }
@@ -736,6 +777,10 @@ class FiscalDraftItem {
     this.pisCst,
     this.cofinsCst,
     this.cbenef,
+    this.ibsCbsCst,
+    this.ibsCbsClassification,
+    this.selectiveTaxCst,
+    this.selectiveTaxClassification,
   });
 
   final int? id;
@@ -763,6 +808,10 @@ class FiscalDraftItem {
   final String? pisCst;
   final String? cofinsCst;
   final String? cbenef;
+  final String? ibsCbsCst;
+  final String? ibsCbsClassification;
+  final String? selectiveTaxCst;
+  final String? selectiveTaxClassification;
 
   factory FiscalDraftItem.fromJson(Map<String, dynamic> json) {
     return FiscalDraftItem(
@@ -791,6 +840,11 @@ class FiscalDraftItem {
       pisCst: json['pis_cst'] as String?,
       cofinsCst: json['cofins_cst'] as String?,
       cbenef: json['cbenef'] as String?,
+      ibsCbsCst: json['ibs_cbs_cst'] as String?,
+      ibsCbsClassification: json['ibs_cbs_classification'] as String?,
+      selectiveTaxCst: json['selective_tax_cst'] as String?,
+      selectiveTaxClassification:
+          json['selective_tax_classification'] as String?,
     );
   }
 
@@ -815,6 +869,10 @@ class FiscalDraftItem {
     String? pisCst,
     String? cofinsCst,
     String? cbenef,
+    String? ibsCbsCst,
+    String? ibsCbsClassification,
+    String? selectiveTaxCst,
+    String? selectiveTaxClassification,
   }) {
     return FiscalDraftItem(
       id: id,
@@ -842,6 +900,11 @@ class FiscalDraftItem {
       pisCst: pisCst ?? this.pisCst,
       cofinsCst: cofinsCst ?? this.cofinsCst,
       cbenef: cbenef ?? this.cbenef,
+      ibsCbsCst: ibsCbsCst ?? this.ibsCbsCst,
+      ibsCbsClassification: ibsCbsClassification ?? this.ibsCbsClassification,
+      selectiveTaxCst: selectiveTaxCst ?? this.selectiveTaxCst,
+      selectiveTaxClassification:
+          selectiveTaxClassification ?? this.selectiveTaxClassification,
     );
   }
 
@@ -865,6 +928,10 @@ class FiscalDraftItem {
     'pis_cst': pisCst,
     'cofins_cst': cofinsCst,
     'cbenef': cbenef,
+    'ibs_cbs_cst': ibsCbsCst,
+    'ibs_cbs_classification': ibsCbsClassification,
+    'selective_tax_cst': selectiveTaxCst,
+    'selective_tax_classification': selectiveTaxClassification,
   };
 }
 

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import pkcs12
 from lxml import etree
-from sqlalchemy import func, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -38,6 +38,7 @@ from app.schemas.fiscal import (
     FiscalDocumentPrepareWithItems,
     FiscalDocumentPrepareManual,
     FiscalDocumentUpdate,
+    FiscalProductTaxProfileUpdate,
     FiscalProductLookupRead,
     FiscalDocumentCancel,
     FiscalDocumentRead,
@@ -66,7 +67,12 @@ from app.services.fiscal_recovery import RecoveredFiscalDocument, recover_fiscal
 from app.services.nfe_sp import _duplicate_nfe_key, authorize_nfe
 from app.services.nfe_protocol_sp import query_nfe_protocol
 from app.services.fiscal_xml import build_processed_nfe_xml, is_processed_nfe_xml
+from app.services.fiscal_assistant import fiscal_suggestions_for_product, learn_from_product
 from app.services.fiscal_output_rules import effective_crt, resolve_output_rule, resolve_output_tax_profile
+from app.services.fiscal_resolver import (
+    fiscal_snapshot_from_resolution,
+    resolve_fiscal_product,
+)
 from app.services.fiscal_document_policy import should_move_stock_for_fiscal_document
 from app.services.rtc_compliance import (
     RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
@@ -74,7 +80,6 @@ from app.services.rtc_compliance import (
     RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM,
     RtcComplianceError,
     is_rtc_mandatory,
-    fiscal_product_issues,
     rtc_rates_for,
     validate_rtc_document,
 )
@@ -505,12 +510,29 @@ def _build_fiscal_setup_checklist(db: Session, setting: CompanyFiscalSetting) ->
     has_nfce_numbering = bool(setting.nfce_series and setting.nfce_next_number)
     has_nfe_numbering = bool(setting.nfe_series and setting.nfe_next_number)
     has_csc = bool(setting.nfce_csc_id and setting.nfce_csc_secret_key)
-    products_missing_basic = db.scalar(
-        select(func.count(Product.id)).where(
-            Product.active.is_(True),
-            or_(Product.ncm.is_(None), Product.ncm == "", Product.origin.is_(None), Product.origin == ""),
+    active_products = list(
+        db.scalars(
+            select(Product)
+            .where(Product.active.is_(True))
+            .order_by(Product.name.asc(), Product.id.asc())
         )
-    ) or 0
+    )
+    basic_issue_fields = {"ncm", "origin", "cfop"}
+    products_missing_basic = sum(
+        1
+        for product in active_products
+        if any(
+            issue.field in basic_issue_fields
+            for issue in resolve_fiscal_product(
+                setting,
+                product,
+                model="55",
+                issue_date=date.today(),
+                rtc_mandatory=False,
+                suggestions=fiscal_suggestions_for_product(db, product=product),
+            ).blocking_issues
+        )
+    )
     rtc_nfce = get_rtc_compliance(model="65", db=db, current_user=None)  # type: ignore[arg-type]
     rtc_nfe = get_rtc_compliance(model="55", db=db, current_user=None)  # type: ignore[arg-type]
 
@@ -589,8 +611,8 @@ def _build_fiscal_setup_checklist(db: Session, setting: CompanyFiscalSetting) ->
                 "Produtos fiscais",
                 products_missing_basic == 0,
                 owner="contador",
-                ok_message="Produtos ativos com NCM e origem preenchidos.",
-                pending_message=f"{products_missing_basic} produto(s) ativo(s) sem NCM ou origem.",
+                ok_message="Produtos ativos com NCM, origem e CFOP resolvidos pelo motor fiscal.",
+                pending_message=f"{products_missing_basic} produto(s) ativo(s) com NCM, origem ou CFOP pendente.",
                 blocks_nfe=True,
                 blocks_nfce=True,
             ),
@@ -664,6 +686,7 @@ SEFAZ_REJECTION_HINTS: dict[str, str] = {
     "610": "Total da nota difere da soma dos itens/impostos. Revise valores, descontos e totais.",
     "778": "NFC-e com NCM inexistente/invalido. Revise o NCM do produto.",
     "806": "Operacao com ICMS-ST exige CEST quando aplicavel. Revise NCM/CEST do produto.",
+    "1115": "Reforma tributaria: preencha CST IBS/CBS e cClassTrib IBS/CBS no item indicado. Use Buscar sugestao fiscal; se aplicar, salve no produto para as proximas notas.",
 }
 
 
@@ -690,7 +713,14 @@ def _sale_or_404(db: Session, sale_id: int | None = None, sale_number: str | Non
     if sale_id is not None:
         query = query.where(Sale.id == sale_id)
     elif sale_number:
-        query = query.where(Sale.number == sale_number)
+        normalized_number = sale_number.strip().upper()
+        digits = _only_digits(normalized_number)
+        candidates = {normalized_number}
+        # A tela mostra vendas como V45, mas permite que o operador digite 45.
+        # Resolve os dois formatos sem confundir o número exibido com o ID interno.
+        if digits:
+            candidates.update({digits, f"V{digits}"})
+        query = query.where(Sale.number.in_(candidates))
     else:
         raise HTTPException(status_code=400, detail="Informe o numero da venda.")
     sale = db.scalar(query)
@@ -753,6 +783,10 @@ def _document_item_to_sale_item_view(item: FiscalDocumentItem) -> SimpleNamespac
         pis_cst=item.pis_cst,
         cofins_cst=item.cofins_cst,
         cbenef=item.cbenef,
+        ibs_cbs_cst=item.ibs_cbs_cst,
+        ibs_cbs_classification=item.ibs_cbs_classification,
+        selective_tax_cst=item.selective_tax_cst,
+        selective_tax_classification=item.selective_tax_classification,
     )
 
 
@@ -840,9 +874,66 @@ def _clean_item_tax_overrides(item: FiscalDocumentItemOverride) -> dict[str, str
     """Campos tributarios informados no rascunho prevalecem sobre o motor."""
     return {
         name: ("".join(value.split()) if name in {"ncm", "cest", "cfop"} else value.strip()) or None
-        for name in ("ncm", "cest", "cfop", "origin", "cst", "csosn", "pis_cst", "cofins_cst", "cbenef")
+        for name in (
+            "ncm",
+            "cest",
+            "cfop",
+            "origin",
+            "cst",
+            "csosn",
+            "pis_cst",
+            "cofins_cst",
+            "cbenef",
+            "ibs_cbs_cst",
+            "ibs_cbs_classification",
+            "selective_tax_cst",
+            "selective_tax_classification",
+        )
         if (value := getattr(item, name, None)) is not None
     }
+
+
+def _resolved_item_tax_snapshot(
+    setting: CompanyFiscalSetting,
+    product: Product | None,
+    *,
+    db: Session,
+    item: object | None = None,
+    model: str,
+) -> dict[str, str | None]:
+    if product is None:
+        return {}
+    suggestions = fiscal_suggestions_for_product(
+        db,
+        product=product,
+        description=getattr(item, "fiscal_description", None) if item is not None else None,
+    )
+    resolution = resolve_fiscal_product(
+        setting,
+        product,
+        item=item,
+        model=model,
+        rtc_mandatory=is_rtc_mandatory(setting, date.today()),
+        suggestions=suggestions,
+    )
+    return {
+        key: value
+        for key, value in fiscal_snapshot_from_resolution(resolution).items()
+        if value is not None
+    }
+
+
+def _merged_item_tax_snapshot(
+    setting: CompanyFiscalSetting,
+    product: Product | None,
+    override: FiscalDocumentItemOverride,
+    *,
+    db: Session,
+    model: str,
+) -> dict[str, str | None]:
+    snapshot = _resolved_item_tax_snapshot(setting, product, db=db, item=override, model=model)
+    snapshot.update(_clean_item_tax_overrides(override))
+    return snapshot
 
 
 def _replace_document_items(
@@ -854,6 +945,7 @@ def _replace_document_items(
     included_count = 0
     document.fiscal_items.clear()
     db.flush()
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
     for override in items:
         product = db.get(Product, override.fiscal_product_id) if override.fiscal_product_id else None
         if override.included and product is None:
@@ -872,7 +964,13 @@ def _replace_document_items(
             unit_price=unit_price, discount_amount=discount, total_price=total_price,
             barcode=product.barcode if product else None, included=override.included,
             adjustment_reason=override.adjustment_reason, created_by_user_id=current_user.id,
-            **_clean_item_tax_overrides(override),
+            **_merged_item_tax_snapshot(
+                setting,
+                product,
+                override,
+                db=db,
+                model=document.model or "55",
+            ),
         ))
     if not included_count:
         raise HTTPException(status_code=400, detail="A nota precisa ter pelo menos um item incluido.")
@@ -1295,24 +1393,37 @@ def get_rtc_compliance(
     )
     incomplete_products = []
     for product in products:
-        issues = fiscal_product_issues(
+        resolution = resolve_fiscal_product(
             setting,
             product,
             model=model,
             issue_date=today,
+            rtc_mandatory=mandatory,
+            suggestions=fiscal_suggestions_for_product(db, product=product),
         )
-        if issues:
-            matched_rule = resolve_output_rule(setting, product, model=model)
-            profile = resolve_output_tax_profile(setting, product, model=model)
+        if resolution.blocking_issues:
             incomplete_products.append(
                 {
                     "id": product.id,
                     "name": product.name,
                     "internal_code": product.internal_code,
-                    "ncm": product.ncm,
-                    "rule_source": profile.source,
-                    "rule_name": getattr(matched_rule, "name", None),
-                    "missing_fields": issues,
+                    "ncm": resolution.ncm,
+                    "status": resolution.status,
+                    "rule_source": resolution.profile.source,
+                    "rule_id": resolution.rule_id,
+                    "rule_name": resolution.rule_name,
+                    "missing_fields": resolution.missing_fields,
+                    "issues": [
+                        {
+                            "field": issue.field,
+                            "message": issue.message,
+                            "severity": issue.severity,
+                            "owner": issue.owner,
+                            "blocks_nfe": issue.blocks_nfe,
+                            "blocks_nfce": issue.blocks_nfce,
+                        }
+                        for issue in resolution.issues
+                    ],
                 }
             )
 
@@ -1724,6 +1835,46 @@ def lookup_fiscal_products(
     return products
 
 
+@router.put("/products/{product_id}/tax-profile")
+def update_product_tax_profile(
+    product_id: int,
+    payload: FiscalProductTaxProfileUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_any_permission("fiscal:emit", "products:update")),
+) -> dict[str, object]:
+    product = db.get(Product, product_id)
+    if product is None:
+        raise HTTPException(status_code=404, detail="Produto nao encontrado.")
+
+    data = payload.model_dump(exclude_unset=True)
+    for field in ("ncm", "cest", "cfop_sale", "ibs_cbs_cst", "ibs_cbs_classification"):
+        if field in data and data[field] is not None:
+            data[field] = _only_digits(data[field])
+    if "origin" in data and data["origin"] is not None:
+        data["origin"] = _only_digits(data["origin"])
+    for field in ("cst", "csosn", "selective_tax_cst", "selective_tax_classification"):
+        if field in data and data[field] is not None:
+            data[field] = str(data[field]).strip().upper()
+
+    if data.get("ncm") and len(data["ncm"]) != 8:
+        raise HTTPException(status_code=422, detail="NCM deve ter 8 digitos.")
+    if data.get("cfop_sale") and len(data["cfop_sale"]) != 4:
+        raise HTTPException(status_code=422, detail="CFOP deve ter 4 digitos.")
+    if data.get("origin") and data["origin"] not in {"0", "1", "2", "3", "4", "5", "6", "7", "8"}:
+        raise HTTPException(status_code=422, detail="Origem deve ser um codigo de 0 a 8.")
+
+    for field, value in data.items():
+        if hasattr(product, field):
+            setattr(product, field, value)
+
+    learn_from_product(db, product, source="fiscal_note_correction")
+    db.commit()
+    return {
+        "id": product.id,
+        "message": "Classificacao fiscal salva no produto.",
+    }
+
+
 @router.post("/documents/prepare", response_model=FiscalDocumentRead, status_code=status.HTTP_201_CREATED)
 def prepare_fiscal_document(
     payload: FiscalDocumentPrepare,
@@ -1801,7 +1952,7 @@ def prepare_fiscal_document_with_items(
     sale = _sale_or_404(db, sale_id=payload.sale_id)
     if sale.status != "finalizada":
         raise HTTPException(status_code=400, detail="Somente venda finalizada pode emitir nota.")
-    setting = _get_or_create_settings(db)
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
     if payload.document_type == "nfce" and not setting.nfce_enabled:
         raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
     if payload.document_type == "nfe" and not setting.nfe_enabled:
@@ -1875,7 +2026,13 @@ def prepare_fiscal_document_with_items(
                 included=override.included,
                 adjustment_reason=override.adjustment_reason,
                 created_by_user_id=current_user.id,
-                **_clean_item_tax_overrides(override),
+                **_merged_item_tax_snapshot(
+                    setting,
+                    product,
+                    override,
+                    db=db,
+                    model=document.model or "55",
+                ),
             )
         )
     if included_count == 0:
@@ -1928,7 +2085,7 @@ def prepare_fiscal_document_from_sales(
                 detail=f"A venda {sale.number or sale.id} ja possui documento fiscal.",
             )
 
-    setting = _get_or_create_settings(db)
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
     if payload.document_type == "nfce" and not setting.nfce_enabled:
         raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
     if payload.document_type == "nfe" and not setting.nfe_enabled:
@@ -2001,12 +2158,13 @@ def prepare_fiscal_document_from_sales(
                 barcode=item.barcode or (product.barcode if product is not None else None),
                 included=True,
                 adjustment_reason=f"Origem: venda {sale.number or sale.id}.",
-                ncm=product.ncm if product is not None else None,
-                cest=product.cest if product is not None else None,
-                cfop=product.cfop_sale if product is not None else None,
-                origin=product.origin if product is not None else None,
-                cst=product.cst if product is not None else None,
-                csosn=product.csosn if product is not None else None,
+                **_resolved_item_tax_snapshot(
+                    setting,
+                    product,
+                    db=db,
+                    item=item,
+                    model=document.model or "55",
+                ),
                 created_by_user_id=current_user.id,
             )
             aggregated_items[key] = fiscal_item
@@ -2029,7 +2187,7 @@ def prepare_manual_fiscal_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_permission("fiscal:emit")),
 ) -> FiscalDocument:
-    setting = _get_or_create_settings(db)
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
     if payload.document_type == "nfce" and not setting.nfce_enabled:
         raise HTTPException(status_code=400, detail="NFC-e nao esta habilitada para esta empresa.")
     if payload.document_type == "nfe" and not setting.nfe_enabled:
@@ -2103,7 +2261,13 @@ def prepare_manual_fiscal_document(
                 included=override.included,
                 adjustment_reason=override.adjustment_reason or "Item incluido em nota fiscal manual.",
                 created_by_user_id=current_user.id,
-                **_clean_item_tax_overrides(override),
+                **_merged_item_tax_snapshot(
+                    setting,
+                    product,
+                    override,
+                    db=db,
+                    model=document.model or "55",
+                ),
             )
         )
     if included_count == 0:
@@ -2249,6 +2413,21 @@ def authorize_fiscal_document(
         if document.sale is not None
         else _manual_fiscal_sale_view(document)
     )
+    # Never send a padded chapter (for example 00001006) to SEFAZ.  It can
+    # look like an eight-digit value but is not a valid NCM item code.
+    for item_index, item in enumerate(document.fiscal_items, start=1):
+        if not item.included:
+            continue
+        item_ncm = _only_digits(item.ncm)
+        if len(item_ncm) != 8 or item_ncm.startswith("00"):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Item {item_index} ({item.fiscal_description or 'produto'}) "
+                    "precisa de um NCM valido de 8 digitos. "
+                    "O codigo informado e um capitulo/subgrupo, nao um NCM de produto."
+                ),
+            )
     try:
         validate_rtc_document(
             setting,

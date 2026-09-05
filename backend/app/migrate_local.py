@@ -258,6 +258,10 @@ FISCAL_DOCUMENT_ITEM_COLUMNS = [
     ("ncm", "VARCHAR(20)"), ("cest", "VARCHAR(20)"), ("cfop", "VARCHAR(10)"),
     ("origin", "VARCHAR(2)"), ("cst", "VARCHAR(10)"), ("csosn", "VARCHAR(10)"),
     ("pis_cst", "VARCHAR(10)"), ("cofins_cst", "VARCHAR(10)"), ("cbenef", "VARCHAR(20)"),
+    ("ibs_cbs_cst", "VARCHAR(10)"),
+    ("ibs_cbs_classification", "VARCHAR(20)"),
+    ("selective_tax_cst", "VARCHAR(10)"),
+    ("selective_tax_classification", "VARCHAR(20)"),
 ]
 
 PRODUCTION_ORDER_COLUMNS = [

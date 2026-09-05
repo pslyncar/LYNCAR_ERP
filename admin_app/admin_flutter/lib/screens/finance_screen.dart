@@ -1606,8 +1606,6 @@ class _FiscalSalesSelectionDialogState
             ? widget.client.documentNumber?.replaceAll(RegExp(r'\D'), '')
             : null,
         paymentCondition: 'prazo',
-        fiscalNotes:
-            'Documento originado do extrato financeiro. Estoque ja movimentado pelas vendas.',
       );
       if (!mounted) return;
       final label = document.number == null

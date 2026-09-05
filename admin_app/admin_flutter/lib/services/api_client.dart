@@ -2309,6 +2309,19 @@ class ApiClient {
         .toList();
   }
 
+  Future<void> updateProductTaxProfile(
+    String token,
+    int productId,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/fiscal/products/$productId/tax-profile'),
+      headers: _authHeaders(token),
+      body: jsonEncode(payload),
+    );
+    _decodeResponse(response);
+  }
+
   Future<FiscalDocument> prepareFiscalDocumentWithItems(
     String token, {
     required int saleId,

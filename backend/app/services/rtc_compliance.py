@@ -6,7 +6,8 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from app.services.fiscal_output_rules import effective_crt, resolve_output_tax_profile
+from app.services.fiscal_output_rules import effective_crt
+from app.services.fiscal_resolver import fiscal_blocking_messages, resolve_fiscal_product
 
 
 RTC_HOMOLOGATION_CRT3_MANDATORY_FROM = date(2026, 7, 1)
@@ -66,17 +67,13 @@ def _digits(value: Any) -> str:
 def rtc_product_issues(setting: Any, product: Any, *, model: str) -> list[str]:
     """Return every missing RTC field for one product/output operation."""
 
-    profile = resolve_output_tax_profile(setting, product, model=model)
-    issues: list[str] = []
-    if len(_digits(getattr(product, "ncm", None))) != 8:
-        issues.append("NCM deve ter 8 dígitos")
-    if len(_digits(profile.cfop)) != 4:
-        issues.append("CFOP de saída deve ter 4 dígitos")
-    if len(_digits(profile.ibs_cbs_cst)) != 3:
-        issues.append("CST IBS/CBS deve ter 3 dígitos")
-    if len(_digits(profile.ibs_cbs_classification)) != 6:
-        issues.append("cClassTrib IBS/CBS deve ter 6 dígitos")
-    return issues
+    resolution = resolve_fiscal_product(
+        setting,
+        product,
+        model=model,
+        rtc_mandatory=True,
+    )
+    return resolution.missing_fields
 
 
 def fiscal_product_issues(
@@ -88,25 +85,14 @@ def fiscal_product_issues(
 ) -> list[str]:
     """Retorna somente pendências exigíveis para a emissão na data informada."""
 
-    profile = resolve_output_tax_profile(setting, product, model=model)
-    issues: list[str] = []
-    if len(_digits(getattr(product, "ncm", None))) != 8:
-        issues.append("NCM deve ter 8 dígitos")
-    if len(_digits(profile.cfop)) != 4:
-        issues.append("CFOP de saída deve ter 4 dígitos")
-
-    crt = effective_crt(setting)
-    if crt == "3":
-        if len(_digits(profile.cst)) != 2:
-            issues.append("CST ICMS deve ter 2 dígitos")
-    elif len(_digits(profile.csosn)) != 3:
-        issues.append("CSOSN deve ter 3 dígitos")
-
-    if is_rtc_mandatory(setting, issue_date):
-        for issue in rtc_product_issues(setting, product, model=model):
-            if issue not in issues:
-                issues.append(issue)
-    return issues
+    resolution = resolve_fiscal_product(
+        setting,
+        product,
+        model=model,
+        issue_date=issue_date,
+        rtc_mandatory=is_rtc_mandatory(setting, issue_date),
+    )
+    return resolution.missing_fields
 
 
 def validate_rtc_document(
@@ -121,24 +107,16 @@ def validate_rtc_document(
     current_date = issue_date or date.today()
     if is_rtc_mandatory(setting, current_date):
         rtc_rates_for(current_date)
-    issues: list[str] = []
-    for index, item in enumerate(getattr(sale, "items", None) or [], start=1):
-        product = getattr(item, "product", None)
-        label = getattr(product, "name", None) or f"item {index}"
-        if product is None:
-            issues.append(f"{label}: produto não encontrado")
-            continue
-        for issue in fiscal_product_issues(
-            setting,
-            product,
-            model=model,
-            issue_date=current_date,
-        ):
-            issues.append(f"{label}: {issue}")
+    issues = fiscal_blocking_messages(
+        setting,
+        list(getattr(sale, "items", None) or []),
+        model=model,
+        issue_date=current_date,
+        rtc_mandatory=is_rtc_mandatory(setting, current_date),
+    )
 
     if issues:
-        unique_issues = list(dict.fromkeys(issues))
         raise RtcComplianceError(
             "Emissão aguardando configuração fiscal. "
-            + "; ".join(unique_issues)
+            + "; ".join(issues)
         )

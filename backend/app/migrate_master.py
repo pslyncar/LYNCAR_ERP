@@ -16,6 +16,8 @@ from app.models.master_fiscal_reference import (  # noqa: F401
     MasterIbsCbsClassTrib,
     MasterFiscalCestCode,
     MasterFiscalCfopCode,
+    MasterFiscalCollectiveObservation,
+    MasterFiscalCollectiveSuggestion,
     MasterFiscalNcmCode,
     MasterFiscalReferenceSync,
 )
@@ -119,6 +121,12 @@ BUSINESS_SEGMENT_COLUMNS = [
     ("max_pdv_terminals", "INTEGER"),
 ]
 
+MASTER_IBS_CBS_CLASS_TRIB_COLUMNS = [
+    ("requires_rate_reduction", "BOOLEAN NOT NULL DEFAULT false"),
+    ("ibs_rate_reduction_percent", "NUMERIC(7, 4)"),
+    ("cbs_rate_reduction_percent", "NUMERIC(7, 4)"),
+]
+
 
 def column_exists(table_name: str, column_name: str) -> bool:
     with master_engine.connect() as connection:
@@ -192,6 +200,14 @@ def main() -> None:
             if not column_exists("business_segments", column_name):
                 connection.execute(
                     text(f"ALTER TABLE business_segments ADD COLUMN {column_name} {column_type}")
+                )
+        for column_name, column_type in MASTER_IBS_CBS_CLASS_TRIB_COLUMNS:
+            if not column_exists("fiscal_ibs_cbs_class_trib", column_name):
+                connection.execute(
+                    text(
+                        "ALTER TABLE fiscal_ibs_cbs_class_trib "
+                        f"ADD COLUMN {column_name} {column_type}"
+                    )
                 )
         connection.execute(
             text(

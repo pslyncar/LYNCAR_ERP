@@ -2,13 +2,17 @@ class FiscalAssistantResponse {
   const FiscalAssistantResponse({
     required this.legalNotice,
     required this.suggestions,
+    required this.collectiveSuggestions,
     required this.ncmOfficialSuggestions,
+    required this.ibsCbsOfficialSuggestions,
     required this.alerts,
   });
 
   final String legalNotice;
   final List<FiscalSuggestion> suggestions;
+  final List<FiscalCollectiveSuggestion> collectiveSuggestions;
   final List<FiscalNcmOfficialSuggestion> ncmOfficialSuggestions;
+  final List<FiscalIbsCbsOfficialSuggestion> ibsCbsOfficialSuggestions;
   final List<FiscalAlert> alerts;
 
   factory FiscalAssistantResponse.fromJson(Map<String, dynamic> json) {
@@ -19,6 +23,14 @@ class FiscalAssistantResponse {
             (item) => FiscalSuggestion.fromJson(item as Map<String, dynamic>),
           )
           .toList(),
+      collectiveSuggestions:
+          (json['collective_suggestions'] as List<dynamic>? ?? [])
+              .map(
+                (item) => FiscalCollectiveSuggestion.fromJson(
+                  item as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
       ncmOfficialSuggestions:
           (json['ncm_official_suggestions'] as List<dynamic>? ?? [])
               .map(
@@ -27,9 +39,77 @@ class FiscalAssistantResponse {
                 ),
               )
               .toList(),
+      ibsCbsOfficialSuggestions:
+          (json['ibs_cbs_official_suggestions'] as List<dynamic>? ?? [])
+              .map(
+                (item) => FiscalIbsCbsOfficialSuggestion.fromJson(
+                  item as Map<String, dynamic>,
+                ),
+              )
+              .toList(),
       alerts: (json['alerts'] as List<dynamic>? ?? [])
           .map((item) => FiscalAlert.fromJson(item as Map<String, dynamic>))
           .toList(),
+    );
+  }
+}
+
+class FiscalCollectiveSuggestion {
+  const FiscalCollectiveSuggestion({
+    required this.id,
+    required this.normalizedDescription,
+    required this.confirmationsCount,
+    required this.companiesCount,
+    this.barcode,
+    this.unit,
+    this.ncm,
+    this.cest,
+    this.cfop,
+    this.origin,
+    this.cst,
+    this.csosn,
+    this.ibsCbsCst,
+    this.ibsCbsClassification,
+    this.selectiveTaxCst,
+    this.selectiveTaxClassification,
+  });
+
+  final int id;
+  final String normalizedDescription;
+  final String? barcode;
+  final String? unit;
+  final String? ncm;
+  final String? cest;
+  final String? cfop;
+  final String? origin;
+  final String? cst;
+  final String? csosn;
+  final String? ibsCbsCst;
+  final String? ibsCbsClassification;
+  final String? selectiveTaxCst;
+  final String? selectiveTaxClassification;
+  final int confirmationsCount;
+  final int companiesCount;
+
+  factory FiscalCollectiveSuggestion.fromJson(Map<String, dynamic> json) {
+    return FiscalCollectiveSuggestion(
+      id: _toInt(json['id']),
+      normalizedDescription: json['normalized_description']?.toString() ?? '',
+      barcode: json['barcode']?.toString(),
+      unit: json['unit']?.toString(),
+      ncm: json['ncm']?.toString(),
+      cest: json['cest']?.toString(),
+      cfop: json['cfop']?.toString(),
+      origin: json['origin']?.toString(),
+      cst: json['cst']?.toString(),
+      csosn: json['csosn']?.toString(),
+      ibsCbsCst: json['ibs_cbs_cst']?.toString(),
+      ibsCbsClassification: json['ibs_cbs_classification']?.toString(),
+      selectiveTaxCst: json['selective_tax_cst']?.toString(),
+      selectiveTaxClassification:
+          json['selective_tax_classification']?.toString(),
+      confirmationsCount: _toInt(json['confirmations_count']),
+      companiesCount: _toInt(json['companies_count']),
     );
   }
 }
@@ -54,6 +134,41 @@ class FiscalNcmOfficialSuggestion {
   }
 }
 
+class FiscalIbsCbsOfficialSuggestion {
+  const FiscalIbsCbsOfficialSuggestion({
+    required this.cst,
+    required this.cclassTrib,
+    required this.requiresGibscbs,
+    required this.source,
+    this.cstDescription,
+    this.name,
+    this.description,
+    this.groupType,
+  });
+
+  final String cst;
+  final String? cstDescription;
+  final String cclassTrib;
+  final String? name;
+  final String? description;
+  final String? groupType;
+  final bool requiresGibscbs;
+  final String source;
+
+  factory FiscalIbsCbsOfficialSuggestion.fromJson(Map<String, dynamic> json) {
+    return FiscalIbsCbsOfficialSuggestion(
+      cst: json['cst']?.toString() ?? '',
+      cstDescription: json['cst_description']?.toString(),
+      cclassTrib: json['cclass_trib']?.toString() ?? '',
+      name: json['name']?.toString(),
+      description: json['description']?.toString(),
+      groupType: json['group_type']?.toString(),
+      requiresGibscbs: json['requires_gibscbs'] as bool? ?? true,
+      source: json['source']?.toString() ?? 'portal_nfe_it_2025_002',
+    );
+  }
+}
+
 class FiscalSuggestion {
   const FiscalSuggestion({
     required this.id,
@@ -69,6 +184,8 @@ class FiscalSuggestion {
     this.origin,
     this.cst,
     this.csosn,
+    this.pisCst,
+    this.cofinsCst,
     this.icmsRate,
     this.pisRate,
     this.cofinsRate,
@@ -94,6 +211,8 @@ class FiscalSuggestion {
   final String? origin;
   final String? cst;
   final String? csosn;
+  final String? pisCst;
+  final String? cofinsCst;
   final double? icmsRate;
   final double? pisRate;
   final double? cofinsRate;
@@ -122,6 +241,8 @@ class FiscalSuggestion {
       origin: json['origin']?.toString(),
       cst: json['cst']?.toString(),
       csosn: json['csosn']?.toString(),
+      pisCst: json['pis_cst']?.toString(),
+      cofinsCst: json['cofins_cst']?.toString(),
       icmsRate: _toNullableDouble(json['icms_rate']),
       pisRate: _toNullableDouble(json['pis_rate']),
       cofinsRate: _toNullableDouble(json['cofins_rate']),

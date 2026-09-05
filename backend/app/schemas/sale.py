@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SaleStatus = Literal["rascunho", "finalizada", "cancelada"]
-SaleSource = Literal["pdv", "venda", "os", "teste"]
+SaleSource = Literal["pdv", "venda", "os", "teste", "pedeon"]
 PaymentMethod = Literal[
     "dinheiro",
     "pix",

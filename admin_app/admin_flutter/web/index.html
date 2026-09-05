@@ -34,34 +34,6 @@
 </head>
 <body>
   <script>
-    // Em ambiente administrativo/localhost, o service worker do Flutter pode manter
-    // uma versÃ£o antiga do sistema no navegador. Limpamos antes de carregar o app.
-    window.__clearOldFlutterCache = function clearOldFlutterCache() {
-      var serviceWorkerCleanup = Promise.resolve();
-      if ('serviceWorker' in navigator) {
-        serviceWorkerCleanup = navigator.serviceWorker
-          .getRegistrations()
-          .then(function (registrations) {
-            return Promise.all(registrations.map(function (registration) {
-              return registration.unregister();
-            }));
-          })
-          .catch(function () {});
-      }
-      var cacheCleanup = Promise.resolve();
-      if ('caches' in window) {
-        cacheCleanup = caches
-          .keys()
-          .then(function (keys) {
-            return Promise.all(keys.map(function (key) {
-              return caches.delete(key);
-            }));
-          })
-          .catch(function () {});
-      }
-      return Promise.all([serviceWorkerCleanup, cacheCleanup]);
-    };
-
     // O PDV usa teclas de funcao como comandos de caixa. No navegador,
     // algumas delas tem acao padrao (F5 recarrega, F6 foca a barra de endereco).
     // Bloqueamos a acao do Chrome e deixamos o evento seguir para o Flutter.
@@ -80,15 +52,9 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
-  <script>
-    (window.__clearOldFlutterCache ? window.__clearOldFlutterCache() : Promise.resolve())
-      .then(function () {
-        var script = document.createElement('script');
-        script.src = 'flutter_bootstrap.js?v=20260813-login-no-sw';
-        script.async = true;
-        document.body.appendChild(script);
-      });
-  </script>
+  <!-- Use the stock Flutter bootstrap. Local cache/service-worker deletion was
+       racing initialization and is the cause of the intermittent blank page. -->
+  <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>
 

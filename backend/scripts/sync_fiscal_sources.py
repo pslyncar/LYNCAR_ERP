@@ -17,6 +17,7 @@ Variaveis opcionais:
     FISCAL_NCM_JSON_URL=https://...
     FISCAL_CFOP_URL=https://...
     FISCAL_CEST_URL=https://...
+    FISCAL_IBS_CBS_CLASS_TRIB_URL=https://...
     FISCAL_SYNC_LOG_FILE=/var/log/lyncar/fiscal_sources_sync.log
 
 Se as variaveis nao forem definidas, o script usa fontes oficiais padrao:
@@ -24,6 +25,7 @@ Se as variaveis nao forem definidas, o script usa fontes oficiais padrao:
     NCM: Portal Unico Siscomex/Classif JSON publico
     CFOP: CONFAZ - tabela CFOP vigente
     CEST: CONFAZ - Convenio ICMS 142/18
+    IBS/CBS: Portal DF-e - Classificacao Tributaria da Reforma Tributaria
 
 Observacao: este script alimenta apenas tabelas auxiliares de sugestao/validacao.
 Ele nao altera motor fiscal, XML de emissao, assinatura ou transmissao SEFAZ.
@@ -51,12 +53,17 @@ DEFAULT_SOURCE_URLS = {
     "ncm": "https://portalunico.siscomex.gov.br/classif/api/publico/nomenclatura/download/json",
     "cfop": "https://www.confaz.fazenda.gov.br/legislacao/ajustes/sinief/copy_of_cfop_cvsn_70_nova",
     "cest": "https://www.confaz.fazenda.gov.br/legislacao/convenios/2018/CV142_18",
+    "ibs_cbs_class_trib": "https://dfe-portal.svrs.rs.gov.br/Cff/ClassificacaoTributaria",
 }
 
 SOURCE_ENV_NAMES = {
     "ncm": ("FISCAL_NCM_JSON_URL", "FISCAL_NCM_URL"),
     "cfop": ("FISCAL_CFOP_URL", "FISCAL_CFOP_CSV_URL"),
     "cest": ("FISCAL_CEST_URL", "FISCAL_CEST_CSV_URL"),
+    "ibs_cbs_class_trib": (
+        "FISCAL_IBS_CBS_CLASS_TRIB_URL",
+        "FISCAL_CCLASS_TRIB_URL",
+    ),
 }
 
 
@@ -134,7 +141,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Sincroniza bases fiscais oficiais do Assistente Fiscal.")
     parser.add_argument(
         "--source",
-        choices=["ncm", "cfop", "cest"],
+        choices=["ncm", "cfop", "cest", "ibs_cbs_class_trib", "cclass_trib", "cclasstrib"],
         action="append",
         help="Sincroniza somente a fonte informada. Pode repetir.",
     )
@@ -166,7 +173,7 @@ def main() -> int:
         _print_and_log("sincronizacao ignorada: ja existe outra rotina fiscal em execucao.")
         return 0
     try:
-        selected_sources = args.source or ["ncm", "cfop", "cest"]
+        selected_sources = args.source or ["ncm", "cfop", "cest", "ibs_cbs_class_trib"]
         deadline = (
             datetime.now() + timedelta(hours=args.max_retry_hours)
             if args.max_retry_hours > 0

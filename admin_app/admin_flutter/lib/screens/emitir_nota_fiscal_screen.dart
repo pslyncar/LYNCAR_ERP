@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../models/client.dart';
 import '../models/fiscal.dart';
+import '../models/fiscal_assistant.dart';
 import '../models/product.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
@@ -52,6 +53,8 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
   Client? _fiscalClient;
   List<Client> _clients = const [];
   List<Product> _products = const [];
+  int? _sourceSaleId;
+  bool _loadingSaleOrigin = false;
   bool _saving = false;
   String? _error;
   final List<_ItemEditor> _items = [];
@@ -130,6 +133,70 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
       0;
   int? get _fiscalClientId => _fiscalClient?.id;
 
+  Product? _productById(int? productId) {
+    if (productId == null) return null;
+    for (final product in _products) {
+      if (product.id == productId) return product;
+    }
+    return null;
+  }
+
+  Future<void> _loadSaleOrigin() async {
+    final query = _sale.text.trim();
+    if (query.isEmpty) {
+      setState(() {
+        _sourceSaleId = null;
+        _error = 'Informe o número da venda para puxar os produtos.';
+      });
+      return;
+    }
+    setState(() {
+      _loadingSaleOrigin = true;
+      _error = null;
+    });
+    try {
+      final draft = await _api.getFiscalSaleDraft(widget.session.token, query);
+      if (!mounted) return;
+      setState(() {
+        for (final item in _items) {
+          item.dispose();
+        }
+        _items
+          ..clear()
+          ..addAll(
+            draft.items.map(
+              (draftItem) => _ItemEditor.fromFiscalDraft(
+                draftItem,
+                product: _productById(draftItem.fiscalProductId),
+              ),
+            ),
+          );
+        _sourceSaleId = draft.saleId;
+        _sale.text = draft.saleNumber ?? query;
+        if (_type == 'nfce' &&
+            _cpf.text.trim().isEmpty &&
+            draft.consumerCpf?.trim().isNotEmpty == true) {
+          _cpf.text = draft.consumerCpf!.trim();
+        }
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Venda ${draft.saleNumber ?? query} carregada com ${draft.items.length} produto(s). Você pode editar descrição, quantidade, valor e dados fiscais antes de preparar a nota.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = 'Não foi possível carregar a venda: $error');
+      }
+    } finally {
+      if (mounted) setState(() => _loadingSaleOrigin = false);
+    }
+  }
+
   String? _optionalText(TextEditingController controller) {
     final value = controller.text.trim();
     return value.isEmpty ? null : value;
@@ -147,6 +214,13 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
     }
     if (_items.isEmpty) {
       setState(() => _error = 'Inclua pelo menos um produto fiscal na nota.');
+      return;
+    }
+    if (_sale.text.trim().isNotEmpty && _sourceSaleId == null) {
+      setState(
+        () => _error =
+            'Carregue a venda pela lupa antes de preparar a nota. Assim o sistema usa a venda correta.',
+      );
       return;
     }
     if (_type == 'nfe' && _fiscalClientId == null) {
@@ -174,9 +248,7 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
             )
           : await _api.prepareFiscalDocumentWithItems(
               widget.session.token,
-              saleId: int.parse(
-                _sale.text.trim().replaceAll(RegExp(r'[^0-9]'), ''),
-              ),
+              saleId: _sourceSaleId!,
               items: items,
               documentType: _type,
               fiscalClientId: _fiscalClientId,
@@ -228,6 +300,111 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
     'net_weight': _number(_netWeight.text),
     'gross_weight': _number(_grossWeight.text),
   };
+
+  Map<String, dynamic> _taxProfilePayload(_ItemEditor item) => {
+    'ncm': _optionalText(item.ncm),
+    'cest': _optionalText(item.cest),
+    'cfop_sale': _optionalText(item.cfop),
+    'origin': _optionalText(item.origin),
+    'cst': _optionalText(item.cst),
+    'csosn': _optionalText(item.csosn),
+    'ibs_cbs_cst': _optionalText(item.ibsCbsCst),
+    'ibs_cbs_classification': _optionalText(item.ibsCbsClassification),
+    'selective_tax_cst': _optionalText(item.selectiveTaxCst),
+    'selective_tax_classification': _optionalText(
+      item.selectiveTaxClassification,
+    ),
+  };
+
+  Future<void> _saveFiscalToProduct(_ItemEditor item) async {
+    final productId = int.tryParse(item.productId.text.trim());
+    if (productId == null) {
+      setState(
+        () => _error =
+            'Selecione um produto cadastrado antes de salvar o fiscal.',
+      );
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await _api.updateProductTaxProfile(
+        widget.session.token,
+        productId,
+        _taxProfilePayload(item),
+      );
+      await _loadProducts();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Classificação fiscal salva no produto. Próximas notas já puxam esses dados.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => _error = 'Não foi possível salvar o fiscal no produto: $error',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _loadFiscalSuggestion(_ItemEditor item) async {
+    final productId = int.tryParse(item.productId.text.trim());
+    if (productId == null) {
+      setState(() {
+        item.fiscalSuggestionMessage =
+            'Selecione um produto cadastrado para consultar o motor fiscal.';
+      });
+      return;
+    }
+    setState(() {
+      item.loadingFiscalSuggestion = true;
+      item.fiscalSuggestionMessage = null;
+    });
+    try {
+      final response = await _api.getFiscalAssistantProductSuggestions(
+        widget.session.token,
+        productId: productId,
+        description: item.description.text,
+      );
+      final applied = item.applyBestFiscalSuggestion(response);
+      if (!mounted) return;
+      setState(() {
+        item.expanded = true;
+        item.fiscalAssistant = response;
+        final hasOfficialSuggestions =
+            response.ncmOfficialSuggestions.isNotEmpty ||
+            response.ibsCbsOfficialSuggestions.isNotEmpty;
+        item.fiscalSuggestionMessage = applied
+            ? 'Sugestão fiscal aplicada pelo motor. Revise os campos e salve no produto se estiver correto.'
+            : hasOfficialSuggestions
+            ? 'O motor encontrou opções oficiais de apoio abaixo. Escolha a correta com o contador/responsável fiscal e salve no produto.'
+            : 'O motor não achou sugestão fiscal segura para esse produto ainda. Preencha uma vez e salve no produto para aprender.';
+      });
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(() => item.fiscalSuggestionMessage = error.message);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(
+          () => item.fiscalSuggestionMessage =
+              'Não foi possível consultar a sugestão fiscal: $error',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => item.loadingFiscalSuggestion = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -300,7 +477,7 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
               _section(
                 'Origem e destinatário',
                 _fields(twoColumns, [
-                  _field(_sale, 'Venda de origem (opcional)'),
+                  _saleOriginField(),
                   _clientSelector(),
                   if (_type == 'nfce')
                     _field(
@@ -588,6 +765,38 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
               )
               .toList(),
         );
+
+  Widget _saleOriginField() => TextField(
+    controller: _sale,
+    textInputAction: TextInputAction.search,
+    onChanged: (_) {
+      if (_sourceSaleId != null) {
+        setState(() => _sourceSaleId = null);
+      }
+    },
+    onSubmitted: (_) => _loadSaleOrigin(),
+    decoration: InputDecoration(
+      labelText: 'Venda de origem (opcional)',
+      hintText: 'Ex.: V45',
+      helperText: 'Digite o número e clique na lupa para puxar os produtos.',
+      border: const OutlineInputBorder(),
+      suffixIcon: _loadingSaleOrigin
+          ? const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          : IconButton(
+              tooltip: 'Carregar venda',
+              onPressed: _loadSaleOrigin,
+              icon: const Icon(Icons.search),
+            ),
+    ),
+  );
+
   Widget _field(
     TextEditingController c,
     String label, {
@@ -655,6 +864,10 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
     pisCst: item.pis,
     cofinsCst: item.cofins,
     cbenef: item.cbenef,
+    ibsCbsCst: item.ibsCbsCst,
+    ibsCbsClassification: item.ibsCbsClassification,
+    selectiveTaxCst: item.selectiveTaxCst,
+    selectiveTaxClassification: item.selectiveTaxClassification,
     total: item.total,
     expanded: item.expanded,
     onToggleExpanded: () => setState(() => item.expanded = !item.expanded),
@@ -664,6 +877,39 @@ class _EmitirNotaFiscalScreenState extends State<EmitirNotaFiscalScreen> {
       _items.remove(item);
       item.dispose();
     }),
+    fiscalSuggestionText: item.fiscalSuggestionMessage,
+    ncmOfficialSuggestions:
+        item.fiscalAssistant?.ncmOfficialSuggestions ?? const [],
+    collectiveSuggestions:
+        item.fiscalAssistant?.collectiveSuggestions ?? const [],
+    ibsCbsOfficialSuggestions:
+        item.fiscalAssistant?.ibsCbsOfficialSuggestions ?? const [],
+    loadingFiscalSuggestion: item.loadingFiscalSuggestion,
+    onLoadFiscalSuggestion: int.tryParse(item.productId.text.trim()) == null
+        ? null
+        : () => _loadFiscalSuggestion(item),
+    onApplyOfficialNcm: (suggestion) => setState(() {
+      item.ncm.text = suggestion.code;
+      item.expanded = true;
+      item.fiscalSuggestionMessage =
+          'NCM oficial ${suggestion.code} aplicado. Confira com contador/classificação fiscal antes de emitir.';
+    }),
+    onApplyCollectiveSuggestion: (suggestion) => setState(() {
+      item.applyCollectiveFiscalSuggestion(suggestion);
+      item.expanded = true;
+      item.fiscalSuggestionMessage =
+          'Sugestão coletiva aplicada após sua confirmação. Confira os dados fiscais antes de emitir.';
+    }),
+    onApplyOfficialIbsCbs: (suggestion) => setState(() {
+      item.ibsCbsCst.text = suggestion.cst;
+      item.ibsCbsClassification.text = suggestion.cclassTrib;
+      item.expanded = true;
+      item.fiscalSuggestionMessage =
+          'IBS/CBS oficial CST ${suggestion.cst} e cClassTrib ${suggestion.cclassTrib} aplicados. Confira a hipótese fiscal antes de emitir.';
+    }),
+    onSaveFiscalToProduct: int.tryParse(item.productId.text.trim()) == null
+        ? null
+        : () => _saveFiscalToProduct(item),
   );
 
   Widget _productSelector(_ItemEditor item) => Autocomplete<Product>(
@@ -739,6 +985,53 @@ class _ItemEditor {
   final pis = TextEditingController();
   final cofins = TextEditingController();
   final cbenef = TextEditingController();
+  final ibsCbsCst = TextEditingController();
+  final ibsCbsClassification = TextEditingController();
+  final selectiveTaxCst = TextEditingController();
+  final selectiveTaxClassification = TextEditingController();
+  bool loadingFiscalSuggestion = false;
+  String? fiscalSuggestionMessage;
+  FiscalAssistantResponse? fiscalAssistant;
+
+  _ItemEditor();
+
+  factory _ItemEditor.fromFiscalDraft(
+    FiscalDraftItem draft, {
+    Product? product,
+  }) {
+    final item = _ItemEditor();
+    if (product != null) item.applyProduct(product);
+    item.productId.text = '${draft.fiscalProductId ?? draft.originalProductId ?? ''}';
+    item.description.text = draft.fiscalDescription;
+    item.unit.text = draft.unit.trim().isEmpty ? 'UN' : draft.unit.trim().toUpperCase();
+    item.quantity.text = formatFiscalQuantity(draft.quantity, item.unit.text);
+    item.unitPrice.text = formatFiscalMoney(draft.unitPrice);
+    item.discount.text = formatFiscalMoney(draft.discountAmount);
+    item._replaceIfPresent(item.ncm, draft.ncm);
+    item._replaceIfPresent(item.cest, draft.cest);
+    item._replaceIfPresent(item.cfop, draft.cfop);
+    item._replaceIfPresent(item.origin, draft.origin);
+    item._replaceIfPresent(item.cst, draft.cst);
+    item._replaceIfPresent(item.csosn, draft.csosn);
+    item._replaceIfPresent(item.pis, draft.pisCst);
+    item._replaceIfPresent(item.cofins, draft.cofinsCst);
+    item._replaceIfPresent(item.cbenef, draft.cbenef);
+    item._replaceIfPresent(item.ibsCbsCst, draft.ibsCbsCst);
+    item._replaceIfPresent(
+      item.ibsCbsClassification,
+      draft.ibsCbsClassification,
+    );
+    item._replaceIfPresent(item.selectiveTaxCst, draft.selectiveTaxCst);
+    item._replaceIfPresent(
+      item.selectiveTaxClassification,
+      draft.selectiveTaxClassification,
+    );
+    return item;
+  }
+
+  void _replaceIfPresent(TextEditingController controller, String? value) {
+    if (value?.trim().isNotEmpty == true) controller.text = value!.trim();
+  }
 
   bool get isWeight {
     final normalized = unit.text.trim().toUpperCase();
@@ -760,10 +1053,99 @@ class _ItemEditor {
     quantity.text = isWeight ? '0,001' : '1';
     unitPrice.text = p.salePrice.toStringAsFixed(2).replaceAll('.', ',');
     ncm.text = p.ncm ?? '';
+    cest.text = p.cest ?? '';
     cfop.text = p.cfopSale ?? '';
     origin.text = p.origin ?? '';
     cst.text = p.cst ?? '';
     csosn.text = p.csosn ?? '';
+    ibsCbsCst.text = p.ibsCbsCst ?? '';
+    ibsCbsClassification.text = p.ibsCbsClassification ?? '';
+    selectiveTaxCst.text = p.selectiveTaxCst ?? '';
+    selectiveTaxClassification.text = p.selectiveTaxClassification ?? '';
+    fiscalSuggestionMessage = null;
+    fiscalAssistant = null;
+  }
+
+  bool applyBestFiscalSuggestion(FiscalAssistantResponse response) {
+    FiscalSuggestion? suggestion;
+    for (final item in response.suggestions) {
+      if (_hasValue(item.ncm) ||
+          _hasValue(item.cest) ||
+          _hasValue(item.cfop) ||
+          _hasValue(item.origin) ||
+          _hasValue(item.cst) ||
+          _hasValue(item.csosn) ||
+          _hasValue(item.pisCst) ||
+          _hasValue(item.cofinsCst) ||
+          _hasValue(item.ibsCbsCst) ||
+          _hasValue(item.ibsCbsClassification) ||
+          _hasValue(item.selectiveTaxCst) ||
+          _hasValue(item.selectiveTaxClassification)) {
+        suggestion = item;
+        break;
+      }
+    }
+    var applied = false;
+    if (suggestion != null) {
+      applied = _fillIfEmpty(ncm, suggestion.ncm) || applied;
+      applied = _fillIfEmpty(cest, suggestion.cest) || applied;
+      applied = _fillIfEmpty(cfop, suggestion.cfop) || applied;
+      applied = _fillIfEmpty(origin, suggestion.origin) || applied;
+      applied = _fillIfEmpty(cst, suggestion.cst) || applied;
+      applied = _fillIfEmpty(csosn, suggestion.csosn) || applied;
+      applied = _fillIfEmpty(pis, suggestion.pisCst) || applied;
+      applied = _fillIfEmpty(cofins, suggestion.cofinsCst) || applied;
+      applied = _fillIfEmpty(ibsCbsCst, suggestion.ibsCbsCst) || applied;
+      applied =
+          _fillIfEmpty(ibsCbsClassification, suggestion.ibsCbsClassification) ||
+          applied;
+      applied =
+          _fillIfEmpty(selectiveTaxCst, suggestion.selectiveTaxCst) || applied;
+      applied =
+          _fillIfEmpty(
+            selectiveTaxClassification,
+            suggestion.selectiveTaxClassification,
+          ) ||
+          applied;
+    }
+    if (response.ibsCbsOfficialSuggestions.isNotEmpty) {
+      final official = response.ibsCbsOfficialSuggestions.first;
+      applied = _fillIfEmpty(ibsCbsCst, official.cst) || applied;
+      applied =
+          _fillIfEmpty(ibsCbsClassification, official.cclassTrib) || applied;
+    }
+    // Official NCM rows are alternatives, not an automatic fiscal decision.
+    // They are deliberately applied only when the operator selects one in the
+    // suggestion list.
+    if (!applied) return false;
+    expanded = true;
+    return true;
+  }
+
+  void applyCollectiveFiscalSuggestion(FiscalCollectiveSuggestion suggestion) {
+    _replaceIfPresent(ncm, suggestion.ncm);
+    _replaceIfPresent(cest, suggestion.cest);
+    _replaceIfPresent(cfop, suggestion.cfop);
+    _replaceIfPresent(origin, suggestion.origin);
+    _replaceIfPresent(cst, suggestion.cst);
+    _replaceIfPresent(csosn, suggestion.csosn);
+    _replaceIfPresent(ibsCbsCst, suggestion.ibsCbsCst);
+    _replaceIfPresent(ibsCbsClassification, suggestion.ibsCbsClassification);
+    _replaceIfPresent(selectiveTaxCst, suggestion.selectiveTaxCst);
+    _replaceIfPresent(
+      selectiveTaxClassification,
+      suggestion.selectiveTaxClassification,
+    );
+  }
+
+  static bool _hasValue(String? value) => value?.trim().isNotEmpty == true;
+
+  static bool _fillIfEmpty(TextEditingController controller, String? value) {
+    if (controller.text.trim().isEmpty && value?.trim().isNotEmpty == true) {
+      controller.text = value!.trim();
+      return true;
+    }
+    return false;
   }
 
   List<String> get pendingFields => [
@@ -773,6 +1155,8 @@ class _ItemEditor {
     if (parseFiscalDecimal(unitPrice.text) <= 0) 'valor unitário',
     if (ncm.text.trim().isEmpty) 'NCM',
     if (cfop.text.trim().isEmpty) 'CFOP',
+    if (origin.text.trim().isEmpty) 'origem da mercadoria',
+    if (cst.text.trim().isEmpty && csosn.text.trim().isEmpty) 'CST/CSOSN',
   ];
   FiscalDraftItem toFiscalItem() => FiscalDraftItem(
     fiscalProductId: int.tryParse(productId.text.trim()),
@@ -791,6 +1175,10 @@ class _ItemEditor {
     pisCst: pis.text.trim(),
     cofinsCst: cofins.text.trim(),
     cbenef: cbenef.text.trim(),
+    ibsCbsCst: ibsCbsCst.text.trim(),
+    ibsCbsClassification: ibsCbsClassification.text.trim(),
+    selectiveTaxCst: selectiveTaxCst.text.trim(),
+    selectiveTaxClassification: selectiveTaxClassification.text.trim(),
   );
   void dispose() {
     for (final c in [
@@ -809,6 +1197,10 @@ class _ItemEditor {
       pis,
       cofins,
       cbenef,
+      ibsCbsCst,
+      ibsCbsClassification,
+      selectiveTaxCst,
+      selectiveTaxClassification,
     ]) {
       c.dispose();
     }
