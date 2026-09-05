@@ -30,6 +30,7 @@ void openServiceOrderReceipt({
 Future<void> openNonFiscalSaleReceipt({
   required Sale sale,
   required String companyName,
+  String? clientName,
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
@@ -40,6 +41,7 @@ Future<void> openNonFiscalSaleReceipt({
     sale: sale,
     companyName: companyName,
     companyDocument: companyDocument,
+    clientName: clientName,
     cashRegisterNumber: cashRegisterNumber,
     operatorName: operatorName,
     installments: installments,
@@ -202,6 +204,7 @@ Future<void> _printHtml(String content) async {
 String _buildNonFiscalSaleReceiptHtml({
   required Sale sale,
   required String companyName,
+  String? clientName,
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
@@ -236,6 +239,7 @@ String _buildNonFiscalSaleReceiptHtml({
       : '<div class="between"><span>Parcelamento</span><span>${creditInstallments}x de ${_money(sale.totalAmount / creditInstallments)}</span></div>';
   final document = (companyDocument ?? '').trim();
   final notes = (sale.notes ?? '').trim();
+  final creditClient = (clientName ?? '').trim();
   return '''
 <!doctype html>
 <html>
@@ -293,6 +297,7 @@ String _buildNonFiscalSaleReceiptHtml({
   <div class="line"></div>
   <div class="section-title">Pagamentos</div>
   $payments
+  ${sale.payments.any((payment) => payment.method == 'crediario') && creditClient.isNotEmpty ? '<div class="between"><span>Cliente</span><span>${_escape(creditClient)}</span></div>' : ''}
   <div class="between"><span>Recebido</span><span>${_money(sale.amountPaid)}</span></div>
   ${sale.changeAmount > 0 ? '<div class="between"><span>Troco</span><span>${_money(sale.changeAmount)}</span></div>' : ''}
   $creditInstallmentInfo

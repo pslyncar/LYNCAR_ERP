@@ -16,6 +16,7 @@ void openServiceOrderReceipt({
 Future<void> openNonFiscalSaleReceipt({
   required Sale sale,
   required String companyName,
+  String? clientName,
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,

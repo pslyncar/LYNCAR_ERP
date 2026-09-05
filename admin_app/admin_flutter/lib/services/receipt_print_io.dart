@@ -19,6 +19,7 @@ void openServiceOrderReceipt({
 Future<void> openNonFiscalSaleReceipt({
   required Sale sale,
   required String companyName,
+  String? clientName,
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
@@ -31,6 +32,7 @@ Future<void> openNonFiscalSaleReceipt({
       sale: sale,
       companyName: companyName,
       companyDocument: companyDocument,
+      clientName: clientName,
       cashRegisterNumber: cashRegisterNumber,
       operatorName: operatorName,
     ),
@@ -239,6 +241,7 @@ String _powerShellEncodedCommand(String script) {
 List<int> _buildReceiptBytes({
   required Sale sale,
   required String companyName,
+  String? clientName,
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
@@ -292,6 +295,10 @@ List<int> _buildReceiptBytes({
   line('PAGAMENTOS');
   for (final payment in sale.payments) {
     line(_pair(_paymentLabel(payment.method), _money(payment.amount), width));
+  }
+  if (sale.payments.any((payment) => payment.method == 'crediario') &&
+      (clientName ?? '').trim().isNotEmpty) {
+    line('Cliente: ${clientName!.trim()}');
   }
   line(_pair('Recebido', _money(sale.amountPaid), width));
   if (sale.changeAmount > 0) {

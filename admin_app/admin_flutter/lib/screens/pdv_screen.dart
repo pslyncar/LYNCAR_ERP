@@ -753,7 +753,10 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
     });
   }
 
-  Future<bool> _emitFiscalDocumentAfterSale(Sale sale) async {
+  Future<bool> _emitFiscalDocumentAfterSale(
+    Sale sale, {
+    String? clientName,
+  }) async {
     if (!_shouldAskConsumerCpf || !widget.session.can('fiscal:emit')) {
       return true;
     }
@@ -807,7 +810,7 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
               ),
             );
           }
-          await _emitNonFiscalReceiptAfterSale(sale);
+          await _emitNonFiscalReceiptAfterSale(sale, clientName: clientName);
         }
       }
       final message = authorized.status == 'authorized'
@@ -827,7 +830,10 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
     }
   }
 
-  Future<void> _emitNonFiscalReceiptAfterSale(Sale sale) async {
+  Future<void> _emitNonFiscalReceiptAfterSale(
+    Sale sale, {
+    String? clientName,
+  }) async {
     if (!widget.pdvMode) return;
     await receipt_print.openNonFiscalSaleReceipt(
       sale: sale,
@@ -836,6 +842,7 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
           _fiscalSettings?.legalName ??
           widget.session.companyName,
       companyDocument: _fiscalSettings?.cnpj,
+      clientName: clientName,
       cashRegisterNumber: sale.cashRegisterNumber ?? _cashRegisterNumber,
       operatorName: _operatorName,
     );
@@ -1282,6 +1289,7 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
       payload: payloadWithOfflineId,
       payments: payments,
     );
+    final offlineClientName = _selectedClient?.name;
     setState(() {
       _sales = [localSale, ..._sales];
       _applyLocalStockOut(payloadWithOfflineId);
@@ -1303,7 +1311,9 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
     });
     _persistOpenCashSession();
     unawaited(_sendTerminalHeartbeat());
-    unawaited(_emitNonFiscalReceiptAfterSale(localSale));
+    unawaited(
+      _emitNonFiscalReceiptAfterSale(localSale, clientName: offlineClientName),
+    );
     unawaited(_openCashDrawerSilentlyIfNeeded(payments));
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -3590,6 +3600,7 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
       setState(() => _error = 'Adicione pelo menos um item.');
       return;
     }
+    final saleClientName = _selectedClient?.name;
     final salePayments =
         payments ?? [SalePaymentPayload(method: _paymentMethod, amount: _paid)];
     final amountPaidCents = salePayments.fold<int>(
@@ -3671,14 +3682,21 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
       if (!mounted) return;
       if (_shouldAskConsumerCpf && widget.session.can('fiscal:emit')) {
         unawaited(
-          _emitFiscalDocumentAfterSale(sale).then((fiscalPrinted) async {
+          _emitFiscalDocumentAfterSale(sale, clientName: saleClientName).then((
+            fiscalPrinted,
+          ) async {
             if (!fiscalPrinted) {
-              await _emitNonFiscalReceiptAfterSale(sale);
+              await _emitNonFiscalReceiptAfterSale(
+                sale,
+                clientName: saleClientName,
+              );
             }
           }),
         );
       } else {
-        unawaited(_emitNonFiscalReceiptAfterSale(sale));
+        unawaited(
+          _emitNonFiscalReceiptAfterSale(sale, clientName: saleClientName),
+        );
       }
       unawaited(_openCashDrawerSilentlyIfNeeded(salePayments));
       unawaited(_refreshAfterSale(sale));
