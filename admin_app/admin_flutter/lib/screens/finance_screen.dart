@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -35,6 +37,10 @@ class _FinanceScreenState extends State<FinanceScreen> {
   bool _loading = true;
   String? _error;
   int _tab = 0;
+  int _receivablesView = 0;
+  int _receivablesStatus = 0;
+  int _receivablesPage = 0;
+  static const _financePageSize = 20;
   bool _showAllAmounts = false;
   final Set<String> _revealedAmounts = {};
 
@@ -124,7 +130,40 @@ class _FinanceScreenState extends State<FinanceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accounts = _filteredAccounts();
+    final allAccounts = _filteredAccounts();
+    final accounts = _receivablesView == 0
+        ? allAccounts.where((account) {
+            if (account.balance <= 0.009) return false;
+            if (_receivablesStatus == 1) {
+              return account.receivables.any(
+                (item) =>
+                    item.balanceAmount > 0.009 &&
+                    item.dueDate != null &&
+                    item.dueDate!.isBefore(DateTime.now()),
+              );
+            }
+            if (_receivablesStatus == 2) {
+              return account.receivables.any(
+                (item) => item.balanceAmount > 0.009 && item.paidAmount > 0.009,
+              );
+            }
+            return true;
+          }).toList()
+        : allAccounts.where((account) {
+            if (account.balance > 0.009) return false;
+            if (_receivablesStatus == 1) {
+              return account.receivables.any((item) => item.paidAmount > 0.009);
+            }
+            return true;
+          }).toList();
+    final totalPages = (accounts.length / _financePageSize).ceil();
+    final effectivePage = totalPages == 0
+        ? 0
+        : math.min(_receivablesPage, totalPages - 1);
+    final pageStart = effectivePage * _financePageSize;
+    final visibleAccounts = accounts.isEmpty
+        ? <_ClientReceivables>[]
+        : accounts.skip(pageStart).take(_financePageSize).toList();
     final openReceivables = _receivables
         .where((item) => item.balanceAmount > 0.009)
         .toList();
@@ -136,11 +175,36 @@ class _FinanceScreenState extends State<FinanceScreen> {
       0,
       (sum, item) => sum + item.paidAmount,
     );
+    final now = DateTime.now();
     final overdue = openReceivables.where((item) {
       final due = item.dueDate;
       if (due == null) return false;
-      return due.isBefore(DateTime.now());
+      return due.isBefore(now);
     }).length;
+    final aging = <String, int>{
+      'A vencer': openReceivables.where((item) {
+        final due = item.dueDate;
+        return due == null || !due.isBefore(now);
+      }).length,
+      '1–30 dias': openReceivables.where((item) {
+        final due = item.dueDate;
+        if (due == null || !due.isBefore(now)) return false;
+        final days = now.difference(due).inDays;
+        return days <= 30;
+      }).length,
+      '31–60 dias': openReceivables.where((item) {
+        final due = item.dueDate;
+        if (due == null || !due.isBefore(now)) return false;
+        final days = now.difference(due).inDays;
+        return days >= 31 && days <= 60;
+      }).length,
+      '60+ dias': openReceivables.where((item) {
+        final due = item.dueDate;
+        return due != null &&
+            due.isBefore(now) &&
+            now.difference(due).inDays > 60;
+      }).length,
+    };
 
     return SafeArea(
       child: RefreshIndicator(
@@ -148,54 +212,86 @@ class _FinanceScreenState extends State<FinanceScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
           children: [
-            Row(
-              children: [
-                const Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Financeiro',
-                        style: TextStyle(
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      SizedBox(height: 4),
-                      Text(
-                        'Contas a receber, crediario e conferência financeira',
-                        style: TextStyle(color: Color(0xFF64748B)),
-                      ),
-                    ],
-                  ),
+            Container(
+              padding: const EdgeInsets.fromLTRB(22, 20, 16, 20),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF0F4C5C), Color(0xFF146C7E)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
                 ),
-                IconButton.outlined(
-                  tooltip: 'Atualizar',
-                  onPressed: _load,
-                  icon: const Icon(Icons.refresh),
-                ),
-                const SizedBox(width: 8),
-                IconButton.outlined(
-                  tooltip: _showAllAmounts
-                      ? 'Ocultar todos os valores'
-                      : 'Mostrar todos os valores',
-                  onPressed: () =>
-                      setState(() => _showAllAmounts = !_showAllAmounts),
-                  icon: Icon(
-                    _showAllAmounts
-                        ? Icons.visibility_off_outlined
-                        : Icons.visibility_outlined,
-                  ),
-                ),
-                if (widget.session.can('finance:receivables:pay')) ...[
-                  const SizedBox(width: 8),
-                  FilledButton.icon(
-                    onPressed: _openManualReceivable,
-                    icon: const Icon(Icons.add),
-                    label: const Text('Lançar crediário'),
+                borderRadius: BorderRadius.circular(18),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x220F4C5C),
+                    blurRadius: 18,
+                    offset: Offset(0, 8),
                   ),
                 ],
-              ],
+              ),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Financeiro',
+                          style: TextStyle(
+                            fontSize: 28,
+                            fontWeight: FontWeight.w900,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          'Visão geral da carteira e conferência financeira',
+                          style: TextStyle(color: Color(0xD9FFFFFF)),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  IconButton.filled(
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: .16),
+                      foregroundColor: Colors.white,
+                    ),
+                    tooltip: 'Atualizar',
+                    onPressed: _load,
+                    icon: const Icon(Icons.refresh),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton.filled(
+                    style: IconButton.styleFrom(
+                      backgroundColor: Colors.white.withValues(alpha: .16),
+                      foregroundColor: Colors.white,
+                    ),
+                    tooltip: _showAllAmounts
+                        ? 'Ocultar valores'
+                        : 'Mostrar valores',
+                    onPressed: () =>
+                        setState(() => _showAllAmounts = !_showAllAmounts),
+                    icon: Icon(
+                      _showAllAmounts
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                    ),
+                  ),
+                  if (widget.session.can('finance:receivables:pay')) ...[
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: const Color(0xFF0F4C5C),
+                      ),
+                      onPressed: _openManualReceivable,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Lançar crediário'),
+                    ),
+                  ],
+                ],
+              ),
             ),
             const SizedBox(height: 18),
             LayoutBuilder(
@@ -211,7 +307,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
                   ),
                   _Summary(
                     'Clientes com saldo',
-                    accounts.where((item) => item.balance > 0.009).length,
+                    allAccounts.where((item) => item.balance > 0.009).length,
                     Icons.people_alt_outlined,
                   ),
                   _Summary(
@@ -243,24 +339,75 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 );
               },
             ),
+            const SizedBox(height: 14),
+            AppCard(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.insights_outlined, color: Color(0xFF0F766E)),
+                      SizedBox(width: 8),
+                      Text(
+                        'Envelhecimento da carteira',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                    ],
+                  ),
+                  for (final entry in aging.entries)
+                    _AgingBadge(label: entry.key, count: entry.value),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final priority = _PriorityQueue(
+                  accounts: allAccounts
+                      .where(
+                        (account) => account.receivables.any((item) {
+                          final due = item.dueDate;
+                          return item.balanceAmount > 0.009 &&
+                              due != null &&
+                              due.isBefore(DateTime.now());
+                        }),
+                      )
+                      .take(3)
+                      .toList(),
+                  amountVisible: _amountVisible,
+                  onToggleAmount: _toggleAmount,
+                  onOpen: _openStatement,
+                );
+                final health = _FinanceHealthPanel(
+                  openBalance: openBalance,
+                  paidAmount: paidAmount,
+                  overdueCount: overdue,
+                  openCount: openReceivables.length,
+                );
+                if (constraints.maxWidth < 980) {
+                  return Column(
+                    children: [health, const SizedBox(height: 14), priority],
+                  );
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(flex: 6, child: health),
+                    const SizedBox(width: 14),
+                    Expanded(flex: 5, child: priority),
+                  ],
+                );
+              },
+            ),
             const SizedBox(height: 18),
             AppCard(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _search,
-                      onChanged: (_) => setState(() {}),
-                      decoration: const InputDecoration(
-                        labelText: 'Buscar cliente ou venda',
-                        hintText: 'Nome, documento, e-mail, CR ou venda...',
-                        prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  SegmentedButton<int>(
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final selector = SegmentedButton<int>(
                     selected: {_tab},
                     onSelectionChanged: (value) =>
                         setState(() => _tab = value.first),
@@ -276,18 +423,133 @@ class _FinanceScreenState extends State<FinanceScreen> {
                         icon: Icon(Icons.call_made),
                       ),
                     ],
-                  ),
-                ],
+                  );
+                  final search = TextField(
+                    controller: _search,
+                    onChanged: (_) => setState(() {
+                      _receivablesPage = 0;
+                    }),
+                    decoration: const InputDecoration(
+                      labelText: 'Buscar cliente ou venda',
+                      hintText: 'Nome, documento, e-mail, CR ou venda...',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                  );
+                  if (constraints.maxWidth < 760) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [search, const SizedBox(height: 12), selector],
+                    );
+                  }
+                  return Row(
+                    children: [
+                      Expanded(child: search),
+                      const SizedBox(width: 12),
+                      selector,
+                    ],
+                  );
+                },
               ),
             ),
             const SizedBox(height: 18),
+            if (_tab == 0) ...[
+              AppCard(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tabs = SegmentedButton<int>(
+                      showSelectedIcon: false,
+                      selected: {_receivablesView},
+                      onSelectionChanged: (value) => setState(() {
+                        _receivablesView = value.first;
+                        _receivablesStatus = 0;
+                        _receivablesPage = 0;
+                      }),
+                      segments: const [
+                        ButtonSegment(
+                          value: 0,
+                          icon: Icon(Icons.pending_actions_outlined),
+                          label: Text('Em aberto'),
+                        ),
+                        ButtonSegment(
+                          value: 1,
+                          icon: Icon(Icons.history_outlined),
+                          label: Text('Histórico financeiro'),
+                        ),
+                      ],
+                    );
+                    final filters = Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _FinanceFilterChip(
+                          label: 'Todos',
+                          selected: _receivablesStatus == 0,
+                          onSelected: () => setState(() {
+                            _receivablesStatus = 0;
+                            _receivablesPage = 0;
+                          }),
+                        ),
+                        if (_receivablesView == 0) ...[
+                          _FinanceFilterChip(
+                            label: 'Vencidos',
+                            selected: _receivablesStatus == 1,
+                            icon: Icons.warning_amber_outlined,
+                            onSelected: () => setState(() {
+                              _receivablesStatus = 1;
+                              _receivablesPage = 0;
+                            }),
+                          ),
+                          _FinanceFilterChip(
+                            label: 'Parcialmente pagos',
+                            selected: _receivablesStatus == 2,
+                            icon: Icons.pie_chart_outline,
+                            onSelected: () => setState(() {
+                              _receivablesStatus = 2;
+                              _receivablesPage = 0;
+                            }),
+                          ),
+                        ] else
+                          _FinanceFilterChip(
+                            label: 'Quitados',
+                            selected: _receivablesStatus == 1,
+                            icon: Icons.check_circle_outline,
+                            onSelected: () => setState(() {
+                              _receivablesStatus = 1;
+                              _receivablesPage = 0;
+                            }),
+                          ),
+                      ],
+                    );
+                    if (constraints.maxWidth < 760) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [tabs, const SizedBox(height: 10), filters],
+                      );
+                    }
+                    return Row(
+                      children: [
+                        tabs,
+                        const SizedBox(width: 14),
+                        Expanded(child: filters),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
             if (_loading)
               const LinearProgressIndicator()
             else if (_error != null)
               ErrorPanel(message: _error!, onRetry: _load)
             else if (_tab == 0)
               _ReceivablesByClient(
-                accounts: accounts,
+                accounts: visibleAccounts,
                 onOpen: _openStatement,
                 amountVisible: _amountVisible,
                 onToggleAmount: _toggleAmount,
@@ -300,6 +562,15 @@ class _FinanceScreenState extends State<FinanceScreen> {
                 onChanged: _load,
                 api: _api,
                 token: widget.session.token,
+              ),
+            if (!_loading && _error == null && _tab == 0 && totalPages > 1)
+              _FinancePagination(
+                page: effectivePage,
+                pageCount: totalPages,
+                total: accounts.length,
+                pageSize: _financePageSize,
+                onPageChanged: (page) =>
+                    setState(() => _receivablesPage = page),
               ),
           ],
         ),
@@ -413,7 +684,6 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
   String _mode = 'products';
   final Map<int, _CreditProductLine> _productLines = {};
   TextEditingController? _productSearchController;
-  int _productAutocompleteEpoch = 0;
   bool _saving = false;
   String? _error;
 
@@ -643,7 +913,6 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
               const SizedBox(height: 12),
               if (_mode == 'products') ...[
                 Autocomplete<Product>(
-                  key: ValueKey(_productAutocompleteEpoch),
                   displayStringForOption: (product) => product.name,
                   optionsBuilder: (value) {
                     final term = _normalize(value.text);
@@ -665,10 +934,6 @@ class _ManualReceivableDialogState extends State<_ManualReceivableDialog> {
                       unitPrice: _effectiveProductPrice(product),
                     );
                     _productSearchController?.clear();
-                    // Limpar somente o controller não limpa o termo mantido
-                    // internamente pelo Autocomplete. A chave nova reinicia a
-                    // busca para que todos os produtos voltem a aparecer.
-                    _productAutocompleteEpoch += 1;
                   }),
                   fieldViewBuilder:
                       (context, controller, focusNode, onFieldSubmitted) {
@@ -887,9 +1152,7 @@ class _QuantityInputFormatter extends TextInputFormatter {
     if (!decimal) {
       return RegExp(r'^\d*$').hasMatch(newValue.text) ? newValue : oldValue;
     }
-    final digits = newValue.text
-        .replaceAll(RegExp(r'\D'), '')
-        .replaceFirst(RegExp(r'^0+'), '');
+    final digits = newValue.text.replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) return const TextEditingValue(text: '0,000');
     final normalized = digits.padLeft(4, '0');
     final formatted =
@@ -913,6 +1176,407 @@ double _effectiveProductPrice(Product product) {
       : product.salePrice;
 }
 
+class _FinancePagination extends StatelessWidget {
+  const _FinancePagination({
+    required this.page,
+    required this.pageCount,
+    required this.total,
+    required this.pageSize,
+    required this.onPageChanged,
+  });
+
+  final int page;
+  final int pageCount;
+  final int total;
+  final int pageSize;
+  final ValueChanged<int> onPageChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final first = total == 0 ? 0 : page * pageSize + 1;
+    final last = math.min((page + 1) * pageSize, total);
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        children: [
+          Text(
+            '$first–$last de $total',
+            style: const TextStyle(color: Color(0xFF64748B)),
+          ),
+          const Spacer(),
+          IconButton(
+            tooltip: 'Primeira página',
+            onPressed: page == 0 ? null : () => onPageChanged(0),
+            icon: const Icon(Icons.first_page),
+          ),
+          IconButton(
+            tooltip: 'Página anterior',
+            onPressed: page == 0 ? null : () => onPageChanged(page - 1),
+            icon: const Icon(Icons.chevron_left),
+          ),
+          Text('Página ${page + 1} de $pageCount'),
+          IconButton(
+            tooltip: 'Próxima página',
+            onPressed: page >= pageCount - 1
+                ? null
+                : () => onPageChanged(page + 1),
+            icon: const Icon(Icons.chevron_right),
+          ),
+          IconButton(
+            tooltip: 'Última página',
+            onPressed: page >= pageCount - 1
+                ? null
+                : () => onPageChanged(pageCount - 1),
+            icon: const Icon(Icons.last_page),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FinanceFilterChip extends StatelessWidget {
+  const _FinanceFilterChip({
+    required this.label,
+    required this.selected,
+    required this.onSelected,
+    this.icon,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onSelected;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return FilterChip(
+      selected: selected,
+      onSelected: (_) => onSelected(),
+      avatar: icon == null ? null : Icon(icon, size: 17),
+      label: Text(label),
+      showCheckmark: true,
+    );
+  }
+}
+
+class _AgingBadge extends StatelessWidget {
+  const _AgingBadge({required this.label, required this.count});
+
+  final String label;
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final overdue = label != 'A vencer';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: overdue ? const Color(0xFFFFF7ED) : const Color(0xFFECFDF5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: overdue ? const Color(0xFFFED7AA) : const Color(0xFFA7F3D0),
+        ),
+      ),
+      child: Text.rich(
+        TextSpan(
+          text: '$label  ',
+          style: TextStyle(
+            color: overdue ? const Color(0xFF9A3412) : const Color(0xFF047857),
+          ),
+          children: [
+            TextSpan(
+              text: '$count',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _FinanceHealthPanel extends StatelessWidget {
+  const _FinanceHealthPanel({
+    required this.openBalance,
+    required this.paidAmount,
+    required this.overdueCount,
+    required this.openCount,
+  });
+
+  final double openBalance;
+  final double paidAmount;
+  final int overdueCount;
+  final int openCount;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = openBalance + paidAmount;
+    final paidRatio = total <= 0 ? 0.0 : (paidAmount / total).clamp(0.0, 1.0);
+    final overdueRatio = openCount == 0
+        ? 0.0
+        : (overdueCount / openCount).clamp(0.0, 1.0);
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 680;
+          final title = Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE0F2FE),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.auto_graph_outlined,
+                  color: Color(0xFF0369A1),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Saúde financeira',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Acompanhe recebimentos e risco da carteira em um só lugar.',
+                      style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          final indicators = [
+            _HealthIndicator(
+              label: 'Recebido no período',
+              value: _money(paidAmount),
+              progress: paidRatio,
+              color: const Color(0xFF059669),
+            ),
+            _HealthIndicator(
+              label: 'Em aberto',
+              value: _money(openBalance),
+              progress: 1 - paidRatio,
+              color: const Color(0xFF2563EB),
+            ),
+            _HealthIndicator(
+              label: 'Títulos vencidos',
+              value: '$overdueCount de $openCount',
+              progress: overdueRatio,
+              color: overdueCount == 0
+                  ? const Color(0xFF059669)
+                  : const Color(0xFFEA580C),
+            ),
+          ];
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              title,
+              const SizedBox(height: 18),
+              if (compact)
+                Column(
+                  children: [
+                    for (final indicator in indicators) ...[
+                      indicator,
+                      const SizedBox(height: 12),
+                    ],
+                  ],
+                )
+              else
+                Row(
+                  children: [
+                    for (var i = 0; i < indicators.length; i++) ...[
+                      Expanded(child: indicators[i]),
+                      if (i < indicators.length - 1) const SizedBox(width: 24),
+                    ],
+                  ],
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _HealthIndicator extends StatelessWidget {
+  const _HealthIndicator({
+    required this.label,
+    required this.value,
+    required this.progress,
+    required this.color,
+  });
+
+  final String label;
+  final String value;
+  final double progress;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                label,
+                style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+              ),
+            ),
+            Text(value, style: const TextStyle(fontWeight: FontWeight.w900)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: LinearProgressIndicator(
+            minHeight: 8,
+            value: progress,
+            backgroundColor: const Color(0xFFE2E8F0),
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PriorityQueue extends StatelessWidget {
+  const _PriorityQueue({
+    required this.accounts,
+    required this.amountVisible,
+    required this.onToggleAmount,
+    required this.onOpen,
+  });
+
+  final List<_ClientReceivables> accounts;
+  final bool Function(String key) amountVisible;
+  final void Function(String key) onToggleAmount;
+  final Future<void> Function(_ClientReceivables account) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: const Icon(
+                  Icons.notifications_active_outlined,
+                  color: Color(0xFFEA580C),
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Prioridades de hoje',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Clientes com títulos vencidos que merecem atenção.',
+                      style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
+                    ),
+                  ],
+                ),
+              ),
+              if (accounts.isNotEmpty)
+                Text(
+                  '${accounts.length} alerta(s)',
+                  style: const TextStyle(
+                    color: Color(0xFFEA580C),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (accounts.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_outline, color: Color(0xFF059669)),
+                  SizedBox(width: 10),
+                  Text('Nenhum cliente vencido no momento.'),
+                ],
+              ),
+            )
+          else
+            for (final account in accounts)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+                leading: CircleAvatar(
+                  radius: 17,
+                  backgroundColor: const Color(0xFFFFEDD5),
+                  child: Text(
+                    account.name.trim().isEmpty
+                        ? '?'
+                        : account.name.trim()[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: Color(0xFFC2410C),
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                title: Text(
+                  account.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '${account.openCount} título(s) em aberto',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _AmountWithEye(
+                      value: account.balance,
+                      visible: amountVisible(
+                        'priority-${account.client?.id ?? account.name}',
+                      ),
+                      onToggle: () => onToggleAmount(
+                        'priority-${account.client?.id ?? account.name}',
+                      ),
+                      strong: true,
+                    ),
+                    OutlinedButton(
+                      onPressed: () => onOpen(account),
+                      child: const Text('Abrir extrato'),
+                    ),
+                  ],
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ReceivablesByClient extends StatelessWidget {
   const _ReceivablesByClient({
     required this.accounts,
@@ -930,12 +1594,51 @@ class _ReceivablesByClient extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       padding: EdgeInsets.zero,
-      child: accounts.isEmpty
-          ? const Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('Nenhuma conta a receber encontrada.'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 14),
+            child: Row(
+              children: [
+                const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: Color(0xFF0F6B7A),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Carteira de clientes',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                Text(
+                  '${accounts.length} cliente(s)',
+                  style: const TextStyle(color: Color(0xFF64748B)),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          if (accounts.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(28),
+              child: Column(
+                children: [
+                  Icon(
+                    Icons.inbox_outlined,
+                    size: 40,
+                    color: Color(0xFF94A3B8),
+                  ),
+                  SizedBox(height: 8),
+                  Text('Nenhum cliente encontrado para este filtro.'),
+                ],
+              ),
             )
-          : ResponsiveDataTable(
+          else
+            ResponsiveDataTable(
               child: DataTable(
                 columns: const [
                   DataColumn(label: Text('Cliente')),
@@ -1029,6 +1732,8 @@ class _ReceivablesByClient extends StatelessWidget {
                 ],
               ),
             ),
+        ],
+      ),
     );
   }
 }
@@ -1059,9 +1764,7 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
     final bySale = <int, Receivable>{};
     for (final receivable in widget.account.receivables) {
       final saleId = receivable.saleId;
-      final isOpen =
-          receivable.status == 'open' && receivable.balanceAmount > 0.009;
-      if (saleId != null && receivable.fiscalDocumentId == null && isOpen) {
+      if (saleId != null && receivable.fiscalDocumentId == null) {
         bySale.putIfAbsent(saleId, () => receivable);
       }
     }
@@ -1174,7 +1877,6 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
         ? openReceivables
         : historyReceivables;
     final statementEntries = _statementEntries(visibleReceivables);
-    final eligibleFiscalSales = _eligibleFiscalSales;
     return Dialog(
       insetPadding: const EdgeInsets.all(20),
       child: ConstrainedBox(
@@ -1210,12 +1912,12 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                     icon: const Icon(Icons.close),
                   ),
                   if (widget.canEmitFiscal &&
-                      eligibleFiscalSales.isNotEmpty) ...[
+                      _eligibleFiscalSales.isNotEmpty) ...[
                     const SizedBox(width: 8),
                     OutlinedButton.icon(
                       onPressed: () async {
                         final navigator = Navigator.of(context);
-                        final changed = await _issueSales(eligibleFiscalSales);
+                        final changed = await _issueSales(_eligibleFiscalSales);
                         if (!mounted) return;
                         if (changed) navigator.pop(true);
                       },
@@ -1236,6 +1938,26 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                       },
                       icon: const Icon(Icons.payments_outlined),
                       label: const Text('Receber do cliente'),
+                    ),
+                  ],
+                  if (widget.canPay && openReceivables.length > 1) ...[
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final navigator = Navigator.of(context);
+                        final changed = await showDialog<bool>(
+                          context: context,
+                          builder: (context) => _BatchReceivablePaymentDialog(
+                            api: widget.api,
+                            token: widget.token,
+                            receivables: openReceivables,
+                          ),
+                        );
+                        if (!mounted) return;
+                        if (changed == true) navigator.pop(true);
+                      },
+                      icon: const Icon(Icons.done_all),
+                      label: const Text('Baixar vários'),
                     ),
                   ],
                 ],
@@ -1606,6 +2328,8 @@ class _FiscalSalesSelectionDialogState
             ? widget.client.documentNumber?.replaceAll(RegExp(r'\D'), '')
             : null,
         paymentCondition: 'prazo',
+        fiscalNotes:
+            'Documento originado do extrato financeiro. Estoque ja movimentado pelas vendas.',
       );
       if (!mounted) return;
       final label = document.number == null
@@ -1841,6 +2565,161 @@ class _PaymentReversalDialogState extends State<_PaymentReversalDialog> {
   }
 }
 
+class _BatchReceivablePaymentDialog extends StatefulWidget {
+  const _BatchReceivablePaymentDialog({
+    required this.api,
+    required this.token,
+    required this.receivables,
+  });
+
+  final ApiClient api;
+  final String token;
+  final List<Receivable> receivables;
+
+  @override
+  State<_BatchReceivablePaymentDialog> createState() =>
+      _BatchReceivablePaymentDialogState();
+}
+
+class _BatchReceivablePaymentDialogState
+    extends State<_BatchReceivablePaymentDialog> {
+  late final Set<int> _selected = widget.receivables
+      .map((item) => item.id)
+      .toSet();
+  String _method = 'dinheiro';
+  bool _saving = false;
+  String? _error;
+
+  double get _total => widget.receivables
+      .where((item) => _selected.contains(item.id))
+      .fold(0, (sum, item) => sum + item.balanceAmount);
+
+  Future<void> _save() async {
+    if (_selected.isEmpty) {
+      setState(() => _error = 'Selecione pelo menos um título.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final selected =
+          widget.receivables
+              .where((item) => _selected.contains(item.id))
+              .toList()
+            ..sort(
+              (a, b) => (a.dueDate ?? a.createdAt).compareTo(
+                b.dueDate ?? b.createdAt,
+              ),
+            );
+      for (final receivable in selected) {
+        await widget.api.payReceivable(
+          widget.token,
+          receivable.id,
+          ReceivablePaymentPayload(
+            amount: receivable.balanceAmount,
+            method: _method,
+            notes: 'Baixa em lote pelo extrato financeiro.',
+          ),
+        );
+      }
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } catch (_) {
+      setState(
+        () => _error = 'Não foi possível concluir as baixas selecionadas.',
+      );
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Baixar vários títulos'),
+      content: SizedBox(
+        width: 620,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Selecione os títulos que o cliente quitou. Total selecionado: ${_money(_total)}.',
+            ),
+            const SizedBox(height: 8),
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  children: [
+                    for (final item in widget.receivables)
+                      CheckboxListTile(
+                        value: _selected.contains(item.id),
+                        onChanged: _saving
+                            ? null
+                            : (checked) => setState(() {
+                                if (checked == true) {
+                                  _selected.add(item.id);
+                                } else {
+                                  _selected.remove(item.id);
+                                }
+                              }),
+                        title: Text(_receivableStatementTitle(item)),
+                        subtitle: Text('Vencimento ${_date(item.dueDate)}'),
+                        secondary: Text(
+                          _money(item.balanceAmount),
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              initialValue: _method,
+              decoration: const InputDecoration(
+                labelText: 'Forma de recebimento',
+                border: OutlineInputBorder(),
+              ),
+              items: const [
+                DropdownMenuItem(value: 'dinheiro', child: Text('Dinheiro')),
+                DropdownMenuItem(value: 'pix', child: Text('Pix')),
+                DropdownMenuItem(value: 'debito', child: Text('Débito')),
+                DropdownMenuItem(value: 'credito', child: Text('Crédito')),
+                DropdownMenuItem(
+                  value: 'transferencia',
+                  child: Text('Transferência'),
+                ),
+              ],
+              onChanged: _saving
+                  ? null
+                  : (value) => setState(() => _method = value ?? 'dinheiro'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: const TextStyle(color: Color(0xFFB91C1C))),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _save,
+          icon: const Icon(Icons.done_all),
+          label: Text(_saving ? 'Baixando...' : 'Baixar selecionados'),
+        ),
+      ],
+    );
+  }
+}
+
 class _ClientPaymentDialog extends StatefulWidget {
   const _ClientPaymentDialog({
     required this.api,
@@ -1919,79 +2798,118 @@ class _ClientPaymentDialogState extends State<_ClientPaymentDialog> {
     final remaining = (widget.account.balance - amount)
         .clamp(0, double.infinity)
         .toDouble();
+    final allocation = _paymentAllocation(amount);
     return AlertDialog(
       title: Text('Receber de ${widget.account.name}'),
-      content: SizedBox(
-        width: 520,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _ReviewLine('Saldo total', widget.account.balance, strong: true),
-            _ReviewLine('Saldo após recebimento', remaining),
-            const SizedBox(height: 10),
-            const Text(
-              'O valor será aplicado automaticamente nos títulos vencidos/mais antigos primeiro.',
-              style: TextStyle(color: Color(0xFF64748B)),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _amount,
-              autofocus: true,
-              keyboardType: TextInputType.text,
-              inputFormatters: const [BrazilianMoneyInputFormatter()],
-              onTap: () => _amount.selection = TextSelection(
-                baseOffset: 0,
-                extentOffset: _amount.text.length,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 620),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ReviewLine('Saldo total', widget.account.balance, strong: true),
+              _ReviewLine('Saldo após recebimento', remaining),
+              const SizedBox(height: 10),
+              const Text(
+                'O valor será aplicado automaticamente nos títulos vencidos/mais antigos primeiro.',
+                style: TextStyle(color: Color(0xFF64748B)),
               ),
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Valor recebido',
-                prefixIcon: Icon(Icons.payments_outlined),
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _method,
-              decoration: const InputDecoration(
-                labelText: 'Forma de recebimento',
-                border: OutlineInputBorder(),
-              ),
-              items: const [
-                DropdownMenuItem(value: 'dinheiro', child: Text('Dinheiro')),
-                DropdownMenuItem(value: 'pix', child: Text('Pix')),
-                DropdownMenuItem(value: 'debito', child: Text('Débito')),
-                DropdownMenuItem(value: 'credito', child: Text('Crédito')),
-                DropdownMenuItem(
-                  value: 'transferencia',
-                  child: Text('Transferência'),
+              if (allocation.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Text(
+                        'Esta baixa será distribuída assim',
+                        style: TextStyle(fontWeight: FontWeight.w900),
+                      ),
+                      const SizedBox(height: 6),
+                      for (final item in allocation)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            children: [
+                              Expanded(child: Text(item.$1)),
+                              Text(
+                                _money(item.$2),
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ],
-              onChanged: (value) =>
-                  setState(() => _method = value ?? 'dinheiro'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _notes,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Observação',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: const TextStyle(
-                  color: Color(0xFFB91C1C),
-                  fontWeight: FontWeight.w800,
+              const SizedBox(height: 12),
+              TextField(
+                controller: _amount,
+                autofocus: true,
+                keyboardType: TextInputType.text,
+                inputFormatters: const [BrazilianMoneyInputFormatter()],
+                onTap: () => _amount.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: _amount.text.length,
+                ),
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Valor recebido',
+                  prefixIcon: Icon(Icons.payments_outlined),
+                  border: OutlineInputBorder(),
                 ),
               ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _method,
+                decoration: const InputDecoration(
+                  labelText: 'Forma de recebimento',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'dinheiro', child: Text('Dinheiro')),
+                  DropdownMenuItem(value: 'pix', child: Text('Pix')),
+                  DropdownMenuItem(value: 'debito', child: Text('Débito')),
+                  DropdownMenuItem(value: 'credito', child: Text('Crédito')),
+                  DropdownMenuItem(
+                    value: 'transferencia',
+                    child: Text('Transferência'),
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _method = value ?? 'dinheiro'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _notes,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Observação',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Color(0xFFB91C1C),
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [
@@ -2006,6 +2924,29 @@ class _ClientPaymentDialogState extends State<_ClientPaymentDialog> {
         ),
       ],
     );
+  }
+
+  List<(String, double)> _paymentAllocation(double amount) {
+    var remaining = amount;
+    if (remaining <= 0) return const [];
+    final open =
+        widget.account.receivables
+            .where((item) => item.balanceAmount > 0.009)
+            .toList()
+          ..sort((a, b) {
+            final dueA = a.dueDate ?? a.createdAt;
+            final dueB = b.dueDate ?? b.createdAt;
+            final due = dueA.compareTo(dueB);
+            return due != 0 ? due : a.id.compareTo(b.id);
+          });
+    final result = <(String, double)>[];
+    for (final item in open) {
+      if (remaining <= 0.005) break;
+      final applied = math.min(remaining, item.balanceAmount);
+      result.add((_receivableStatementTitle(item), applied));
+      remaining -= applied;
+    }
+    return result;
   }
 }
 
@@ -2085,76 +3026,78 @@ class _ReceivablePaymentDialogState extends State<_ReceivablePaymentDialog> {
         .toDouble();
     return AlertDialog(
       title: const Text('Registrar recebimento'),
-      content: SizedBox(
-        width: 460,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _ReviewLine(
-              'Saldo em aberto',
-              widget.receivable.balanceAmount,
-              strong: true,
-            ),
-            _ReviewLine('Saldo após baixa', remaining),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _amount,
-              autofocus: true,
-              keyboardType: TextInputType.text,
-              inputFormatters: const [BrazilianMoneyInputFormatter()],
-              onTap: () => _amount.selection = TextSelection(
-                baseOffset: 0,
-                extentOffset: _amount.text.length,
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 620),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _ReviewLine(
+                'Saldo em aberto',
+                widget.receivable.balanceAmount,
+                strong: true,
               ),
-              onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(
-                labelText: 'Valor recebido',
-                prefixIcon: Icon(Icons.payments_outlined),
-                border: OutlineInputBorder(),
+              _ReviewLine('Saldo após baixa', remaining),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _amount,
+                autofocus: true,
+                keyboardType: TextInputType.text,
+                inputFormatters: const [BrazilianMoneyInputFormatter()],
+                onTap: () => _amount.selection = TextSelection(
+                  baseOffset: 0,
+                  extentOffset: _amount.text.length,
+                ),
+                onChanged: (_) => setState(() {}),
+                decoration: const InputDecoration(
+                  labelText: 'Valor recebido',
+                  prefixIcon: Icon(Icons.payments_outlined),
+                  border: OutlineInputBorder(),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: _method,
-              decoration: const InputDecoration(
-                labelText: 'Forma de recebimento',
-                border: OutlineInputBorder(),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _method,
+                decoration: const InputDecoration(
+                  labelText: 'Forma de recebimento',
+                  border: OutlineInputBorder(),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'dinheiro', child: Text('Dinheiro')),
+                  DropdownMenuItem(value: 'pix', child: Text('Pix')),
+                  DropdownMenuItem(value: 'debito', child: Text('Débito')),
+                  DropdownMenuItem(value: 'credito', child: Text('Crédito')),
+                  DropdownMenuItem(
+                    value: 'transferencia',
+                    child: Text('Transferência'),
+                  ),
+                ],
+                onChanged: (value) =>
+                    setState(() => _method = value ?? 'dinheiro'),
               ),
-              items: const [
-                DropdownMenuItem(value: 'dinheiro', child: Text('Dinheiro')),
-                DropdownMenuItem(value: 'pix', child: Text('Pix')),
-                DropdownMenuItem(value: 'debito', child: Text('Débito')),
-                DropdownMenuItem(value: 'credito', child: Text('Crédito')),
-                DropdownMenuItem(
-                  value: 'transferencia',
-                  child: Text('Transferência'),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _notes,
+                minLines: 2,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: 'Observação',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(
+                  _error!,
+                  style: const TextStyle(
+                    color: Color(0xFFB91C1C),
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ],
-              onChanged: (value) =>
-                  setState(() => _method = value ?? 'dinheiro'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _notes,
-              minLines: 2,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Observação',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                _error!,
-                style: const TextStyle(
-                  color: Color(0xFFB91C1C),
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
             ],
-          ],
+          ),
         ),
       ),
       actions: [
