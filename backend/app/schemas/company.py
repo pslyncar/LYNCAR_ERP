@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, EmailStr, Field, field_validator
 
@@ -120,6 +121,10 @@ class CompanyCreate(BaseModel):
     enabled_modules: list[str] | None = None
     monthly_price: str | None = Field(default=None, max_length=30)
     billing_day: str | None = Field(default=None, max_length=2)
+    late_charges_enabled: bool | None = None
+    late_fee_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    late_interest_daily_percent: Decimal | None = Field(default=None, ge=0, le=100)
+    late_grace_days: int | None = Field(default=None, ge=0, le=365)
     payment_method: str | None = Field(default=None, max_length=40)
     contract_signed_at: date | None = None
     contract_expires_at: date | None = None

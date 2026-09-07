@@ -18,6 +18,7 @@ import 'master_billing_screen.dart';
 import 'master_contracts_screen.dart';
 import 'master_integrations_screen.dart';
 import 'master_payment_settings_screen.dart';
+import 'master_finance_settings_screen.dart';
 import 'master_pdv_terminals_screen.dart';
 import 'master_plans_screen.dart';
 import 'master_staff_screen.dart';
@@ -126,7 +127,7 @@ class _AppShellState extends State<AppShell> {
         ),
       if (isMasterPanel && widget.session.canMaster('master:billing'))
         _Destination(
-          category: AppNavigationSection.masterCommercial,
+          category: AppNavigationSection.masterFinance,
           label: 'Cobranças',
           icon: Icons.payments_outlined,
           selectedIcon: Icons.payments,
@@ -134,7 +135,7 @@ class _AppShellState extends State<AppShell> {
         ),
       if (isMasterPanel && widget.session.canMaster('master:billing'))
         _Destination(
-          category: AppNavigationSection.masterCommercial,
+          category: AppNavigationSection.masterFinance,
           label: 'Contratos',
           icon: Icons.assignment_outlined,
           selectedIcon: Icons.assignment,
@@ -142,11 +143,19 @@ class _AppShellState extends State<AppShell> {
         ),
       if (isMasterPanel && widget.session.canMaster('master:billing'))
         _Destination(
-          category: AppNavigationSection.masterCommercial,
+          category: AppNavigationSection.masterFinance,
           label: 'Pagamentos',
           icon: Icons.account_balance_wallet_outlined,
           selectedIcon: Icons.account_balance_wallet,
           screen: MasterPaymentSettingsScreen(session: widget.session),
+        ),
+      if (isMasterPanel && widget.session.canMaster('master:billing'))
+        _Destination(
+          category: AppNavigationSection.masterFinance,
+          label: 'Política de cobrança',
+          icon: Icons.percent_outlined,
+          selectedIcon: Icons.percent,
+          screen: MasterFinanceSettingsScreen(session: widget.session),
         ),
       if (isMasterPanel && widget.session.canMaster('master:integrations'))
         _Destination(

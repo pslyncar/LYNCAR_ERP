@@ -97,8 +97,14 @@ def create_pix_for_billing(db: Session, billing: CompanyBilling) -> CompanyBilli
     idempotency_key = billing.mercado_pago_idempotency_key or str(uuid4())
     _, _, configured_webhook_url, _ = configured_setting()
     webhook_url = (configured_webhook_url or "").strip() or None
+    total_due = (
+        Decimal(str(billing.amount))
+        + Decimal(str(getattr(billing, "interest_amount", 0) or 0))
+        + Decimal(str(getattr(billing, "late_fee_amount", 0) or 0))
+        - Decimal(str(getattr(billing, "waived_amount", 0) or 0))
+    ).quantize(Decimal("0.01"))
     payload = {
-        "transaction_amount": float(Decimal(str(billing.amount))),
+        "transaction_amount": float(total_due),
         "description": f"Mensalidade Lyncar {billing.reference_month} - {company.name}",
         "payment_method_id": "pix",
         "external_reference": billing_reference(billing),

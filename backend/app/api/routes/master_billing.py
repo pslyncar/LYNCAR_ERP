@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from app.schemas.company_billing import (
     CompanyBillingPayment,
     CompanyBillingRead,
     CompanyBillingUpdate,
+    CompanyBillingWaive,
 )
 from app.services.company_billing import (
     AUTO_BILLING_NOTE,
@@ -30,6 +32,10 @@ MANUAL_OVERRIDE_NOTE = "Ajuste manual aplicado nesta mensalidade."
 
 def _read(row: CompanyBilling) -> CompanyBillingRead:
     amount = row.paid_amount if row.status == "paid" and row.paid_amount is not None else row.amount
+    interest = Decimal(str(row.interest_amount or 0))
+    late_fee = Decimal(str(row.late_fee_amount or 0))
+    correction = Decimal(str(getattr(row, "monetary_correction_amount", 0) or 0))
+    waived = Decimal(str(row.waived_amount or 0))
     return CompanyBillingRead(
         id=row.id,
         company_id=row.company_id,
@@ -38,6 +44,14 @@ def _read(row: CompanyBilling) -> CompanyBillingRead:
         reference_month=row.reference_month,
         due_date=row.due_date,
         amount=amount,
+        interest_amount=interest,
+        late_fee_amount=late_fee,
+        monetary_correction_amount=correction,
+        waived_amount=waived,
+        total_due=amount + interest + late_fee + correction - waived,
+        waived_at=row.waived_at,
+        waived_by=row.waived_by,
+        waiver_reason=row.waiver_reason,
         payment_method=row.payment_method,
         status=row.status,
         paid_at=row.paid_at,
@@ -185,6 +199,37 @@ def update_billing(
             billing.pix_qr_code = None
             billing.pix_qr_code_base64 = None
             billing.pix_ticket_url = None
+        db.commit()
+        db.refresh(billing)
+        return _read(billing)
+
+
+@router.post("/billings/{billing_id}/waive-charges", response_model=CompanyBillingRead)
+def waive_billing_charges(
+    billing_id: int,
+    payload: CompanyBillingWaive,
+    _: dict = Depends(require_master_permission("master:billing")),
+) -> CompanyBillingRead:
+    """Perdoa encargos sem alterar o principal e invalida o QR pendente."""
+    with MasterSessionLocal() as db:
+        billing = db.get(CompanyBilling, billing_id)
+        if billing is None:
+            raise HTTPException(status_code=404, detail="Cobranca nao encontrada.")
+        if billing.status == "paid":
+            raise HTTPException(status_code=400, detail="Cobranca paga nao possui encargos abertos.")
+        charges = Decimal(str((billing.interest_amount or 0) + (billing.late_fee_amount or 0) + getattr(billing, "monetary_correction_amount", 0)))
+        waiver = min(payload.amount or charges, charges)
+        billing.waived_amount = Decimal(str(billing.waived_amount or 0)) + waiver
+        billing.waived_at = datetime.now(UTC)
+        billing.waived_by = "master"
+        billing.waiver_reason = payload.reason
+        billing.mercado_pago_payment_id = None
+        billing.mercado_pago_status = None
+        billing.mercado_pago_external_reference = None
+        billing.mercado_pago_idempotency_key = None
+        billing.pix_qr_code = None
+        billing.pix_qr_code_base64 = None
+        billing.pix_ticket_url = None
         db.commit()
         db.refresh(billing)
         return _read(billing)

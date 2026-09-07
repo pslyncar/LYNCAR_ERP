@@ -19,6 +19,7 @@ from app.api.routes import (
     master_companies,
     monitoring,
     master_payment_settings,
+    master_finance_settings,
     master_pdv_terminals,
     master_pdv_updates,
     master_segments,
@@ -57,6 +58,7 @@ api_router.include_router(master_integrations.router, prefix="/master", tags=["m
 api_router.include_router(master_plans.router, prefix="/master", tags=["master"])
 api_router.include_router(master_segments.router, prefix="/master", tags=["master"])
 api_router.include_router(master_payment_settings.router, prefix="/master", tags=["master"])
+api_router.include_router(master_finance_settings.router, prefix="/master", tags=["master"])
 api_router.include_router(master_pdv_terminals.router, prefix="/master", tags=["master"])
 api_router.include_router(master_pdv_updates.router, prefix="/master", tags=["master"])
 api_router.include_router(master_staff.router, prefix="/master", tags=["master"])

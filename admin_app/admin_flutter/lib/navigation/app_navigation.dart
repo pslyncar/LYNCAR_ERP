@@ -55,6 +55,12 @@ enum AppNavigationSection {
     icon: Icons.sell_outlined,
     selectedIcon: Icons.sell,
   ),
+  masterFinance(
+    label: 'Financeiro',
+    eyebrow: 'Cobranças e recebimentos',
+    icon: Icons.account_balance_wallet_outlined,
+    selectedIcon: Icons.account_balance_wallet,
+  ),
   masterAccess(
     label: 'Acessos',
     eyebrow: 'Painel Master',

@@ -20,6 +20,7 @@ import '../models/marketplace.dart';
 import '../models/monitoring_snapshot.dart';
 import '../models/payable.dart';
 import '../models/payment_setting.dart';
+import '../models/master_finance_setting.dart';
 import '../models/pdv_operator.dart';
 import '../models/pdv_sync.dart';
 import '../models/pdv_terminal.dart';
@@ -604,12 +605,45 @@ class ApiClient {
     return CompanyBilling.fromJson(_decodeResponse(response));
   }
 
+  Future<CompanyBilling> waiveMasterBillingCharges(
+    String token,
+    int billingId,
+    String reason,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/master/billings/$billingId/waive-charges'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'reason': reason}),
+    );
+    return CompanyBilling.fromJson(_decodeResponse(response));
+  }
+
   Future<PaymentSetting> getMercadoPagoSetting(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/master/payment-settings/mercado-pago'),
       headers: _authHeaders(token),
     );
     return PaymentSetting.fromJson(_decodeResponse(response));
+  }
+
+  Future<MasterFinanceSetting> getMasterFinanceSetting(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/master/finance-settings/billing-policy'),
+      headers: _authHeaders(token),
+    );
+    return MasterFinanceSetting.fromJson(_decodeResponse(response));
+  }
+
+  Future<MasterFinanceSetting> updateMasterFinanceSetting(
+    String token,
+    MasterFinanceSetting input,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/master/finance-settings/billing-policy'),
+      headers: _authHeaders(token),
+      body: jsonEncode(input.toJson()),
+    );
+    return MasterFinanceSetting.fromJson(_decodeResponse(response));
   }
 
   Future<PaymentSetting> updateMercadoPagoSetting(

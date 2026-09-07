@@ -12,6 +12,14 @@ class CompanyBillingRead(BaseModel):
     reference_month: str
     due_date: date
     amount: Decimal
+    interest_amount: Decimal = Decimal("0")
+    late_fee_amount: Decimal = Decimal("0")
+    monetary_correction_amount: Decimal = Decimal("0")
+    waived_amount: Decimal = Decimal("0")
+    total_due: Decimal | None = None
+    waived_at: datetime | None = None
+    waived_by: str | None = None
+    waiver_reason: str | None = None
     payment_method: str | None
     status: str
     paid_at: datetime | None
@@ -45,3 +53,8 @@ class CompanyBillingUpdate(BaseModel):
 class CompanyBillingPayment(BaseModel):
     paid_amount: Decimal | None = Field(default=None, gt=0)
     notes: str | None = None
+
+
+class CompanyBillingWaive(BaseModel):
+    reason: str = Field(min_length=3, max_length=500)
+    amount: Decimal | None = Field(default=None, gt=0)

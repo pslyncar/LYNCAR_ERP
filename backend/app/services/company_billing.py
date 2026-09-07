@@ -10,7 +10,9 @@ from sqlalchemy.orm import Session
 from app.core.master_database import MasterSessionLocal
 from app.models.company import Company
 from app.models.company_billing import CompanyBilling
+from app.models.master_finance_setting import MasterFinanceSetting
 from app.services.master_holidays import next_business_day
+from app.services.economic_indexes import accumulated_ipca, sync_latest_ipca
 
 BILLING_NOTICE_DAYS = 10
 AUTO_BILLING_NOTE = "Cobrança mensal gerada automaticamente pelo sistema."
@@ -96,6 +98,61 @@ def is_automatic_billing(row: CompanyBilling) -> bool:
     return row.notes in LEGACY_AUTO_BILLING_NOTES
 
 
+def apply_overdue_charges_for_company_in_session(
+    db: Session, company: Company, *, today: date | None = None
+) -> list[CompanyBilling]:
+    """Atualiza encargos de cobranças pendentes de forma idempotente.
+
+    A multa é aplicada uma vez e os juros são simples, proporcionais aos dias
+    em atraso após a carência. O principal nunca é alterado.
+    """
+    current = today or date.today()
+    rows = list(db.scalars(select(CompanyBilling).where(
+        CompanyBilling.company_id == company.id,
+        CompanyBilling.status == "pending",
+        CompanyBilling.due_date < current,
+    )).all())
+    changed: list[CompanyBilling] = []
+    policy = db.scalar(select(MasterFinanceSetting).where(MasterFinanceSetting.id == 1))
+    # Global Master policy is the default; company-specific legacy settings remain
+    # available until an explicit per-company override is introduced.
+    enabled = bool(policy.late_charges_enabled) if policy is not None else bool(company.late_charges_enabled)
+    fee_percent = policy.late_fee_percent if policy is not None else company.late_fee_percent
+    daily_percent = policy.late_interest_daily_percent if policy is not None else company.late_interest_daily_percent
+    grace_days = policy.late_grace_days if policy is not None else company.late_grace_days
+    monetary_enabled = bool(policy.monetary_correction_enabled) if policy is not None else False
+    for row in rows:
+        overdue_days = max((current - row.due_date).days - max(grace_days or 0, 0), 0)
+        principal = Decimal(str(row.amount or 0))
+        fee = (principal * Decimal(str(fee_percent or 0)) / Decimal("100")) if enabled and overdue_days > 0 else Decimal("0")
+        interest = (principal * Decimal(str(daily_percent or 0)) * Decimal(overdue_days) / Decimal("100")) if enabled else Decimal("0")
+        if monetary_enabled:
+            sync_latest_ipca(db)
+            ipca_factor = accumulated_ipca(db, row.due_date.strftime("%Y-%m"), current.strftime("%Y-%m"))
+            correction = (principal * ipca_factor).quantize(Decimal("0.01"))
+        else:
+            correction = Decimal("0")
+        if not hasattr(row, "monetary_correction_amount"):
+            # Kept defensive for databases running before the migration.
+            correction = Decimal("0")
+        fee = fee.quantize(Decimal("0.01"))
+        interest = interest.quantize(Decimal("0.01"))
+        if Decimal(str(row.late_fee_amount or 0)) != fee or Decimal(str(row.interest_amount or 0)) != interest or Decimal(str(getattr(row, "monetary_correction_amount", 0) or 0)) != correction:
+            row.late_fee_amount = fee
+            row.interest_amount = interest
+            if hasattr(row, "monetary_correction_amount"):
+                row.monetary_correction_amount = correction
+            row.mercado_pago_payment_id = None
+            row.mercado_pago_status = None
+            row.mercado_pago_external_reference = None
+            row.mercado_pago_idempotency_key = None
+            row.pix_qr_code = None
+            row.pix_qr_code_base64 = None
+            row.pix_ticket_url = None
+            changed.append(row)
+    return changed
+
+
 def ensure_due_billings_for_company_in_session(
     db: Session,
     company: Company,
@@ -165,6 +222,7 @@ def ensure_due_billings_for_company(
         company = db.scalar(select(Company).where(Company.code == company_code))
         if company is None:
             return []
+        apply_overdue_charges_for_company_in_session(db, company, today=today)
         created = ensure_due_billings_for_company_in_session(db, company, today=today)
         db.commit()
         for billing in created:
@@ -181,6 +239,7 @@ def ensure_due_billings_for_all_companies(
         companies = list(db.scalars(select(Company).where(Company.active.is_(True))).all())
         created: list[CompanyBilling] = []
         for company in companies:
+            apply_overdue_charges_for_company_in_session(db, company, today=today)
             created.extend(
                 ensure_due_billings_for_company_in_session(db, company, today=today)
             )

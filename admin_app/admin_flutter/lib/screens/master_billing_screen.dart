@@ -114,6 +114,25 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
     }
   }
 
+  Future<void> _waiveCharges(CompanyBilling billing) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Perdoar encargos'),
+          content: TextField(controller: controller, maxLines: 3, decoration: const InputDecoration(labelText: 'Motivo')), 
+          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Confirmar'))],
+        );
+      },
+    );
+    if (reason == null || reason.length < 3) return;
+    try {
+      await _api.waiveMasterBillingCharges(widget.session.token, billing.id, reason);
+      await _load();
+    } on ApiException catch (error) { setState(() => _error = error.message); }
+  }
+
   Future<void> _createManual() async {
     final input = await showDialog<CompanyBillingCreate>(
       context: context,
@@ -251,7 +270,10 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
                                 DataCell(Text(billing.companyName)),
                                 DataCell(Text(billing.referenceMonth)),
                                 DataCell(Text(_date(billing.dueDate))),
-                                DataCell(Text(_money(billing.amount))),
+                                DataCell(Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                  Text(_money(billing.totalDue ?? billing.amount)),
+                                  if (billing.interestAmount + billing.lateFeeAmount > 0) Text('Encargos: ${_money(billing.interestAmount + billing.lateFeeAmount)}', style: const TextStyle(fontSize: 11, color: Colors.deepOrange)),
+                                ])),
                                 DataCell(Text(billing.paymentMethod ?? '-')),
                                 DataCell(
                                   Chip(
@@ -263,6 +285,11 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
                                   Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
+                                      IconButton(
+                                        tooltip: 'Perdoar encargos',
+                                        onPressed: billing.status == 'pending' && billing.interestAmount + billing.lateFeeAmount > 0 ? () => _waiveCharges(billing) : null,
+                                        icon: const Icon(Icons.handshake_outlined),
+                                      ),
                                       IconButton(
                                         tooltip: 'Editar cobranca',
                                         onPressed: billing.status == 'paid'

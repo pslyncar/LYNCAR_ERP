@@ -7,6 +7,10 @@ class CompanyBilling {
     required this.referenceMonth,
     required this.dueDate,
     required this.amount,
+    this.interestAmount = 0,
+    this.lateFeeAmount = 0,
+    this.waivedAmount = 0,
+    this.totalDue,
     this.paymentMethod,
     required this.status,
     this.paidAt,
@@ -26,6 +30,10 @@ class CompanyBilling {
   final String referenceMonth;
   final DateTime dueDate;
   final double amount;
+  final double interestAmount;
+  final double lateFeeAmount;
+  final double waivedAmount;
+  final double? totalDue;
   final String? paymentMethod;
   final String status;
   final DateTime? paidAt;
@@ -52,6 +60,10 @@ class CompanyBilling {
       referenceMonth: json['reference_month'] as String,
       dueDate: DateTime.parse(json['due_date'] as String),
       amount: double.parse(json['amount'].toString()),
+      interestAmount: double.tryParse('${json['interest_amount'] ?? 0}') ?? 0,
+      lateFeeAmount: double.tryParse('${json['late_fee_amount'] ?? 0}') ?? 0,
+      waivedAmount: double.tryParse('${json['waived_amount'] ?? 0}') ?? 0,
+      totalDue: json['total_due'] == null ? null : double.tryParse('${json['total_due']}'),
       paymentMethod: json['payment_method']?.toString(),
       status: json['status']?.toString() ?? 'pending',
       paidAt: json['paid_at'] == null

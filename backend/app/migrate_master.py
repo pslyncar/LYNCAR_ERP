@@ -23,6 +23,8 @@ from app.models.master_fiscal_reference import (  # noqa: F401
 )
 from app.models.master_holiday import MasterHoliday, MasterHolidaySync  # noqa: F401
 from app.models.payment_setting import PaymentSetting  # noqa: F401
+from app.models.master_finance_setting import MasterFinanceSetting  # noqa: F401
+from app.models.master_economic_index import MasterEconomicIndex  # noqa: F401
 from app.models.pdv_update import (  # noqa: F401
     PdvAppVersion,
     PdvAppVersionRollout,
@@ -70,6 +72,10 @@ COMPANY_COLUMNS = [
     ("monthly_price", "VARCHAR(30)"),
     ("billing_day", "VARCHAR(2)"),
     ("payment_method", "VARCHAR(40)"),
+    ("late_charges_enabled", "BOOLEAN NOT NULL DEFAULT false"),
+    ("late_fee_percent", "NUMERIC(5, 2) NOT NULL DEFAULT 0"),
+    ("late_interest_daily_percent", "NUMERIC(7, 4) NOT NULL DEFAULT 0"),
+    ("late_grace_days", "INTEGER NOT NULL DEFAULT 0"),
     ("digital_certificate_configured", "BOOLEAN NOT NULL DEFAULT false"),
     ("digital_certificate_name", "VARCHAR(180)"),
     ("digital_certificate_expires_at", "VARCHAR(30)"),
@@ -82,6 +88,13 @@ COMPANY_COLUMNS = [
 ]
 
 BILLING_COLUMNS = [
+    ("interest_amount", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("late_fee_amount", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("monetary_correction_amount", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("waived_amount", "NUMERIC(12, 2) NOT NULL DEFAULT 0"),
+    ("waived_at", "TIMESTAMP WITH TIME ZONE"),
+    ("waived_by", "VARCHAR(120)"),
+    ("waiver_reason", "TEXT"),
     ("mercado_pago_payment_id", "VARCHAR(80)"),
     ("mercado_pago_status", "VARCHAR(40)"),
     ("mercado_pago_external_reference", "VARCHAR(120)"),
@@ -119,6 +132,12 @@ BUSINESS_SEGMENT_COLUMNS = [
     ("technician_role_enabled", "BOOLEAN NOT NULL DEFAULT false"),
     ("max_users", "INTEGER"),
     ("max_pdv_terminals", "INTEGER"),
+]
+
+MASTER_FINANCE_SETTING_COLUMNS = [
+    ("monetary_correction_enabled", "BOOLEAN NOT NULL DEFAULT true"),
+    ("monetary_index", "VARCHAR(20) NOT NULL DEFAULT 'IPCA'"),
+    ("automatic_index_update", "BOOLEAN NOT NULL DEFAULT true"),
 ]
 
 MASTER_IBS_CBS_CLASS_TRIB_COLUMNS = [
@@ -208,6 +227,11 @@ def main() -> None:
                         "ALTER TABLE fiscal_ibs_cbs_class_trib "
                         f"ADD COLUMN {column_name} {column_type}"
                     )
+                )
+        for column_name, column_type in MASTER_FINANCE_SETTING_COLUMNS:
+            if not column_exists("master_finance_settings", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE master_finance_settings ADD COLUMN {column_name} {column_type}")
                 )
         connection.execute(
             text(
