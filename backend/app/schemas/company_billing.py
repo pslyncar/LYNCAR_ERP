@@ -26,6 +26,9 @@ class CompanyBillingRead(BaseModel):
     paid_amount: Decimal | None
     mercado_pago_payment_id: str | None = None
     mercado_pago_status: str | None = None
+    mercado_pago_payer_name: str | None = None
+    mercado_pago_payer_email: str | None = None
+    mercado_pago_payer_document: str | None = None
     pix_qr_code: str | None = None
     pix_qr_code_base64: str | None = None
     pix_ticket_url: str | None = None

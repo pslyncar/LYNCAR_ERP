@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -166,7 +167,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (!mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (context) => _ClientPixDialog(billing: billing),
+        builder: (context) => _ClientPixDialog(
+          billing: billing,
+          api: _api,
+          token: widget.session.token,
+        ),
       );
       await _loadDashboard();
     } on ApiException catch (error) {
@@ -2135,78 +2140,220 @@ class _ShowcaseCard extends StatelessWidget {
   }
 }
 
-class _ClientPixDialog extends StatelessWidget {
-  const _ClientPixDialog({required this.billing});
+class _ClientPixDialog extends StatefulWidget {
+  const _ClientPixDialog({
+    required this.billing,
+    required this.api,
+    required this.token,
+  });
 
   final CompanyBilling billing;
+  final ApiClient api;
+  final String token;
+
+  @override
+  State<_ClientPixDialog> createState() => _ClientPixDialogState();
+}
+
+class _ClientPixDialogState extends State<_ClientPixDialog> {
+  late CompanyBilling _billing = widget.billing;
+  Timer? _timer;
+  bool _confirmed = false;
+  bool _syncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) => _sync());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _sync() async {
+    if (_syncing || _confirmed) return;
+    _syncing = true;
+    try {
+      final updated = await widget.api.syncDashboardBillingPayment(
+        widget.token,
+        _billing.id,
+      );
+      if (!mounted) return;
+      setState(() => _billing = updated);
+      if (updated.status == 'paid' || updated.mercadoPagoStatus == 'approved') {
+        _timer?.cancel();
+        setState(() => _confirmed = true);
+        Future<void>.delayed(const Duration(milliseconds: 1600), () {
+          if (mounted) Navigator.of(context).pop();
+        });
+      }
+    } on ApiException {
+      // Keep the dialog open while the provider is processing the Pix.
+    } finally {
+      _syncing = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final qrBase64 = billing.pixQrCodeBase64;
+    if (_confirmed) {
+      return AlertDialog(
+        content: SizedBox(
+          width: 430,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 26),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 68),
+                SizedBox(height: 14),
+                Text(
+                  'Pagamento efetuado com sucesso!',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 8),
+                Text('Seu acesso continuará disponível normalmente.'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final qrBase64 = _billing.pixQrCodeBase64;
     final qrBytes = qrBase64 == null || qrBase64.isEmpty
         ? null
         : base64Decode(qrBase64);
+    final approved = _billing.mercadoPagoStatus == 'approved';
 
     return AlertDialog(
-      title: const Text('Pagamento da mensalidade'),
+      title: const Text('Pagar mensalidade'),
       content: SizedBox(
-        width: 430,
+        width: 660,
         child: SingleChildScrollView(
           child: Column(
-            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '${billing.companyName} - ${billing.referenceMonth}',
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Valor: R\$ ${billing.amount.toStringAsFixed(2).replaceAll('.', ',')}',
-              ),
-              Text(
-                'Vencimento: ${billing.dueDate.day.toString().padLeft(2, '0')}/${billing.dueDate.month.toString().padLeft(2, '0')}/${billing.dueDate.year}',
+                '${_billing.companyName} • ${_billing.referenceMonth}',
+                style: const TextStyle(
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 14),
-              if (qrBytes != null)
-                Center(
-                  child: Image.memory(
-                    qrBytes,
-                    width: 220,
-                    height: 220,
-                    fit: BoxFit.contain,
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: approved
+                      ? const Color(0xFFDCFCE7)
+                      : const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        approved ? Icons.check_circle_outline : Icons.sync,
+                        color: approved
+                            ? const Color(0xFF15803D)
+                            : const Color(0xFFC2410C),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        approved
+                            ? 'Pagamento aprovado'
+                            : 'Aguardando pagamento',
+                      ),
+                    ],
                   ),
                 ),
-              if ((billing.pixQrCode ?? '').isNotEmpty) ...[
-                const SizedBox(height: 14),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (qrBytes != null)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Image.memory(
+                        qrBytes,
+                        width: 240,
+                        height: 240,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  const SizedBox(width: 20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Valor da mensalidade',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                        Text(
+                          'R\$ ${(_billing.totalDue ?? _billing.amount).toStringAsFixed(2).replaceAll('.', ',')}',
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Aponte a câmera do banco para o QR Code. A confirmação acontece automaticamente.',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              if ((_billing.pixQrCode ?? '').isNotEmpty) ...[
+                const SizedBox(height: 20),
                 const Text(
                   'Pix copia e cola',
                   style: TextStyle(fontWeight: FontWeight.w800),
                 ),
-                const SizedBox(height: 6),
-                SelectableText(billing.pixQrCode!, maxLines: 6),
-              ],
-              if ((billing.pixTicketUrl ?? '').isNotEmpty) ...[
-                const SizedBox(height: 10),
-                SelectableText('Link: ${billing.pixTicketUrl!}'),
+                const SizedBox(height: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SelectableText(_billing.pixQrCode!, maxLines: 4),
+                  ),
+                ),
               ],
             ],
           ),
         ),
       ),
       actions: [
-        if ((billing.pixQrCode ?? '').isNotEmpty)
+        if ((_billing.pixQrCode ?? '').isNotEmpty)
           TextButton.icon(
             onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: billing.pixQrCode!));
+              await Clipboard.setData(ClipboardData(text: _billing.pixQrCode!));
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Código Pix copiado.')),
                 );
               }
             },
-            icon: const Icon(Icons.copy),
-            label: const Text('Copiar Pix'),
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copiar código Pix'),
           ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(),

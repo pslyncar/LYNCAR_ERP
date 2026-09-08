@@ -17,6 +17,9 @@ class CompanyBilling {
     this.paidAmount,
     this.mercadoPagoPaymentId,
     this.mercadoPagoStatus,
+    this.mercadoPagoPayerName,
+    this.mercadoPagoPayerEmail,
+    this.mercadoPagoPayerDocument,
     this.pixQrCode,
     this.pixQrCodeBase64,
     this.pixTicketUrl,
@@ -40,6 +43,9 @@ class CompanyBilling {
   final double? paidAmount;
   final String? mercadoPagoPaymentId;
   final String? mercadoPagoStatus;
+  final String? mercadoPagoPayerName;
+  final String? mercadoPagoPayerEmail;
+  final String? mercadoPagoPayerDocument;
   final String? pixQrCode;
   final String? pixQrCodeBase64;
   final String? pixTicketUrl;
@@ -63,7 +69,9 @@ class CompanyBilling {
       interestAmount: double.tryParse('${json['interest_amount'] ?? 0}') ?? 0,
       lateFeeAmount: double.tryParse('${json['late_fee_amount'] ?? 0}') ?? 0,
       waivedAmount: double.tryParse('${json['waived_amount'] ?? 0}') ?? 0,
-      totalDue: json['total_due'] == null ? null : double.tryParse('${json['total_due']}'),
+      totalDue: json['total_due'] == null
+          ? null
+          : double.tryParse('${json['total_due']}'),
       paymentMethod: json['payment_method']?.toString(),
       status: json['status']?.toString() ?? 'pending',
       paidAt: json['paid_at'] == null
@@ -74,6 +82,9 @@ class CompanyBilling {
           : double.parse(json['paid_amount'].toString()),
       mercadoPagoPaymentId: json['mercado_pago_payment_id']?.toString(),
       mercadoPagoStatus: json['mercado_pago_status']?.toString(),
+      mercadoPagoPayerName: json['mercado_pago_payer_name']?.toString(),
+      mercadoPagoPayerEmail: json['mercado_pago_payer_email']?.toString(),
+      mercadoPagoPayerDocument: json['mercado_pago_payer_document']?.toString(),
       pixQrCode: json['pix_qr_code']?.toString(),
       pixQrCodeBase64: json['pix_qr_code_base64']?.toString(),
       pixTicketUrl: json['pix_ticket_url']?.toString(),

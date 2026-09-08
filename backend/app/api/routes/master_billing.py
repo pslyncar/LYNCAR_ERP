@@ -58,6 +58,9 @@ def _read(row: CompanyBilling) -> CompanyBillingRead:
         paid_amount=row.paid_amount,
         mercado_pago_payment_id=row.mercado_pago_payment_id,
         mercado_pago_status=row.mercado_pago_status,
+        mercado_pago_payer_name=row.mercado_pago_payer_name,
+        mercado_pago_payer_email=row.mercado_pago_payer_email,
+        mercado_pago_payer_document=row.mercado_pago_payer_document,
         pix_qr_code=row.pix_qr_code,
         pix_qr_code_base64=row.pix_qr_code_base64,
         pix_ticket_url=row.pix_ticket_url,
@@ -194,6 +197,9 @@ def update_billing(
                 )
             billing.mercado_pago_payment_id = None
             billing.mercado_pago_status = None
+            billing.mercado_pago_payer_name = None
+            billing.mercado_pago_payer_email = None
+            billing.mercado_pago_payer_document = None
             billing.mercado_pago_external_reference = None
             billing.mercado_pago_idempotency_key = None
             billing.pix_qr_code = None
@@ -225,6 +231,9 @@ def waive_billing_charges(
         billing.waiver_reason = payload.reason
         billing.mercado_pago_payment_id = None
         billing.mercado_pago_status = None
+        billing.mercado_pago_payer_name = None
+        billing.mercado_pago_payer_email = None
+        billing.mercado_pago_payer_document = None
         billing.mercado_pago_external_reference = None
         billing.mercado_pago_idempotency_key = None
         billing.pix_qr_code = None

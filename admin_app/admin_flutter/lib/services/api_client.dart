@@ -675,6 +675,17 @@ class ApiClient {
     return CompanyBilling.fromJson(_decodeResponse(response));
   }
 
+  Future<CompanyBilling> syncDashboardBillingPayment(
+    String token,
+    int billingId,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/dashboard/billing-payment/$billingId/sync'),
+      headers: _authHeaders(token),
+    );
+    return CompanyBilling.fromJson(_decodeResponse(response));
+  }
+
   Future<List<DashboardContent>> listMasterDashboardContents(
     String token,
   ) async {

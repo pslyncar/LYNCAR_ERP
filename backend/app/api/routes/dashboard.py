@@ -47,6 +47,9 @@ def billing_read(row: CompanyBilling) -> CompanyBillingRead:
         paid_amount=row.paid_amount,
         mercado_pago_payment_id=row.mercado_pago_payment_id,
         mercado_pago_status=row.mercado_pago_status,
+        mercado_pago_payer_name=row.mercado_pago_payer_name,
+        mercado_pago_payer_email=row.mercado_pago_payer_email,
+        mercado_pago_payer_document=row.mercado_pago_payer_document,
         pix_qr_code=row.pix_qr_code,
         pix_qr_code_base64=row.pix_qr_code_base64,
         pix_ticket_url=row.pix_ticket_url,
@@ -277,6 +280,42 @@ def get_dashboard_billing_payment(
             raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
         _ = billing.company
         create_pix_for_billing(master_db, billing)
+        master_db.commit()
+        master_db.refresh(billing)
+        _ = billing.company
+        return billing_read(billing)
+
+
+@router.post("/billing-payment/{billing_id}/sync", response_model=CompanyBillingRead)
+def sync_dashboard_billing_payment(
+    billing_id: int,
+    current_user: User = Depends(require_permission("dashboard:view")),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+) -> CompanyBillingRead:
+    """Refresh the current company's Mercado Pago payment status for the Pix dialog."""
+    del current_user
+    company_code = None
+    if credentials is not None:
+        payload = decode_access_token(credentials.credentials)
+        company_code = payload.get("company_code")
+    if not isinstance(company_code, str) or not company_code:
+        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+    with MasterSessionLocal() as master_db:
+        company = master_db.scalar(
+            select(Company).where(Company.code == company_code)
+        )
+        if company is None:
+            raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+
+        billing = master_db.get(CompanyBilling, billing_id)
+        if billing is None:
+            raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
+        if billing.company_id != company.id:
+            raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
+        if billing.mercado_pago_payment_id:
+            payment = get_payment(billing.mercado_pago_payment_id)
+            apply_payment_status(master_db, payment)
         master_db.commit()
         master_db.refresh(billing)
         _ = billing.company

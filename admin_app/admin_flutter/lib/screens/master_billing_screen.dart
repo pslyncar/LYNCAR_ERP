@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -98,8 +99,13 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
       if (!mounted) return;
       await showDialog<void>(
         context: context,
-        builder: (context) => _PixDialog(billing: updated),
+        builder: (context) => _PixDialog(
+          billing: updated,
+          api: _api,
+          token: widget.session.token,
+        ),
       );
+      await _load();
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     }
@@ -121,16 +127,35 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
         final controller = TextEditingController();
         return AlertDialog(
           title: const Text('Perdoar encargos'),
-          content: TextField(controller: controller, maxLines: 3, decoration: const InputDecoration(labelText: 'Motivo')), 
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')), FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: const Text('Confirmar'))],
+          content: TextField(
+            controller: controller,
+            maxLines: 3,
+            decoration: const InputDecoration(labelText: 'Motivo'),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Confirmar'),
+            ),
+          ],
         );
       },
     );
     if (reason == null || reason.length < 3) return;
     try {
-      await _api.waiveMasterBillingCharges(widget.session.token, billing.id, reason);
+      await _api.waiveMasterBillingCharges(
+        widget.session.token,
+        billing.id,
+        reason,
+      );
       await _load();
-    } on ApiException catch (error) { setState(() => _error = error.message); }
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    }
   }
 
   Future<void> _createManual() async {
@@ -256,6 +281,7 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
                       child: DataTable(
                         columns: const [
                           DataColumn(label: Text('Cliente')),
+                          DataColumn(label: Text('Pagador')),
                           DataColumn(label: Text('Mês')),
                           DataColumn(label: Text('Vencimento')),
                           DataColumn(label: Text('Valor')),
@@ -268,12 +294,60 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
                             DataRow(
                               cells: [
                                 DataCell(Text(billing.companyName)),
+                                DataCell(
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        billing.mercadoPagoPayerName ?? '-',
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                      if ((billing.mercadoPagoPayerEmail ?? '')
+                                          .isNotEmpty)
+                                        Text(
+                                          billing.mercadoPagoPayerEmail!,
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                      if ((billing.mercadoPagoPayerDocument ??
+                                              '')
+                                          .isNotEmpty)
+                                        Text(
+                                          billing.mercadoPagoPayerDocument!,
+                                          style: const TextStyle(fontSize: 11),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                                 DataCell(Text(billing.referenceMonth)),
                                 DataCell(Text(_date(billing.dueDate))),
-                                DataCell(Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                  Text(_money(billing.totalDue ?? billing.amount)),
-                                  if (billing.interestAmount + billing.lateFeeAmount > 0) Text('Encargos: ${_money(billing.interestAmount + billing.lateFeeAmount)}', style: const TextStyle(fontSize: 11, color: Colors.deepOrange)),
-                                ])),
+                                DataCell(
+                                  Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _money(
+                                          billing.totalDue ?? billing.amount,
+                                        ),
+                                      ),
+                                      if (billing.interestAmount +
+                                              billing.lateFeeAmount >
+                                          0)
+                                        Text(
+                                          'Encargos: ${_money(billing.interestAmount + billing.lateFeeAmount)}',
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.deepOrange,
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                                 DataCell(Text(billing.paymentMethod ?? '-')),
                                 DataCell(
                                   Chip(
@@ -287,8 +361,16 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
                                     children: [
                                       IconButton(
                                         tooltip: 'Perdoar encargos',
-                                        onPressed: billing.status == 'pending' && billing.interestAmount + billing.lateFeeAmount > 0 ? () => _waiveCharges(billing) : null,
-                                        icon: const Icon(Icons.handshake_outlined),
+                                        onPressed:
+                                            billing.status == 'pending' &&
+                                                billing.interestAmount +
+                                                        billing.lateFeeAmount >
+                                                    0
+                                            ? () => _waiveCharges(billing)
+                                            : null,
+                                        icon: const Icon(
+                                          Icons.handshake_outlined,
+                                        ),
                                       ),
                                       IconButton(
                                         tooltip: 'Editar cobranca',
@@ -312,6 +394,10 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
                                                       builder: (context) =>
                                                           _PixDialog(
                                                             billing: billing,
+                                                            api: _api,
+                                                            token: widget
+                                                                .session
+                                                                .token,
                                                           ),
                                                     ),
                                         icon: const Icon(Icons.qr_code_2),
@@ -658,79 +744,245 @@ class _BillingDialogState extends State<_BillingDialog> {
   }
 }
 
-class _PixDialog extends StatelessWidget {
-  const _PixDialog({required this.billing});
+class _PixDialog extends StatefulWidget {
+  const _PixDialog({
+    required this.billing,
+    required this.api,
+    required this.token,
+  });
 
   final CompanyBilling billing;
+  final ApiClient api;
+  final String token;
+
+  @override
+  State<_PixDialog> createState() => _PixDialogState();
+}
+
+class _PixDialogState extends State<_PixDialog> {
+  late CompanyBilling _billing = widget.billing;
+  Timer? _timer;
+  bool _confirmed = false;
+  bool _syncing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) => _sync());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _sync() async {
+    if (_syncing || _confirmed || _billing.mercadoPagoPaymentId == null) {
+      return;
+    }
+    _syncing = true;
+    try {
+      final updated = await widget.api.syncMasterBillingPayment(
+        widget.token,
+        _billing.id,
+      );
+      if (!mounted) return;
+      setState(() => _billing = updated);
+      if (updated.status == 'paid' || updated.mercadoPagoStatus == 'approved') {
+        _timer?.cancel();
+        setState(() => _confirmed = true);
+        Future<void>.delayed(const Duration(milliseconds: 1400), () {
+          if (mounted) Navigator.of(context).pop();
+        });
+      }
+    } on ApiException {
+      // The webhook can arrive before the next API read; keep polling quietly.
+    } finally {
+      _syncing = false;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final qrBase64 = billing.pixQrCodeBase64;
+    if (_confirmed) {
+      return AlertDialog(
+        content: SizedBox(
+          width: 460,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: const [
+                Icon(Icons.check_circle, color: Color(0xFF16A34A), size: 68),
+                SizedBox(height: 16),
+                Text(
+                  'Pagamento confirmado!',
+                  style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+                ),
+                SizedBox(height: 8),
+                Text('A cobrança foi baixada automaticamente.'),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final qrBase64 = _billing.pixQrCodeBase64;
     final qrBytes = qrBase64 == null || qrBase64.isEmpty
         ? null
         : base64Decode(qrBase64);
+    final payer = _billing.mercadoPagoPayerName;
 
     return AlertDialog(
-      title: const Text('Pix da cobrança'),
+      title: const Text('Receber mensalidade via Pix'),
       content: SizedBox(
-        width: 430,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${billing.companyName} - ${billing.referenceMonth}',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Text('Status Mercado Pago: ${billing.mercadoPagoStatus ?? '-'}'),
-            if (billing.mercadoPagoPaymentId != null)
-              Text('Pagamento: ${billing.mercadoPagoPaymentId}'),
-            const SizedBox(height: 14),
-            if (qrBytes != null)
-              Center(
-                child: Image.memory(
-                  qrBytes,
-                  width: 220,
-                  height: 220,
-                  fit: BoxFit.contain,
+        width: 700,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${_billing.companyName} • ${_billing.referenceMonth}',
+                style: const TextStyle(
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            if ((billing.pixQrCode ?? '').isNotEmpty) ...[
-              const SizedBox(height: 14),
-              const Text(
-                'Pix copia e cola',
-                style: TextStyle(fontWeight: FontWeight.w800),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (qrBytes != null)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Image.memory(
+                        qrBytes,
+                        width: 250,
+                        height: 250,
+                        fit: BoxFit.contain,
+                      ),
+                    ),
+                  const SizedBox(width: 22),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _PaymentStatusBadge(status: _billing.mercadoPagoStatus),
+                        const SizedBox(height: 16),
+                        Text(
+                          'Valor da cobrança',
+                          style: TextStyle(color: Colors.blueGrey.shade600),
+                        ),
+                        Text(
+                          'R\$ ${(_billing.totalDue ?? _billing.amount).toStringAsFixed(2).replaceAll('.', ',')}',
+                          style: const TextStyle(
+                            fontSize: 26,
+                            fontWeight: FontWeight.w900,
+                            color: Color(0xFF13233B),
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        const Text(
+                          'Aguardando confirmação automática',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          'O sistema consulta o Mercado Pago enquanto esta janela estiver aberta.',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                        if (payer != null) ...[
+                          const SizedBox(height: 16),
+                          Text('Pagador: $payer'),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 6),
-              SelectableText(billing.pixQrCode!, maxLines: 5),
+              if ((_billing.pixQrCode ?? '').isNotEmpty) ...[
+                const SizedBox(height: 20),
+                const Text(
+                  'Pix copia e cola',
+                  style: TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: SelectableText(_billing.pixQrCode!, maxLines: 4),
+                  ),
+                ),
+              ],
             ],
-            if ((billing.pixTicketUrl ?? '').isNotEmpty) ...[
-              const SizedBox(height: 10),
-              SelectableText('Link: ${billing.pixTicketUrl!}'),
-            ],
-          ],
+          ),
         ),
       ),
       actions: [
-        if ((billing.pixQrCode ?? '').isNotEmpty)
+        if ((_billing.pixQrCode ?? '').isNotEmpty)
           TextButton.icon(
             onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: billing.pixQrCode!));
+              await Clipboard.setData(ClipboardData(text: _billing.pixQrCode!));
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Código Pix copiado.')),
                 );
               }
             },
-            icon: const Icon(Icons.copy),
-            label: const Text('Copiar Pix'),
+            icon: const Icon(Icons.copy_outlined),
+            label: const Text('Copiar código Pix'),
           ),
         FilledButton(
           onPressed: () => Navigator.of(context).pop(),
           child: const Text('Fechar'),
         ),
       ],
+    );
+  }
+}
+
+class _PaymentStatusBadge extends StatelessWidget {
+  const _PaymentStatusBadge({required this.status});
+
+  final String? status;
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = status == 'approved';
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: approved ? const Color(0xFFDCFCE7) : const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              approved ? Icons.check_circle_outline : Icons.sync,
+              size: 18,
+              color: approved
+                  ? const Color(0xFF15803D)
+                  : const Color(0xFFC2410C),
+            ),
+            const SizedBox(width: 6),
+            Text(approved ? 'Pagamento aprovado' : 'Aguardando pagamento'),
+          ],
+        ),
+      ),
     );
   }
 }

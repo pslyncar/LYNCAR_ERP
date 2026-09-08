@@ -138,6 +138,21 @@ def get_payment(payment_id: str) -> dict:
     return _request("GET", f"/v1/payments/{payment_id}")
 
 
+def _payer_data(payment: dict) -> tuple[str | None, str | None, str | None]:
+    payer = payment.get("payer") or {}
+    first_name = str(payer.get("first_name") or "").strip()
+    last_name = str(payer.get("last_name") or "").strip()
+    name = " ".join(part for part in (first_name, last_name) if part).strip()
+    email = str(payer.get("email") or "").strip() or None
+    identification = payer.get("identification") or {}
+    document_type = str(identification.get("type") or "").strip()
+    document_number = str(identification.get("number") or "").strip()
+    document = " ".join(
+        part for part in (document_type, document_number) if part
+    ).strip() or None
+    return name or None, email, document
+
+
 def apply_payment_status(db: Session, payment: dict) -> CompanyBilling | None:
     external_reference = payment.get("external_reference")
     payment_id = str(payment.get("id") or "")
@@ -167,6 +182,10 @@ def apply_payment_status(db: Session, payment: dict) -> CompanyBilling | None:
     billing.mercado_pago_payment_id = payment_id or billing.mercado_pago_payment_id
     billing.mercado_pago_status = payment.get("status")
     billing.mercado_pago_external_reference = external_reference or billing.mercado_pago_external_reference
+    payer_name, payer_email, payer_document = _payer_data(payment)
+    billing.mercado_pago_payer_name = payer_name or billing.mercado_pago_payer_name
+    billing.mercado_pago_payer_email = payer_email or billing.mercado_pago_payer_email
+    billing.mercado_pago_payer_document = payer_document or billing.mercado_pago_payer_document
     if payment.get("status") == "approved" and billing.status != "paid":
         billing.status = "paid"
         billing.paid_at = datetime.now(UTC)
