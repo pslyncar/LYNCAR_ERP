@@ -145,51 +145,103 @@ class _ClientStoreScreenState extends State<ClientStoreScreen> {
       onTap: item.targetUrl == null
           ? null
           : () => redirectToUrl(item.targetUrl!),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(
-              item.contentType == 'affiliate_link'
-                  ? Icons.extension_outlined
-                  : Icons.shopping_bag_outlined,
-              color: const Color(0xFF167A8B),
-              size: 30,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              item.title,
-              style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
-            ),
-            if (item.description?.isNotEmpty == true) ...[
-              const SizedBox(height: 6),
-              Text(
-                item.description!,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: Colors.blueGrey.shade600),
-              ),
-            ],
-            const Spacer(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                if (item.priceLabel?.isNotEmpty == true)
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _StoreImage(
+            imageUrl: _publicUrl(widget.session.apiBaseUrl, item.imageUrl),
+            icon: item.contentType == 'affiliate_link'
+                ? Icons.extension_outlined
+                : Icons.shopping_bag_outlined,
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    item.priceLabel!,
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF167A8B),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
                     ),
                   ),
-                if (item.targetUrl != null)
-                  const Icon(Icons.arrow_forward, color: Color(0xFF167A8B)),
-              ],
+                  if (item.description?.isNotEmpty == true) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      item.description!,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.blueGrey.shade600),
+                    ),
+                  ],
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      if (item.priceLabel?.isNotEmpty == true)
+                        Text(
+                          item.priceLabel!,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF167A8B),
+                          ),
+                        ),
+                      if (item.targetUrl != null)
+                        const Icon(
+                          Icons.arrow_forward,
+                          color: Color(0xFF167A8B),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     ),
   );
+}
+
+class _StoreImage extends StatelessWidget {
+  const _StoreImage({required this.imageUrl, required this.icon});
+
+  final String? imageUrl;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 170,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(color: Color(0xFFEAF2FF)),
+        child: imageUrl == null
+            ? Icon(icon, size: 48, color: const Color(0xFF167A8B))
+            : Image.network(
+                imageUrl!,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(icon, size: 48, color: const Color(0xFF167A8B)),
+              ),
+      ),
+    );
+  }
+}
+
+String? _publicUrl(String apiBaseUrl, String? value) {
+  final trimmed = value?.trim();
+  if (trimmed == null || trimmed.isEmpty) return null;
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  final base = apiBaseUrl.endsWith('/')
+      ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+      : apiBaseUrl;
+  final path = trimmed.startsWith('/') ? trimmed : '/$trimmed';
+  return '$base$path';
 }
