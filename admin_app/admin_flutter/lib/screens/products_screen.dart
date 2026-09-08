@@ -32,6 +32,48 @@ Future<bool> showProductEditorDialog(
       true;
 }
 
+/// Opens the stock tools that were historically available from a product's
+/// action menu. The inventory workspace can use this bridge without importing
+/// the old screen or duplicating any stock/business rules.
+enum ProductStockAction { composition, batches, history, adjust }
+
+Future<bool> showProductStockActionDialog(
+  BuildContext context, {
+  required ApiClient api,
+  required String token,
+  required Product product,
+  required List<Product> products,
+  required ProductStockAction action,
+}) async {
+  final changed = await showDialog<bool>(
+    context: context,
+    builder: (context) => switch (action) {
+      ProductStockAction.composition => _CompositionDialog(
+        api: api,
+        token: token,
+        product: product,
+        products: products,
+      ),
+      ProductStockAction.batches => _ProductBatchesDialog(
+        api: api,
+        token: token,
+        product: product,
+      ),
+      ProductStockAction.history => _StockHistoryDialog(
+        api: api,
+        token: token,
+        product: product,
+      ),
+      ProductStockAction.adjust => _StockAdjustmentDialog(
+        api: api,
+        token: token,
+        product: product,
+      ),
+    },
+  );
+  return changed == true;
+}
+
 const _productTypes = {
   'produto': 'Produto',
   'produto_acabado': 'Produto acabado',

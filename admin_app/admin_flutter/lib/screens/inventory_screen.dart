@@ -2,12 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../models/product.dart';
 import '../models/session.dart';
+import '../models/stock_movement.dart';
 import '../services/api_client.dart';
 import '../services/file_download.dart';
 import '../widgets/app_card.dart';
 import '../widgets/app_pagination.dart';
 import '../widgets/error_panel.dart';
-import 'products_screen.dart' show showProductEditorDialog;
+import 'products_screen.dart'
+    show
+        ProductStockAction,
+        showProductEditorDialog,
+        showProductStockActionDialog;
 
 /// New inventory workspace. The old product screen remains available as the
 /// editing engine while this page owns the new inventory experience.
@@ -25,6 +30,9 @@ class _InventoryScreenState extends State<InventoryScreen> {
   late final ApiClient _api = ApiClient(widget.session.apiBaseUrl);
   final _search = TextEditingController();
   List<Product> _products = const [];
+  List<StockMovement> _recentMovements = const [];
+  bool _movementsLoading = false;
+  String? _movementsError;
   int _tab = 0;
   int _page = 0;
   String _statusFilter = 'Todos';
@@ -69,6 +77,39 @@ class _InventoryScreenState extends State<InventoryScreen> {
       }
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadRecentMovements() async {
+    if (_movementsLoading) return;
+    setState(() {
+      _movementsLoading = true;
+      _movementsError = null;
+    });
+    try {
+      final movements = await _api.listRecentStockWithdrawals(
+        widget.session.token,
+        limit: 100,
+      );
+      if (!mounted) return;
+      setState(() => _recentMovements = movements);
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _movementsError = error.message);
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _movementsError = 'Não foi possível carregar as movimentações.',
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _movementsLoading = false);
+    }
+  }
+
+  void _changeTab(int value) {
+    setState(() => _tab = value);
+    if (value == 1 && _recentMovements.isEmpty) {
+      _loadRecentMovements();
     }
   }
 
@@ -122,6 +163,23 @@ class _InventoryScreenState extends State<InventoryScreen> {
     );
     if (saved == true) {
       _load();
+    }
+  }
+
+  Future<void> _openStockAction(
+    Product product,
+    ProductStockAction action,
+  ) async {
+    final changed = await showProductStockActionDialog(
+      context,
+      api: _api,
+      token: widget.session.token,
+      product: product,
+      products: _products,
+      action: action,
+    );
+    if (changed && action == ProductStockAction.adjust) {
+      await _load();
     }
   }
 
@@ -366,10 +424,7 @@ class _InventoryScreenState extends State<InventoryScreen> {
           children: [
             _PageHeader(onRefresh: _load, onCreate: _newProduct),
             const SizedBox(height: 18),
-            _InventoryTabs(
-              selected: _tab,
-              onChanged: (value) => setState(() => _tab = value),
-            ),
+            _InventoryTabs(selected: _tab, onChanged: _changeTab),
             const SizedBox(height: 18),
             if (_tab == 0) ...[
               _KpiGrid(
@@ -433,11 +488,21 @@ class _InventoryScreenState extends State<InventoryScreen> {
                   products: pageProducts,
                   apiBaseUrl: widget.session.apiBaseUrl,
                   onOpen: _edit,
+                  onAction: _openStockAction,
                   currentPage: safePage,
                   totalItems: products.length,
                   onPageChanged: (page) => setState(() => _page = page),
                 ),
-            ] else
+            ] else if (_tab == 1)
+              _MovementsPanel(
+                movements: _recentMovements,
+                loading: _movementsLoading,
+                error: _movementsError,
+                onRetry: _loadRecentMovements,
+              )
+            else if (_tab == 3)
+              _ExpiryPanel(products: _products)
+            else
               _ComingSoonPanel(tab: _tab),
           ],
         ),
@@ -919,6 +984,7 @@ class _ProductGrid extends StatelessWidget {
     required this.products,
     required this.apiBaseUrl,
     required this.onOpen,
+    required this.onAction,
     required this.currentPage,
     required this.totalItems,
     required this.onPageChanged,
@@ -926,6 +992,7 @@ class _ProductGrid extends StatelessWidget {
   final List<Product> products;
   final String apiBaseUrl;
   final ValueChanged<Product> onOpen;
+  final void Function(Product, ProductStockAction) onAction;
   final int currentPage;
   final int totalItems;
   final ValueChanged<int> onPageChanged;
@@ -951,6 +1018,7 @@ class _ProductGrid extends StatelessWidget {
                           product: product,
                           apiBaseUrl: apiBaseUrl,
                           onOpen: onOpen,
+                          onAction: onAction,
                         ),
                     ],
                   ),
@@ -965,6 +1033,7 @@ class _ProductGrid extends StatelessWidget {
                         product: product,
                         apiBaseUrl: apiBaseUrl,
                         onOpen: onOpen,
+                        onAction: onAction,
                       ),
                   ],
                 );
@@ -976,6 +1045,7 @@ class _ProductGrid extends StatelessWidget {
                       product: product,
                       apiBaseUrl: apiBaseUrl,
                       onOpen: onOpen,
+                      onAction: onAction,
                     ),
                 ],
               );
@@ -1026,6 +1096,83 @@ class _DenseInventoryTableHeader extends StatelessWidget {
   );
 }
 
+class _ProductActionsButton extends StatelessWidget {
+  const _ProductActionsButton({
+    required this.product,
+    required this.onEdit,
+    required this.onAction,
+  });
+
+  final Product product;
+  final ValueChanged<Product> onEdit;
+  final void Function(Product, ProductStockAction) onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      tooltip: 'Ações de ${product.name}',
+      icon: const Icon(Icons.more_horiz),
+      onSelected: (value) {
+        switch (value) {
+          case 'edit':
+            onEdit(product);
+          case 'composition':
+            onAction(product, ProductStockAction.composition);
+          case 'batches':
+            onAction(product, ProductStockAction.batches);
+          case 'history':
+            onAction(product, ProductStockAction.history);
+          case 'adjust':
+            onAction(product, ProductStockAction.adjust);
+        }
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 'edit',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.edit_outlined),
+            title: Text('Editar cadastro'),
+          ),
+        ),
+        PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'composition',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.account_tree_outlined),
+            title: Text('Ficha técnica / composição'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'batches',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.event_available_outlined),
+            title: Text('Saldos por lote'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'history',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.history),
+            title: Text('Histórico de movimentações'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'adjust',
+          child: ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: Icon(Icons.tune_outlined),
+            title: Text('Ajustar estoque'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 const _tableHeaderStyle = TextStyle(fontWeight: FontWeight.w700);
 
 class _DenseInventoryRow extends StatelessWidget {
@@ -1033,10 +1180,12 @@ class _DenseInventoryRow extends StatelessWidget {
     required this.product,
     required this.apiBaseUrl,
     required this.onOpen,
+    required this.onAction,
   });
   final Product product;
   final String apiBaseUrl;
   final ValueChanged<Product> onOpen;
+  final void Function(Product, ProductStockAction) onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -1117,14 +1266,10 @@ class _DenseInventoryRow extends StatelessWidget {
                 child: _StatusPill(label: status.$1, color: status.$2),
               ),
             ),
-            SizedBox(
-              width: 44,
-              child: IconButton(
-                onPressed: () => onOpen(product),
-                tooltip: 'Editar produto',
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.more_horiz),
-              ),
+            _ProductActionsButton(
+              product: product,
+              onEdit: onOpen,
+              onAction: onAction,
             ),
           ],
         ),
@@ -1138,10 +1283,12 @@ class _CompactInventoryRow extends StatelessWidget {
     required this.product,
     required this.apiBaseUrl,
     required this.onOpen,
+    required this.onAction,
   });
   final Product product;
   final String apiBaseUrl;
   final ValueChanged<Product> onOpen;
+  final void Function(Product, ProductStockAction) onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -1181,11 +1328,10 @@ class _CompactInventoryRow extends StatelessWidget {
                           ),
                         ),
                       ),
-                      IconButton(
-                        onPressed: () => onOpen(product),
-                        tooltip: 'Editar produto',
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.more_horiz),
+                      _ProductActionsButton(
+                        product: product,
+                        onEdit: onOpen,
+                        onAction: onAction,
                       ),
                     ],
                   ),
@@ -1370,10 +1516,12 @@ class _InventoryRow extends StatelessWidget {
     required this.product,
     required this.apiBaseUrl,
     required this.onOpen,
+    required this.onAction,
   });
   final Product product;
   final String apiBaseUrl;
   final ValueChanged<Product> onOpen;
+  final void Function(Product, ProductStockAction) onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -1542,6 +1690,181 @@ class _ProductImage extends StatelessWidget {
   }
 }
 
+class _MovementsPanel extends StatelessWidget {
+  const _MovementsPanel({
+    required this.movements,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final List<StockMovement> movements;
+  final bool loading;
+  final String? error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Movimentações recentes',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Acompanhe baixas, ajustes e documentos que alteraram o saldo.',
+            style: TextStyle(color: Color(0xFF667085)),
+          ),
+          const SizedBox(height: 18),
+          if (loading)
+            const LinearProgressIndicator()
+          else if (error != null)
+            ErrorPanel(message: error!, onRetry: onRetry)
+          else if (movements.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(child: Text('Nenhuma movimentação recente.')),
+            )
+          else
+            for (final movement in movements)
+              _MovementSummaryRow(movement: movement),
+        ],
+      ),
+    );
+  }
+}
+
+class _MovementSummaryRow extends StatelessWidget {
+  const _MovementSummaryRow({required this.movement});
+
+  final StockMovement movement;
+
+  @override
+  Widget build(BuildContext context) {
+    final incoming = movement.quantityDelta >= 0;
+    final source = switch (movement.sourceType) {
+      'stock_entry' => 'Entrada de estoque',
+      'stock_withdrawal' => 'Baixa de estoque',
+      'product_initial' => 'Saldo inicial',
+      'pdv' => 'PDV',
+      'venda' => 'Venda',
+      _ => 'Movimentação de estoque',
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE4E7EC))),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 19,
+            backgroundColor: incoming
+                ? const Color(0xFFE7F7EF)
+                : const Color(0xFFFFECEC),
+            child: Icon(
+              incoming ? Icons.south_west : Icons.north_east,
+              color: incoming
+                  ? const Color(0xFF059669)
+                  : const Color(0xFFDC2626),
+              size: 19,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  movement.productName ?? 'Produto #${movement.productId}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                Text(
+                  '$source · ${_dateTimeLabel(movement.createdAt)}${movement.reason == null ? '' : ' · ${movement.reason}'}',
+                  style: const TextStyle(
+                    color: Color(0xFF667085),
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Text(
+            '${incoming ? '+' : ''}${_number(movement.quantityDelta)} ${movement.unit}',
+            style: TextStyle(
+              color: incoming
+                  ? const Color(0xFF059669)
+                  : const Color(0xFFDC2626),
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpiryPanel extends StatelessWidget {
+  const _ExpiryPanel({required this.products});
+
+  final List<Product> products;
+
+  @override
+  Widget build(BuildContext context) {
+    final tracked = products
+        .where((product) => product.nearestExpirationDate != null)
+        .toList();
+    return AppCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Lotes e validades',
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          const Text(
+            'Produtos com validade conhecida. Abra as ações do produto para consultar o saldo detalhado por lote.',
+            style: TextStyle(color: Color(0xFF667085)),
+          ),
+          const SizedBox(height: 18),
+          if (tracked.isEmpty)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Center(
+                child: Text('Nenhum produto com validade cadastrada.'),
+              ),
+            )
+          else
+            for (final product in tracked)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const CircleAvatar(
+                  backgroundColor: Color(0xFFFFF4E5),
+                  child: Icon(
+                    Icons.event_available_outlined,
+                    color: Color(0xFFD97706),
+                  ),
+                ),
+                title: Text(
+                  product.name,
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  product.nearestBatchNumber == null
+                      ? 'Validade: ${_brazilDate(product.nearestExpirationDate)}'
+                      : 'Lote ${product.nearestBatchNumber} · Validade: ${_brazilDate(product.nearestExpirationDate)}',
+                ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ComingSoonPanel extends StatelessWidget {
   const _ComingSoonPanel({required this.tab});
   final int tab;
@@ -1611,6 +1934,9 @@ String _money(double value) =>
 
 String _dateLabel(DateTime value) =>
     '${value.day.toString().padLeft(2, '0')}/${value.month.toString().padLeft(2, '0')}/${value.year}';
+
+String _dateTimeLabel(DateTime value) =>
+    '${_dateLabel(value)} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
 
 String _fileDate(DateTime value) =>
     '${value.year}${value.month.toString().padLeft(2, '0')}${value.day.toString().padLeft(2, '0')}';
