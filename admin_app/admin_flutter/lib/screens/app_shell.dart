@@ -5,6 +5,7 @@ import 'package:gap/gap.dart';
 import '../models/session.dart';
 import '../navigation/app_navigation.dart';
 import 'cash_closings_screen.dart';
+import 'client_store_screen.dart';
 import 'clients_screen.dart';
 import 'companies_screen.dart';
 import 'dashboard_contents_screen.dart';
@@ -13,6 +14,7 @@ import 'equipments_screen.dart';
 import 'finance_screen.dart';
 import 'fiscal_documents_screen.dart';
 import 'emitir_nota_fiscal_screen.dart';
+import 'first_access_tour.dart';
 import 'master_access_screen.dart';
 import 'master_billing_screen.dart';
 import 'master_contracts_screen.dart';
@@ -63,6 +65,7 @@ class _AppShellState extends State<AppShell> {
   bool _navigationPanelOpen = false;
   bool _issuingFiscalDocument = false;
   AppNavigationSection? _browsedSection;
+  List<_Destination> _currentDestinations = const [];
   final _navigationSearchController = TextEditingController();
   final _navigationSearchFocusNode = FocusNode();
 
@@ -71,6 +74,86 @@ class _AppShellState extends State<AppShell> {
     _navigationSearchController.dispose();
     _navigationSearchFocusNode.dispose();
     super.dispose();
+  }
+
+  // ignore: unused_element
+  Future<void> _showGlobalSearchDialog(
+    BuildContext context,
+    List<_Destination> destinations,
+  ) async {
+    final controller = TextEditingController();
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          final query = controller.text.trim().toLowerCase();
+          final results = destinations
+              .where((item) => item.label.toLowerCase().contains(query))
+              .toList();
+          return AlertDialog(
+            title: const Text('Buscar no sistema'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: controller,
+                    autofocus: true,
+                    onChanged: (_) => setDialogState(() {}),
+                    decoration: const InputDecoration(
+                      hintText: 'Digite o nome de uma tela',
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 360),
+                    child: results.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: Text('Nenhuma tela encontrada.'),
+                          )
+                        : ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: results.length,
+                            itemBuilder: (context, index) {
+                              final destination = results[index];
+                              return ListTile(
+                                leading: Icon(destination.icon),
+                                title: Text(destination.label),
+                                subtitle: Text(destination.category.label),
+                                onTap: () {
+                                  final destinationIndex = destinations.indexOf(
+                                    destination,
+                                  );
+                                  if (destinationIndex >= 0) {
+                                    setState(() {
+                                      _selectedIndex = destinationIndex;
+                                      _browsedSection = destination.category;
+                                      _navigationPanelOpen = false;
+                                    });
+                                  }
+                                  Navigator.of(dialogContext).pop();
+                                },
+                              );
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Fechar'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    controller.dispose();
   }
 
   @override
@@ -222,7 +305,33 @@ class _AppShellState extends State<AppShell> {
             label: 'Início',
             icon: Icons.dashboard_outlined,
             selectedIcon: Icons.dashboard,
-            screen: DashboardScreen(session: widget.session),
+            screen: DashboardScreen(
+              session: widget.session,
+              onNavigateTo: (label) {
+                final destinationIndex = _currentDestinations.indexWhere(
+                  (destination) => destination.label == label,
+                );
+                if (destinationIndex < 0) return;
+                setState(() {
+                  _selectedIndex = destinationIndex;
+                  _browsedSection =
+                      _currentDestinations[destinationIndex].category;
+                  _navigationPanelOpen = false;
+                });
+              },
+              searchItems: () => [
+                for (final destination in _currentDestinations)
+                  destination.label,
+              ],
+            ),
+          ),
+        if (widget.session.can('dashboard:view'))
+          _Destination(
+            category: AppNavigationSection.home,
+            label: 'Loja Lyncar',
+            icon: Icons.storefront_outlined,
+            selectedIcon: Icons.storefront,
+            screen: ClientStoreScreen(session: widget.session),
           ),
         if (widget.session.can('clients:view'))
           _Destination(
@@ -449,6 +558,8 @@ class _AppShellState extends State<AppShell> {
       ],
     ];
 
+    _currentDestinations = destinations;
+
     if (destinations.isEmpty) {
       return Scaffold(
         body: Center(
@@ -533,8 +644,8 @@ class _AppShellState extends State<AppShell> {
         child: Scaffold(
           body: LayoutBuilder(
             builder: (context, constraints) {
-              final usePersistentPanel = constraints.maxWidth >= 1180;
               final rail = _PrimaryNavigationRail(
+                key: TourTargets.of(context).menu,
                 sections: visibleSections,
                 selectedSection: browsedSection,
                 onSelect: (section) {
@@ -542,8 +653,8 @@ class _AppShellState extends State<AppShell> {
                       groupedDestinations[section] ??
                       const <_IndexedDestination>[];
                   if (section == AppNavigationSection.home &&
-                      sectionDestinations.isNotEmpty) {
-                    selectDestination(sectionDestinations.single.index);
+                      sectionDestinations.length == 1) {
+                    selectDestination(sectionDestinations.first.index);
                     return;
                   }
                   setState(() {
@@ -567,23 +678,6 @@ class _AppShellState extends State<AppShell> {
 
               if (_pdvFullscreen) return content;
 
-              if (usePersistentPanel) {
-                return Row(
-                  children: [
-                    rail,
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 220),
-                      curve: Curves.easeOutCubic,
-                      alignment: Alignment.centerLeft,
-                      child: _navigationPanelOpen
-                          ? SizedBox(width: 276, child: panel)
-                          : const SizedBox.shrink(),
-                    ),
-                    Expanded(child: content),
-                  ],
-                );
-              }
-
               return Stack(
                 children: [
                   Row(
@@ -600,19 +694,29 @@ class _AppShellState extends State<AppShell> {
                         onTap: () =>
                             setState(() => _navigationPanelOpen = false),
                         child: ColoredBox(
-                          color: Colors.black.withValues(alpha: 0.18),
+                          color: Colors.black.withValues(alpha: 0.22),
                         ),
                       ),
                     ),
-                    Positioned(
-                      left: 72,
-                      top: 0,
-                      bottom: 0,
-                      width: 276,
-                      child: Material(
-                        elevation: 18,
-                        shadowColor: const Color(0x55081524),
-                        child: panel,
+                    Positioned.fill(
+                      left: 84,
+                      top: 14,
+                      bottom: 14,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(
+                          width: constraints.maxWidth >= 420
+                              ? 320
+                              : (constraints.maxWidth - 96).clamp(180.0, 320.0),
+                          child: Material(
+                            color: Colors.white,
+                            elevation: 22,
+                            shadowColor: const Color(0x66081524),
+                            borderRadius: BorderRadius.circular(22),
+                            clipBehavior: Clip.antiAlias,
+                            child: panel,
+                          ),
+                        ),
                       ),
                     ),
                   ],
@@ -628,6 +732,7 @@ class _AppShellState extends State<AppShell> {
 
 class _PrimaryNavigationRail extends StatelessWidget {
   const _PrimaryNavigationRail({
+    super.key,
     required this.sections,
     required this.selectedSection,
     required this.onSelect,

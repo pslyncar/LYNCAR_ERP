@@ -9,6 +9,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'models/session.dart';
 import 'screens/app_shell.dart';
+import 'screens/first_access_tour.dart';
 import 'screens/login_screen.dart';
 import 'screens/mobile_app_dashboard_screen.dart';
 import 'screens/mobile_app_login_screen.dart';
@@ -434,14 +435,17 @@ class _AuthGateState extends State<AuthGate> {
           );
         }
       } else {
-        content = AppShell(
+        content = FirstAccessTour(
           session: session,
-          onLogout: _logout,
-          onPdvCashOpenChanged: (open) {
-            if (_pdvCashOpen == open) return;
-            setState(() => _pdvCashOpen = open);
-            if (open) unawaited(_touchActivity());
-          },
+          child: AppShell(
+            session: session,
+            onLogout: _logout,
+            onPdvCashOpenChanged: (open) {
+              if (_pdvCashOpen == open) return;
+              setState(() => _pdvCashOpen = open);
+              if (open) unawaited(_touchActivity());
+            },
+          ),
         );
       }
     }

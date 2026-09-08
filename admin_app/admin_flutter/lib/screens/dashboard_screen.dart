@@ -2,18 +2,39 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_reorderable_grid_view/widgets/widgets.dart';
 
 import '../models/company_billing.dart';
 import '../models/dashboard_summary.dart';
+import '../models/product.dart';
+import '../models/receivable.dart';
+import '../models/sale.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
+import '../services/app_session_storage.dart';
 import '../services/browser_redirect.dart';
 import '../widgets/error_panel.dart';
+import 'first_access_tour.dart';
+
+const _defaultDashboardSections = <String>[
+  'notices',
+  'metrics',
+  'activities',
+  'shortcuts',
+  'finance',
+];
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({super.key, required this.session});
+  const DashboardScreen({
+    super.key,
+    required this.session,
+    this.onNavigateTo,
+    this.searchItems,
+  });
 
   final Session session;
+  final ValueChanged<String>? onNavigateTo;
+  final List<String> Function()? searchItems;
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
@@ -21,14 +42,61 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   late final ApiClient _api = ApiClient(widget.session.apiBaseUrl);
+  final _layoutStorage = AppSessionStorage();
   DashboardSummary? _summary;
+  List<Sale> _todaySales = const [];
+  List<Product> _products = const [];
+  List<Receivable> _receivables = const [];
   bool _loading = true;
   String? _error;
+  List<String> _dashboardSections = List<String>.from(
+    _defaultDashboardSections,
+  );
+
+  String get _layoutStorageKey =>
+      'lyncar.dashboard-layout.v1.${widget.session.companyCode}.${widget.session.userId ?? widget.session.role}';
 
   @override
   void initState() {
     super.initState();
     _loadDashboard();
+    _loadDashboardLayout();
+  }
+
+  Future<void> _loadDashboardLayout() async {
+    final saved = await _layoutStorage.read(_layoutStorageKey);
+    if (!mounted || saved == null || saved.trim().isEmpty) return;
+    final savedSections = saved
+        .split(',')
+        .where(
+          (id) => _defaultDashboardSections.contains(
+            id.startsWith('!') ? id.substring(1) : id,
+          ),
+        )
+        .toSet();
+    final ordered = <String>[
+      ...saved.split(',').where(savedSections.contains),
+      ..._defaultDashboardSections.where(
+        (id) => !savedSections.any(
+          (savedId) => savedId.replaceFirst('!', '') == id,
+        ),
+      ),
+    ];
+    setState(() => _dashboardSections = ordered);
+  }
+
+  Future<void> _saveDashboardLayout(List<String> sections) async {
+    setState(() => _dashboardSections = sections);
+    await _layoutStorage.write(_layoutStorageKey, sections.join(','));
+  }
+
+  Future<void> _openDashboardCustomizer() async {
+    final result = await showDialog<List<String>>(
+      context: context,
+      builder: (context) =>
+          _DashboardCustomizerDialog(initialSections: _dashboardSections),
+    );
+    if (result != null) await _saveDashboardLayout(result);
   }
 
   Future<void> _loadDashboard() async {
@@ -39,7 +107,46 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
     try {
       final summary = await _api.getDashboardSummary(widget.session.token);
-      setState(() => _summary = summary);
+      final token = widget.session.token;
+      final today = DateTime.now();
+      final hasSales =
+          widget.session.can('sales:view') ||
+          widget.session.can('sales:manual') ||
+          widget.session.can('sales:create');
+      final hasProducts =
+          widget.session.can('products:view') ||
+          widget.session.can('stock:view');
+      final hasFinance =
+          widget.session.can('finance:view') ||
+          widget.session.can('finance:receivables:view');
+
+      if (hasSales) {
+        try {
+          _todaySales = await _api.listSales(
+            token,
+            limit: 100,
+            dateFrom: DateTime(today.year, today.month, today.day),
+            dateTo: DateTime(today.year, today.month, today.day),
+          );
+        } catch (_) {
+          _todaySales = const [];
+        }
+      }
+      if (hasProducts) {
+        try {
+          _products = await _api.listProducts(token, active: true);
+        } catch (_) {
+          _products = const [];
+        }
+      }
+      if (hasFinance) {
+        try {
+          _receivables = await _api.listReceivables(token, limit: 200);
+        } catch (_) {
+          _receivables = const [];
+        }
+      }
+      if (mounted) setState(() => _summary = summary);
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } catch (_) {
@@ -86,11 +193,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             padding: const EdgeInsets.fromLTRB(22, 18, 22, 40),
             children: [
               _Header(
-                session: widget.session,
                 summary: summary,
+                companyName: widget.session.companyName,
                 onRefresh: _loadDashboard,
+                onNavigateTo: widget.onNavigateTo,
+                searchItems: widget.searchItems,
+                onCustomize: _openDashboardCustomizer,
               ),
-              const SizedBox(height: 20),
+              const SizedBox(height: 12),
               if (_loading)
                 const LinearProgressIndicator()
               else if (_error != null)
@@ -105,9 +215,15 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 ] else
                   _ShowcaseDashboard(
                     summary: summary,
-                    companyName: widget.session.companyName,
+                    session: widget.session,
                     apiBaseUrl: widget.session.apiBaseUrl,
                     onOpenPayment: _openBillingPayment,
+                    todaySales: _todaySales,
+                    products: _products,
+                    receivables: _receivables,
+                    onNavigate: widget.onNavigateTo,
+                    sections: _dashboardSections,
+                    onSectionsReordered: _saveDashboardLayout,
                   ),
               ],
             ],
@@ -118,21 +234,40 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 }
 
-class _Header extends StatelessWidget {
+class _Header extends StatefulWidget {
   const _Header({
-    required this.session,
     required this.summary,
+    required this.companyName,
     required this.onRefresh,
+    required this.onNavigateTo,
+    required this.searchItems,
+    required this.onCustomize,
   });
 
-  final Session session;
   final DashboardSummary? summary;
+  final String companyName;
   final VoidCallback onRefresh;
+  final ValueChanged<String>? onNavigateTo;
+  final List<String> Function()? searchItems;
+  final VoidCallback onCustomize;
+
+  @override
+  State<_Header> createState() => _HeaderState();
+}
+
+class _HeaderState extends State<_Header> {
+  final _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final billingNoticeCount =
-        summary?.contents
+        widget.summary?.contents
             .where(
               (item) =>
                   item.contentType == 'billing_overdue' ||
@@ -140,41 +275,138 @@ class _Header extends StatelessWidget {
             )
             .length ??
         0;
-    final alertCount = summary?.isTechnical == true
-        ? summary?.alerts.length ?? 0
+    final alertCount = widget.summary?.isTechnical == true
+        ? widget.summary?.alerts.length ?? 0
         : billingNoticeCount;
+    final query = _controller.text.trim().toLowerCase();
+    final results = query.isEmpty
+        ? const <String>[]
+        : (widget.searchItems?.call() ?? const <String>[])
+              .where((item) => item.toLowerCase().contains(query))
+              .take(6)
+              .toList();
 
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Início',
-                style: TextStyle(
-                  color: Color(0xFF1D4ED8),
-                  fontSize: 18,
+          child: Padding(
+            padding: const EdgeInsets.only(top: 4, right: 18),
+            child: KeyedSubtree(
+              key: TourTargets.of(context).company,
+              child: Text(
+                widget.companyName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF142B61),
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              const SizedBox(height: 5),
-              Text(
-                summary?.isTechnical == false
-                    ? 'Avisos importantes da sua empresa'
-                    : 'Resumo operacional da PapezzoSync',
-                style: TextStyle(color: Colors.blueGrey.shade500),
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 260,
+          key: TourTargets.of(context).search,
+          child: Column(
+            children: [
+              SizedBox(
+                height: 44,
+                child: TextField(
+                  controller: _controller,
+                  onChanged: (_) => setState(() {}),
+                  onSubmitted: (value) {
+                    final match = results.isEmpty ? null : results.first;
+                    if (match != null) {
+                      widget.onNavigateTo?.call(match);
+                      _controller.clear();
+                      setState(() {});
+                    }
+                  },
+                  decoration: InputDecoration(
+                    hintText: 'Buscar no sistema...',
+                    prefixIcon: const Icon(Icons.search, size: 21),
+                    suffixIcon: query.isEmpty
+                        ? null
+                        : IconButton(
+                            tooltip: 'Limpar busca',
+                            onPressed: () {
+                              _controller.clear();
+                              setState(() {});
+                            },
+                            icon: const Icon(Icons.close, size: 18),
+                          ),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFD9E4F1)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: Color(0xFFD9E4F1)),
+                    ),
+                  ),
+                ),
               ),
+              if (results.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFD9E4F1)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x180F172A),
+                        blurRadius: 12,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      for (final result in results)
+                        InkWell(
+                          onTap: () {
+                            widget.onNavigateTo?.call(result);
+                            _controller.clear();
+                            setState(() {});
+                          },
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 9,
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.search, size: 17),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text(result)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
-        _TopIconButton(icon: Icons.search, onTap: () {}),
+        const SizedBox(width: 8),
+        _TopIconButton(
+          icon: Icons.dashboard_customize_outlined,
+          onTap: widget.onCustomize,
+        ),
         const SizedBox(width: 8),
         _NotificationButton(alertCount: alertCount),
         const SizedBox(width: 8),
         const _VersionPill(),
         const SizedBox(width: 8),
-        _TopIconButton(icon: Icons.refresh, onTap: onRefresh),
+        _TopIconButton(icon: Icons.refresh, onTap: widget.onRefresh),
       ],
     );
   }
@@ -183,15 +415,27 @@ class _Header extends StatelessWidget {
 class _ShowcaseDashboard extends StatelessWidget {
   const _ShowcaseDashboard({
     required this.summary,
-    required this.companyName,
+    required this.session,
     required this.apiBaseUrl,
     required this.onOpenPayment,
+    required this.todaySales,
+    required this.products,
+    required this.receivables,
+    required this.sections,
+    required this.onSectionsReordered,
+    this.onNavigate,
   });
 
   final DashboardSummary summary;
-  final String companyName;
+  final Session session;
   final String apiBaseUrl;
   final VoidCallback onOpenPayment;
+  final List<Sale> todaySales;
+  final List<Product> products;
+  final List<Receivable> receivables;
+  final List<String> sections;
+  final ValueChanged<List<String>> onSectionsReordered;
+  final ValueChanged<String>? onNavigate;
 
   @override
   Widget build(BuildContext context) {
@@ -207,42 +451,1186 @@ class _ShowcaseDashboard extends StatelessWidget {
     final notices = summary.contents
         .where((item) => item.contentType == 'notice')
         .toList();
-    final offers = summary.contents
-        .where(
-          (item) =>
-              item.contentType == 'product' ||
-              item.contentType == 'affiliate_link',
-        )
-        .toList();
     final visibleCertificates = summary.hasFiscalCertificate
         ? <DashboardContent>[]
         : certificates;
-    final topItems = [
-      if (overdue.isNotEmpty) overdue.first,
-      if (overdue.isEmpty && dueBillings.isNotEmpty) dueBillings.first,
-      if (notices.isNotEmpty) notices.first,
-      if (visibleCertificates.isNotEmpty) visibleCertificates.first,
+    final billingItems = [...overdue, ...dueBillings];
+    final dashboardNotices = [...billingItems, ...notices];
+    final salesTotal = todaySales
+        .where((sale) => sale.status != 'cancelada')
+        .fold<double>(0, (total, sale) => total + sale.totalAmount);
+    final lowStock = products.where(_isLowStock).length;
+    final openReceivables = receivables
+        .where((item) => item.balanceAmount > 0.009)
+        .toList();
+    final receivablesTotal = openReceivables.fold<double>(
+      0,
+      (total, item) => total + item.balanceAmount,
+    );
+    final activities = <_ActivityItem>[
+      ...todaySales
+          .take(5)
+          .map(
+            (sale) => _ActivityItem(
+              icon: Icons.shopping_cart_outlined,
+              color: const Color(0xFF059669),
+              title: 'Venda concluída',
+              subtitle:
+                  '${sale.number ?? '#${sale.id}'} - ${_formatMoney(sale.totalAmount)}',
+              date: sale.soldAt,
+            ),
+          ),
+      ...products
+          .where(_isLowStock)
+          .take(3)
+          .map(
+            (product) => _ActivityItem(
+              icon: Icons.inventory_2_outlined,
+              color: const Color(0xFFF59E0B),
+              title: 'Estoque baixo',
+              subtitle:
+                  '${product.name} (Estoque: ${_compactNumber(product.stockQuantity)})',
+            ),
+          ),
     ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _ShowcaseSection(
-          title: companyName,
-          items: topItems,
-          apiBaseUrl: apiBaseUrl,
-          onOpenPayment: onOpenPayment,
-          emptyMessage: 'Nenhum aviso publicado no momento.',
+    final quick = <_QuickAction>[
+      if (session.can('sales:create'))
+        const _QuickAction(
+          'Nova venda',
+          'Registrar venda',
+          'Vendas',
+          Icons.shopping_cart_outlined,
+          Color(0xFF059669),
         ),
-        if (offers.isNotEmpty) ...[
+      if (session.can('products:create'))
+        const _QuickAction(
+          'Cadastrar produto',
+          'Incluir no estoque',
+          'Estoque',
+          Icons.inventory_2_outlined,
+          Color(0xFF2563EB),
+        ),
+      if (session.canUseFiscal && session.can('fiscal:emit'))
+        const _QuickAction(
+          'Emitir NF-e',
+          'Gerar nota fiscal',
+          'Notas fiscais',
+          Icons.description_outlined,
+          Color(0xFF7C3AED),
+        ),
+      if (session.can('clients:view'))
+        const _QuickAction(
+          'Clientes',
+          'Gerenciar clientes',
+          'Clientes',
+          Icons.people_alt_outlined,
+          Color(0xFFD97706),
+        ),
+    ];
+    final hasFinance =
+        session.can('finance:view') || session.can('finance:receivables:view');
+
+    final sectionsById = <String, Widget>{
+      'notices': _DashboardNoticePanel(
+        items: dashboardNotices,
+        onOpenPayment: onOpenPayment,
+      ),
+      'metrics': KeyedSubtree(
+        key: TourTargets.of(context).metrics,
+        child: _DashboardMetricsPanel(
+          salesTotal: salesTotal,
+          receivablesTotal: receivablesTotal,
+          lowStock: lowStock,
+        ),
+      ),
+      'activities': KeyedSubtree(
+        key: TourTargets.of(context).activities,
+        child: _Panel(
+          title: 'Atividades recentes',
+          child: activities.isEmpty
+              ? const Text(
+                  'Nenhuma atividade recente encontrada.',
+                  style: TextStyle(color: Color(0xFF64748B)),
+                )
+              : activities.length >= 3
+              ? SizedBox(
+                  height: 148,
+                  child: ListView.separated(
+                    primary: false,
+                    itemCount: activities.length,
+                    separatorBuilder: (_, _) =>
+                        const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                    itemBuilder: (context, index) =>
+                        _ActivityRow(item: activities[index]),
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (final item in activities) _ActivityRow(item: item),
+                  ],
+                ),
+        ),
+      ),
+      'shortcuts': KeyedSubtree(
+        key: TourTargets.of(context).shortcuts,
+        child: _Panel(
+          title: 'Atalhos rápidos',
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              for (final item in quick)
+                SizedBox(
+                  width: 120,
+                  child: _QuickActionTile(
+                    item: item,
+                    onTap: () => onNavigate?.call(item.destination),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+      'finance': KeyedSubtree(
+        key: TourTargets.of(context).finance,
+        child: hasFinance
+            ? _FinancialSummaryPanel(receivables: receivables)
+            : const SizedBox.shrink(),
+      ),
+    };
+
+    final visibleSections = sections
+        .where((id) => !id.startsWith('!'))
+        .toList();
+    final List<Widget> gridChildren = [
+      for (final sectionId in visibleSections)
+        if (sectionsById[sectionId] case final section?)
+          Padding(
+            key: ValueKey('dashboard-section-$sectionId'),
+            padding: const EdgeInsets.only(bottom: 16),
+            child: Stack(
+              children: [
+                section,
+                const Positioned(
+                  top: 10,
+                  right: 12,
+                  child: IgnorePointer(
+                    child: Icon(
+                      Icons.drag_indicator,
+                      size: 20,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+    ];
+    return Column(
+      children: [
+        ReorderableBuilder<String>(
+          longPressDelay: Duration.zero,
+          enableScrollingWhileDragging: false,
+          feedbackScaleFactor: 1.02,
+          dragChildBoxDecoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x330F172A),
+                blurRadius: 24,
+                offset: Offset(0, 12),
+              ),
+            ],
+          ),
+          onReorder: (reorderedListFunction) {
+            final reordered = reorderedListFunction(visibleSections);
+            reordered.addAll(sections.where((id) => id.startsWith('!')));
+            onSectionsReordered(reordered);
+          },
+          builder: (children) {
+            return LayoutBuilder(
+              builder: (context, constraints) {
+                final compact = constraints.maxWidth < 940;
+                if (compact) {
+                  return Column(children: children);
+                }
+
+                // Use two independent columns instead of a regular grid. A
+                // grid makes the shorter card inherit the height of its row
+                // neighbour, leaving large empty areas below it.
+                final left = <Widget>[];
+                final right = <Widget>[];
+                for (var index = 0; index < children.length; index++) {
+                  (index.isEven ? left : right).add(children[index]);
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: Column(children: left)),
+                    const SizedBox(width: 16),
+                    Expanded(child: Column(children: right)),
+                  ],
+                );
+              },
+            );
+          },
+          children: gridChildren,
+        ),
+        if (visibleCertificates.isNotEmpty) ...[
           const SizedBox(height: 18),
-          _LyncarStoreSection(items: offers, apiBaseUrl: apiBaseUrl),
+          _DashboardSectionHeader(
+            icon: Icons.workspace_premium_outlined,
+            title: 'Recursos para sua empresa',
+            subtitle: 'Serviços disponíveis no seu painel Lyncar.',
+            count: visibleCertificates.length,
+          ),
+          const SizedBox(height: 10),
+          _ShowcaseSection(
+            title: 'Certificados disponíveis',
+            items: visibleCertificates,
+            apiBaseUrl: apiBaseUrl,
+            onOpenPayment: onOpenPayment,
+          ),
         ],
       ],
     );
   }
 }
 
+// ignore: unused_element, unused_element_parameter
+class _DashboardLowerGrid extends StatelessWidget {
+  const _DashboardLowerGrid({
+    required this.session,
+    required this.todaySales,
+    required this.products,
+    required this.receivables,
+    // ignore: unused_element_parameter
+    this.onNavigate,
+  });
+
+  final Session session;
+  final List<Sale> todaySales;
+  final List<Product> products;
+  final List<Receivable> receivables;
+  final ValueChanged<String>? onNavigate;
+
+  @override
+  Widget build(BuildContext context) {
+    final activities = <_ActivityItem>[
+      ...todaySales
+          .take(5)
+          .map(
+            (sale) => _ActivityItem(
+              icon: Icons.shopping_cart_outlined,
+              color: const Color(0xFF059669),
+              title: 'Venda concluída',
+              subtitle:
+                  '${sale.number ?? '#${sale.id}'} - ${_formatMoney(sale.totalAmount)}',
+              date: sale.soldAt,
+            ),
+          ),
+      ...products
+          .where(_isLowStock)
+          .take(3)
+          .map(
+            (product) => _ActivityItem(
+              icon: Icons.inventory_2_outlined,
+              color: const Color(0xFFF59E0B),
+              title: 'Estoque baixo',
+              subtitle:
+                  '${product.name} (Estoque: ${_compactNumber(product.stockQuantity)})',
+            ),
+          ),
+    ];
+    final quick = <_QuickAction>[
+      if (session.can('sales:create'))
+        const _QuickAction(
+          'Nova venda',
+          'Registrar venda',
+          'Vendas',
+          Icons.shopping_cart_outlined,
+          Color(0xFF059669),
+        ),
+      if (session.can('products:create'))
+        const _QuickAction(
+          'Cadastrar produto',
+          'Incluir no estoque',
+          'Estoque',
+          Icons.inventory_2_outlined,
+          Color(0xFF2563EB),
+        ),
+      if (session.canUseFiscal && session.can('fiscal:emit'))
+        const _QuickAction(
+          'Emitir NF-e',
+          'Gerar nota fiscal',
+          'Notas fiscais',
+          Icons.description_outlined,
+          Color(0xFF7C3AED),
+        ),
+      if (session.can('clients:view'))
+        const _QuickAction(
+          'Clientes',
+          'Gerenciar clientes',
+          'Clientes',
+          Icons.people_alt_outlined,
+          Color(0xFFD97706),
+        ),
+    ];
+    final hasFinance =
+        session.can('finance:view') || session.can('finance:receivables:view');
+    final left = KeyedSubtree(
+      key: TourTargets.of(context).activities,
+      child: _Panel(
+        title: 'Atividades recentes',
+        child: activities.isEmpty
+            ? const Text(
+                'Nenhuma atividade recente encontrada.',
+                style: TextStyle(color: Color(0xFF64748B)),
+              )
+            : Column(
+                children: [
+                  for (final item in activities) _ActivityRow(item: item),
+                ],
+              ),
+      ),
+    );
+    final right = Column(
+      children: [
+        if (quick.isNotEmpty)
+          KeyedSubtree(
+            key: TourTargets.of(context).shortcuts,
+            child: _Panel(
+              title: 'Atalhos rápidos',
+              child: Wrap(
+                spacing: 10,
+                runSpacing: 10,
+                children: [
+                  for (final item in quick)
+                    SizedBox(
+                      width: 120,
+                      child: _QuickActionTile(
+                        item: item,
+                        onTap: () => onNavigate?.call(item.destination),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        if (quick.isNotEmpty && hasFinance) const SizedBox(height: 16),
+        if (hasFinance)
+          KeyedSubtree(
+            key: TourTargets.of(context).finance,
+            child: _FinancialSummaryPanel(receivables: receivables),
+          ),
+      ],
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 940) {
+          return Column(children: [left, const SizedBox(height: 16), right]);
+        }
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 3, child: left),
+            const SizedBox(width: 16),
+            Expanded(flex: 2, child: right),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _DashboardCustomizerDialog extends StatefulWidget {
+  const _DashboardCustomizerDialog({required this.initialSections});
+
+  final List<String> initialSections;
+
+  @override
+  State<_DashboardCustomizerDialog> createState() =>
+      _DashboardCustomizerDialogState();
+}
+
+class _DashboardCustomizerDialogState
+    extends State<_DashboardCustomizerDialog> {
+  late List<String> _sections = List<String>.from(widget.initialSections);
+
+  String _idAt(int index) {
+    final value = _sections[index];
+    return value.startsWith('!') ? value.substring(1) : value;
+  }
+
+  bool _isVisible(int index) => !_sections[index].startsWith('!');
+
+  String _label(String id) => switch (id) {
+    'notices' => 'Central de avisos',
+    'metrics' => 'Indicadores do dia',
+    'activities' => 'Atividades recentes',
+    'shortcuts' => 'Atalhos rápidos',
+    'finance' => 'Resumo financeiro',
+    _ => id,
+  };
+
+  IconData _icon(String id) => switch (id) {
+    'notices' => Icons.notifications_active_outlined,
+    'metrics' => Icons.insights_outlined,
+    'activities' => Icons.history_outlined,
+    'shortcuts' => Icons.flash_on_outlined,
+    'finance' => Icons.account_balance_wallet_outlined,
+    _ => Icons.widgets_outlined,
+  };
+
+  void _restoreDefaults() {
+    setState(() => _sections = List<String>.from(_defaultDashboardSections));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Personalizar painel'),
+      content: SizedBox(
+        width: 470,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Arraste para reorganizar. Desative um bloco para removê-lo da tela inicial.',
+              style: TextStyle(color: Color(0xFF64748B)),
+            ),
+            const SizedBox(height: 14),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 330),
+              child: ReorderableListView.builder(
+                shrinkWrap: true,
+                itemCount: _sections.length,
+                buildDefaultDragHandles: false,
+                onReorderItem: (oldIndex, newIndex) {
+                  setState(() {
+                    final item = _sections.removeAt(oldIndex);
+                    _sections.insert(newIndex, item);
+                  });
+                },
+                itemBuilder: (context, index) {
+                  final id = _idAt(index);
+                  return ListTile(
+                    key: ValueKey(_sections[index]),
+                    leading: Icon(_icon(id), color: const Color(0xFF2563EB)),
+                    title: Text(
+                      _label(id),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Switch(
+                          value: _isVisible(index),
+                          onChanged: (value) => setState(() {
+                            _sections[index] = value ? id : '!$id';
+                          }),
+                        ),
+                        ReorderableDragStartListener(
+                          index: index,
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(Icons.drag_handle),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _restoreDefaults,
+          child: const Text('Restaurar padrão'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.of(context).pop(_sections),
+          child: const Text('Salvar'),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActivityItem {
+  const _ActivityItem({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.subtitle,
+    this.date,
+  });
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String subtitle;
+  final DateTime? date;
+}
+
+class _ActivityRow extends StatelessWidget {
+  const _ActivityRow({required this.item});
+  final _ActivityItem item;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 10),
+    child: Row(
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: item.color.withValues(alpha: .1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(9),
+            child: Icon(item.icon, color: item.color, size: 20),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                item.title,
+                style: const TextStyle(
+                  color: Color(0xFF13233B),
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Text(
+                item.subtitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF64748B), fontSize: 12),
+              ),
+            ],
+          ),
+        ),
+        if (item.date != null)
+          Text(
+            _relativeTime(item.date!),
+            style: const TextStyle(color: Color(0xFF71839B), fontSize: 12),
+          ),
+      ],
+    ),
+  );
+}
+
+class _QuickAction {
+  const _QuickAction(
+    this.title,
+    this.subtitle,
+    this.destination,
+    this.icon,
+    this.color,
+  );
+  final String title;
+  final String subtitle;
+  final String destination;
+  final IconData icon;
+  final Color color;
+}
+
+class _QuickActionTile extends StatelessWidget {
+  const _QuickActionTile({required this.item, required this.onTap});
+  final _QuickAction item;
+  final VoidCallback? onTap;
+  @override
+  Widget build(BuildContext context) => Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+        decoration: BoxDecoration(
+          color: item.color.withValues(alpha: .06),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: item.color.withValues(alpha: .18)),
+        ),
+        child: Column(
+          children: [
+            Icon(item.icon, color: item.color, size: 25),
+            const SizedBox(height: 7),
+            Text(
+              item.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF13233B),
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+              ),
+            ),
+            Text(
+              item.subtitle,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Color(0xFF64748B), fontSize: 11),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+class _FinancialSummaryPanel extends StatelessWidget {
+  const _FinancialSummaryPanel({required this.receivables});
+  final List<Receivable> receivables;
+  @override
+  Widget build(BuildContext context) {
+    final open = receivables
+        .where((item) => item.balanceAmount > .009)
+        .toList();
+    final overdue = open
+        .where(
+          (item) =>
+              item.dueDate != null && item.dueDate!.isBefore(DateTime.now()),
+        )
+        .toList();
+    final received = receivables.fold<double>(
+      0,
+      (total, item) => total + item.paidAmount,
+    );
+    return _Panel(
+      title: 'Resumo financeiro',
+      child: Row(
+        children: [
+          Expanded(
+            child: _FinancialValue(
+              label: 'A vencer',
+              value: _formatMoney(
+                open.fold(0, (total, item) => total + item.balanceAmount),
+              ),
+              count: open.length,
+              color: const Color(0xFFD97706),
+            ),
+          ),
+          Expanded(
+            child: _FinancialValue(
+              label: 'Vencido',
+              value: _formatMoney(
+                overdue.fold(0, (total, item) => total + item.balanceAmount),
+              ),
+              count: overdue.length,
+              color: const Color(0xFFDC2626),
+            ),
+          ),
+          Expanded(
+            child: _FinancialValue(
+              label: 'Recebido',
+              value: _formatMoney(received),
+              color: const Color(0xFF059669),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _FinancialValue extends StatelessWidget {
+  const _FinancialValue({
+    required this.label,
+    required this.value,
+    required this.color,
+    this.count,
+  });
+  final String label;
+  final String value;
+  final Color color;
+  final int? count;
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(color: Color(0xFF64748B))),
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Color(0xFF13233B),
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        if (count != null)
+          Text('$count conta(s)', style: TextStyle(color: color, fontSize: 11)),
+      ],
+    ),
+  );
+}
+
+class _DashboardNoticePanel extends StatelessWidget {
+  const _DashboardNoticePanel({
+    required this.items,
+    required this.onOpenPayment,
+  });
+
+  final List<DashboardContent> items;
+  final VoidCallback onOpenPayment;
+
+  @override
+  Widget build(BuildContext context) {
+    final visibleItems = items.take(12).toList();
+    final panel = _Panel(
+      title: 'Central de avisos',
+      child: items.isEmpty
+          ? const Padding(
+              padding: EdgeInsets.symmetric(vertical: 12),
+              child: Text(
+                'Nenhum aviso publicado no momento.',
+                style: TextStyle(color: Color(0xFF64748B)),
+              ),
+            )
+          : visibleItems.length >= 3
+          ? SizedBox(
+              height: 148,
+              child: ListView.separated(
+                primary: false,
+                itemCount: visibleItems.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 10),
+                itemBuilder: (context, index) => _NoticePreviewCard(
+                  item: visibleItems[index],
+                  onOpenPayment: onOpenPayment,
+                ),
+              ),
+            )
+          : Column(
+              children: [
+                for (var index = 0; index < visibleItems.length; index++)
+                  Padding(
+                    padding: EdgeInsets.only(top: index == 0 ? 0 : 10),
+                    child: _NoticePreviewCard(
+                      item: visibleItems[index],
+                      onOpenPayment: onOpenPayment,
+                    ),
+                  ),
+              ],
+            ),
+    );
+    return KeyedSubtree(key: TourTargets.of(context).notices, child: panel);
+  }
+}
+
+class _NoticePreviewCard extends StatelessWidget {
+  const _NoticePreviewCard({required this.item, required this.onOpenPayment});
+
+  final DashboardContent item;
+  final VoidCallback onOpenPayment;
+
+  @override
+  Widget build(BuildContext context) {
+    final overdue = item.contentType == 'billing_overdue';
+    final billing = overdue || item.contentType == 'billing_due';
+    final color = overdue
+        ? const Color(0xFFE11D48)
+        : billing
+        ? const Color(0xFFF59E0B)
+        : const Color(0xFF2563EB);
+    final background = overdue
+        ? const Color(0xFFFFF1F2)
+        : billing
+        ? const Color(0xFFFFFBEB)
+        : const Color(0xFFEFF6FF);
+    final hasAction =
+        billing ||
+        (item.targetUrl != null && item.targetUrl!.trim().isNotEmpty);
+    final onTap = billing
+        ? onOpenPayment
+        : hasAction
+        ? () => redirectToUrl(item.targetUrl!)
+        : null;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: color.withValues(alpha: .22)),
+          ),
+          child: Row(
+            children: [
+              Icon(_iconForDashboardContent(item.contentType), color: color),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF172554),
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    if ((item.description ?? '').trim().isNotEmpty)
+                      Text(
+                        item.description!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF526581),
+                          fontSize: 12,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              if (hasAction) Icon(Icons.chevron_right, color: color),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  IconData _iconForDashboardContent(String type) {
+    return switch (type) {
+      'billing_overdue' => Icons.warning_amber_outlined,
+      'billing_due' => Icons.payments_outlined,
+      _ => Icons.campaign_outlined,
+    };
+  }
+}
+
+class _DashboardMetricsPanel extends StatelessWidget {
+  const _DashboardMetricsPanel({
+    required this.salesTotal,
+    required this.receivablesTotal,
+    required this.lowStock,
+  });
+
+  final double salesTotal;
+  final double receivablesTotal;
+  final int lowStock;
+
+  @override
+  Widget build(BuildContext context) {
+    final metrics = [
+      (
+        'Vendas hoje',
+        _formatMoney(salesTotal),
+        salesTotal == 0
+            ? 'Nenhuma venda registrada hoje'
+            : 'Total vendido no dia',
+        Icons.shopping_cart_outlined,
+        const Color(0xFF059669),
+      ),
+      (
+        'Contas a receber',
+        _formatMoney(receivablesTotal),
+        'Valores em aberto',
+        Icons.account_balance_wallet_outlined,
+        const Color(0xFFD97706),
+      ),
+      (
+        'Estoque baixo',
+        '$lowStock produtos',
+        lowStock == 0 ? 'Estoque em dia' : 'Requer atenção',
+        Icons.inventory_2_outlined,
+        const Color(0xFFDC2626),
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFD9E3F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A102A43),
+            blurRadius: 14,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Use the actual app window for this breakpoint. The reorderable grid
+          // can expose a narrower intermediate constraint while laying out an
+          // item, even when the visible card is wide enough for one row.
+          final compact = MediaQuery.sizeOf(context).width < 900;
+          if (compact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (var index = 0; index < metrics.length; index++) ...[
+                  if (index > 0)
+                    const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  _CompactMetric(item: metrics[index]),
+                ],
+              ],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(child: _CompactMetric(item: metrics[0])),
+              const SizedBox(
+                height: 54,
+                child: VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
+              ),
+              Expanded(child: _CompactMetric(item: metrics[1])),
+              const SizedBox(
+                height: 54,
+                child: VerticalDivider(width: 1, color: Color(0xFFE2E8F0)),
+              ),
+              Expanded(child: _CompactMetric(item: metrics[2])),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _CompactMetric extends StatelessWidget {
+  const _CompactMetric({required this.item});
+
+  final (String, String, String, IconData, Color) item;
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, value, caption, icon, color) = item;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Row(
+        children: [
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(9),
+              child: Icon(icon, color: color, size: 21),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF14213D),
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  caption,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ignore: unused_element
+class _CompanyOverviewCard extends StatelessWidget {
+  const _CompanyOverviewCard({
+    required this.companyName,
+    required this.totalAttentionItems,
+  });
+
+  final String companyName;
+  final int totalAttentionItems;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      key: TourTargets.of(context).company,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: const Color(0xFFD9E4F1)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D102A43),
+            blurRadius: 18,
+            offset: Offset(0, 7),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final identity = Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F1FF),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Icon(
+                  Icons.business_outlined,
+                  color: Color(0xFF1267D6),
+                  size: 30,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Sua empresa',
+                      style: TextStyle(
+                        color: Color(0xFF637793),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      companyName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF10245B),
+                        fontSize: 21,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      totalAttentionItems == 0
+                          ? 'Sua operação está em dia.'
+                          : '$totalAttentionItems item(ns) aguardando sua atenção',
+                      style: const TextStyle(color: Color(0xFF637793)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          );
+          return identity;
+        },
+      ),
+    );
+  }
+}
+
+class _DashboardSectionHeader extends StatelessWidget {
+  const _DashboardSectionHeader({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.count,
+  });
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final int count;
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(icon, color: const Color(0xFF0F7882), size: 24),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF0F172A),
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(subtitle, style: const TextStyle(color: Color(0xFF64748B))),
+          ],
+        ),
+      ),
+      if (count > 0) _CountBadge(count: count),
+    ],
+  );
+}
+
+class _CountBadge extends StatelessWidget {
+  const _CountBadge({required this.count});
+  final int count;
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+    decoration: BoxDecoration(
+      color: const Color(0xFFE0F2F1),
+      borderRadius: BorderRadius.circular(999),
+    ),
+    child: Text(
+      '$count',
+      style: const TextStyle(
+        color: Color(0xFF0F7882),
+        fontWeight: FontWeight.w800,
+      ),
+    ),
+  );
+}
+
+// Kept for the dedicated Loja route, which still reuses these cards.
+// ignore: unused_element
 class _LyncarStoreSection extends StatelessWidget {
   const _LyncarStoreSection({required this.items, required this.apiBaseUrl});
 
@@ -506,27 +1894,64 @@ IconData _storeIconForContent(String type) {
   };
 }
 
+bool _isLowStock(Product product) {
+  return product.active &&
+      product.minimumStock > 0 &&
+      product.stockQuantity <= product.minimumStock;
+}
+
+String _formatMoney(double value) {
+  final fixed = value.toStringAsFixed(2).replaceAll('.', ',');
+  return 'R\$ ${fixed.replaceAllMapped(RegExp(r'(?<=\d)(?=(\d{3})+(?!\d))'), (_) => '.')}';
+}
+
+String _compactNumber(double value) {
+  return value == value.roundToDouble()
+      ? value.toInt().toString()
+      : value.toStringAsFixed(2);
+}
+
+String _relativeTime(DateTime date) {
+  final difference = DateTime.now().difference(date);
+  if (difference.inMinutes < 1) {
+    return 'Agora';
+  }
+  if (difference.inHours < 1) {
+    return 'Há ${difference.inMinutes} min';
+  }
+  if (difference.inDays == 0) {
+    return 'Hoje às ${_twoDigits(date.hour)}:${_twoDigits(date.minute)}';
+  }
+  if (difference.inDays == 1) {
+    return 'Ontem';
+  }
+  return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}';
+}
+
+String _twoDigits(int value) => value.toString().padLeft(2, '0');
+
 class _ShowcaseSection extends StatelessWidget {
   const _ShowcaseSection({
     required this.title,
     required this.items,
     required this.apiBaseUrl,
     required this.onOpenPayment,
-    this.emptyMessage = 'Nenhum aviso cadastrado no momento.',
   });
 
   final String title;
   final List<DashboardContent> items;
   final String apiBaseUrl;
   final VoidCallback onOpenPayment;
-  final String emptyMessage;
 
   @override
   Widget build(BuildContext context) {
     return _Panel(
       title: title,
       child: items.isEmpty
-          ? Text(emptyMessage, style: const TextStyle(color: Color(0xFF64748B)))
+          ? const Text(
+              'Nenhum aviso cadastrado no momento.',
+              style: TextStyle(color: Color(0xFF64748B)),
+            )
           : LayoutBuilder(
               builder: (context, constraints) {
                 final columns = constraints.maxWidth >= 1000
