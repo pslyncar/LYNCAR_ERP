@@ -109,6 +109,25 @@ def _ensure_unique_gtin(db: Session, barcode: str | None, product_id: int | None
         )
 
 
+def _ensure_unique_internal_code(
+    db: Session,
+    internal_code: str | None,
+    product_id: int | None = None,
+) -> None:
+    code = (internal_code or '').strip()
+    if not code:
+        return
+    query = select(Product).where(Product.internal_code == code)
+    if product_id is not None:
+        query = query.where(Product.id != product_id)
+    existing = db.scalar(query)
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Código interno já cadastrado no produto: {existing.name}.",
+        )
+
+
 def _validate_offer_period(data: dict) -> None:
     start_at = data.get("offer_start_at")
     end_at = data.get("offer_end_at")
@@ -172,8 +191,10 @@ def create_product(
     current_user: User = Depends(require_permission("products:create")),
 ) -> Product:
     data = product_in.model_dump()
+    data['internal_code'] = (data.get('internal_code') or '').strip() or None
     data["barcode"] = _normalize_gtin(data.get("barcode"))
     data["purchase_package_barcode"] = _normalize_gtin(data.get("purchase_package_barcode"))
+    _ensure_unique_internal_code(db, data.get('internal_code'))
     _ensure_unique_gtin(db, data.get("barcode"))
     _ensure_unique_gtin(db, data.get("purchase_package_barcode"))
     _validate_offer_period(data)
@@ -719,6 +740,9 @@ def update_product(
             ),
         )
     old_image_url = product.image_url
+    if "internal_code" in update_data:
+        update_data["internal_code"] = (update_data.get("internal_code") or "").strip() or None
+        _ensure_unique_internal_code(db, update_data.get("internal_code"), product_id=product.id)
     if "barcode" in update_data:
         update_data["barcode"] = _normalize_gtin(update_data.get("barcode"))
         _ensure_unique_gtin(db, update_data.get("barcode"), product_id=product.id)
