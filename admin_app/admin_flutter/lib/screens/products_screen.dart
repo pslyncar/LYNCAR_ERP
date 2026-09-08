@@ -22,7 +22,7 @@ Future<bool> showProductEditorDialog(
   BuildContext context, {
   required ApiClient api,
   required String token,
-  required Product product,
+  Product? product,
 }) async {
   return await showDialog<bool>(
         context: context,
@@ -2376,6 +2376,7 @@ class _ProductDialogState extends State<_ProductDialog> {
   bool _syncingPrices = false;
   bool _manualCostEditEnabled = false;
   bool _loadingFiscalAssistant = false;
+  int _editorTab = 0;
   FiscalAssistantResponse? _fiscalAssistant;
   String? _error;
 
@@ -2897,326 +2898,353 @@ class _ProductDialogState extends State<_ProductDialog> {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  _Section('Dados principais'),
-                  _Fields(
-                    children: [
-                      _field(_name, 'Nome', required: true),
-                      DropdownButtonFormField<String>(
-                        initialValue: _productType,
-                        decoration: const InputDecoration(
-                          labelText: 'Tipo',
-                          border: OutlineInputBorder(),
-                        ),
-                        items: [
-                          for (final entry in _productTypes.entries)
-                            DropdownMenuItem(
-                              value: entry.key,
-                              child: Text(entry.value),
-                            ),
-                        ],
-                        onChanged: (value) =>
-                            setState(() => _productType = value ?? 'produto'),
-                      ),
-                      _field(_internalCode, 'Código interno'),
-                      _field(_barcode, 'Código da unidade / EAN de venda'),
-                      _field(_brand, 'Marca'),
-                      _field(_model, 'Modelo'),
-                      _field(_category, 'Categoria'),
-                      _field(_stockLocation, 'Localizacao no estoque'),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _ImagePickerPanel(
-                    title: 'Foto do produto',
-                    imageUrl: _imageUrl.text,
-                    apiBaseUrl: widget.api.baseUrl,
-                    uploading: _uploadingImage,
-                    onPick: _saving || _uploadingImage
-                        ? null
-                        : _pickProductImage,
-                    onClear: _saving
-                        ? null
-                        : () => setState(() => _imageUrl.clear()),
-                  ),
-                  if (_error != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _error!,
-                      style: const TextStyle(
-                        color: Color(0xFFB91C1C),
-                        fontWeight: FontWeight.w700,
-                      ),
+                  DefaultTabController(
+                    length: 3,
+                    child: TabBar(
+                      onTap: (value) => setState(() => _editorTab = value),
+                      tabs: const [
+                        Tab(text: 'Geral'),
+                        Tab(text: 'Estoque e preços'),
+                        Tab(text: 'Fiscal e tributário'),
+                      ],
                     ),
-                  ],
-                  const SizedBox(height: 12),
-                  _area(_description, 'Descricao'),
-                  const SizedBox(height: 16),
-                  _Section('Estoque e preços'),
-                  _Fields(
-                    children: [
-                      _unitDropdown(),
-                      if (widget.product == null)
-                        _field(
-                          _stockQuantity,
-                          'Estoque inicial',
-                          number: true,
-                          helperText:
-                              'Depois do cadastro, use Ajustar estoque para qualquer correção de saldo.',
-                        )
-                      else
-                        _readOnlyField(
-                          _stockQuantity,
-                          'Saldo atual',
-                          helperText:
-                              'O saldo é protegido. Ajustes ficam registrados no histórico do estoque.',
-                          locked: true,
-                        ),
-                      _field(_minimumStock, 'Estoque minimo', number: true),
-                      _field(
-                        _purchaseTotalCost,
-                        'Valor total da última compra',
-                        number: true,
-                        money: true,
-                        focusNode: _costFocus,
-                        readOnly: !_manualCostEditEnabled,
-                        helperText: _manualCostEditEnabled
-                            ? 'Correcao manual liberada. As proximas entradas voltam a atualizar este valor.'
-                            : 'Vem da nota/entrada. Clique para liberar correcao manual.',
-                        onTap: _manualCostEditEnabled
-                            ? null
-                            : _confirmManualCostEdit,
-                      ),
-                      _field(
-                        _purchaseQuantity,
-                        'Quantidade recebida na última compra',
-                        number: true,
-                        readOnly: !_manualCostEditEnabled,
-                        helperText: _manualCostEditEnabled
-                            ? 'Informe a quantidade correta que entrou no estoque.'
-                            : 'Vem da nota/entrada. Clique para liberar correcao manual.',
-                        onTap: _manualCostEditEnabled
-                            ? null
-                            : _confirmManualCostEdit,
-                      ),
-                      _readOnlyField(
-                        _lastPurchaseUnitCost,
-                        'Custo unitário da última compra',
-                        helperText: _manualCostEditEnabled
-                            ? 'Correcao manual liberada. Ajuste total/quantidade se precisar alterar o unitario.'
-                            : 'Calculado pela nota/entrada. Clique para liberar correcao manual.',
-                        locked: !_manualCostEditEnabled,
-                        focusNode: _unitCostFocus,
-                        onTap: _manualCostEditEnabled
-                            ? null
-                            : _confirmManualCostEdit,
-                      ),
-                      _readOnlyField(
-                        _averageCost,
-                        'Custo médio atual',
-                        helperText: _manualCostEditEnabled
-                            ? 'Correcao manual liberada. Proximas entradas recalculam a media normalmente.'
-                            : 'Media ponderada das entradas. Clique para liberar correcao manual.',
-                        locked: !_manualCostEditEnabled,
-                        focusNode: _averageCostFocus,
-                        onTap: _manualCostEditEnabled
-                            ? null
-                            : _confirmManualCostEdit,
-                      ),
-                      _field(
-                        _salePrice,
-                        'Venda',
-                        number: true,
-                        unitPrice: true,
-                        focusNode: _saleFocus,
-                      ),
-                      _field(
-                        _marginPercent,
-                        'Margem %',
-                        number: true,
-                        focusNode: _marginFocus,
-                      ),
-                    ],
                   ),
-                  if (widget.product != null) ...[
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEFF6FF),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFBFDBFE)),
-                      ),
-                      child: Wrap(
-                        spacing: 18,
-                        runSpacing: 8,
-                        children: [
-                          _FiscalStockInfo(
-                            label: 'Entrou com nota',
-                            value:
-                                '${_number(widget.product!.fiscalReceivedQuantity)} ${widget.product!.unit}',
-                          ),
-                          _FiscalStockInfo(
-                            label: 'Ja usado em notas',
-                            value:
-                                '${_number(widget.product!.fiscalIssuedQuantity)} ${widget.product!.unit}',
-                          ),
-                          _FiscalStockInfo(
-                            label: 'Disponivel para emitir',
-                            value:
-                                '${_number(widget.product!.fiscalAvailableQuantity)} ${widget.product!.unit}',
-                          ),
-                          _FiscalStockInfo(
-                            label: 'Notas/entradas',
-                            value: '${widget.product!.fiscalEntryCount}',
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text(
-                      'Converter pacote/embalagem da nota para unidade de estoque',
-                    ),
-                    subtitle: const Text(
-                      'Deixe cadastrado quando o fornecedor manda 1 pacote/caixa/embalagem, mas o estoque e a venda controlam por unidade.',
-                    ),
-                    value: _purchaseConversionEnabled,
-                    onChanged: (value) =>
-                        setState(() => _purchaseConversionEnabled = value),
-                  ),
-                  if (_purchaseConversionEnabled) ...[
+                  const SizedBox(height: 20),
+                  if (_editorTab == 0) ...[
+                    _Section('Dados principais'),
                     _Fields(
                       children: [
+                        _field(_name, 'Nome', required: true),
                         DropdownButtonFormField<String>(
-                          initialValue:
-                              _unitOptions.containsKey(_purchaseInvoiceUnit)
-                              ? _purchaseInvoiceUnit
-                              : 'pc',
+                          initialValue: _productType,
                           decoration: const InputDecoration(
-                            labelText: 'Unidade que vem na nota/XML',
+                            labelText: 'Tipo',
                             border: OutlineInputBorder(),
                           ),
                           items: [
-                            for (final entry in _unitOptions.entries)
+                            for (final entry in _productTypes.entries)
                               DropdownMenuItem(
                                 value: entry.key,
-                                child: Text('${entry.key} - ${entry.value}'),
+                                child: Text(entry.value),
                               ),
                           ],
-                          onChanged: (value) => setState(
-                            () => _purchaseInvoiceUnit = value ?? 'pc',
-                          ),
+                          onChanged: (value) =>
+                              setState(() => _productType = value ?? 'produto'),
                         ),
-                        _field(
-                          _purchasePackageFactor,
-                          'Unidades por pacote/embalagem',
-                          number: true,
-                        ),
-                        _field(
-                          _purchasePackageBarcode,
-                          'Código do pacote/caixa/embalagem',
-                        ),
+                        _field(_internalCode, 'Código interno'),
+                        _field(_barcode, 'Código da unidade / EAN de venda'),
+                        _field(_brand, 'Marca'),
+                        _field(_model, 'Modelo'),
+                        _field(_category, 'Categoria'),
+                        _field(_stockLocation, 'Localizacao no estoque'),
                       ],
                     ),
-                    const Padding(
-                      padding: EdgeInsets.only(top: 4, bottom: 8),
-                      child: Text(
-                        'Exemplo: se a nota vem 1 eb e dentro entram 45 un, deixe unidade da nota = eb e fator = 45. Se amanhã mudar para 50, altere aqui; os próximos recebimentos já puxam o novo padrão.',
-                        style: TextStyle(color: Color(0xFF64748B)),
+                    const SizedBox(height: 12),
+                    _ImagePickerPanel(
+                      title: 'Foto do produto',
+                      imageUrl: _imageUrl.text,
+                      apiBaseUrl: widget.api.baseUrl,
+                      uploading: _uploadingImage,
+                      onPick: _saving || _uploadingImage
+                          ? null
+                          : _pickProductImage,
+                      onClear: _saving
+                          ? null
+                          : () => setState(() => _imageUrl.clear()),
+                    ),
+                    if (_error != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        _error!,
+                        style: const TextStyle(
+                          color: Color(0xFFB91C1C),
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
+                    ],
+                    const SizedBox(height: 16),
+                    _Section('Informações adicionais'),
+                    _area(_description, 'Descrição'),
                   ],
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Controla lote e validade'),
-                    subtitle: const Text(
-                      'Use para alimentos, mercado, farmacia, cosmeticos e itens com vencimento.',
-                    ),
-                    value: _tracksBatch,
-                    onChanged: (value) => setState(() => _tracksBatch = value),
-                  ),
-                  if (_tracksBatch)
+                  const SizedBox(height: 16),
+                  if (_editorTab == 1) ...[
+                    _Section('Estoque e preços'),
                     _Fields(
                       children: [
-                        _field(_initialBatchNumber, 'Lote inicial'),
-                        _dateField(_initialExpirationDate, 'Validade inicial'),
+                        _unitDropdown(),
+                        if (widget.product == null)
+                          _field(
+                            _stockQuantity,
+                            'Estoque inicial',
+                            number: true,
+                            helperText:
+                                'Depois do cadastro, use Ajustar estoque para qualquer correção de saldo.',
+                          )
+                        else
+                          _readOnlyField(
+                            _stockQuantity,
+                            'Saldo atual',
+                            helperText:
+                                'O saldo é protegido. Ajustes ficam registrados no histórico do estoque.',
+                            locked: true,
+                          ),
+                        _field(_minimumStock, 'Estoque minimo', number: true),
+                        _field(
+                          _purchaseTotalCost,
+                          'Valor total da última compra',
+                          number: true,
+                          money: true,
+                          focusNode: _costFocus,
+                          readOnly: !_manualCostEditEnabled,
+                          helperText: _manualCostEditEnabled
+                              ? 'Correcao manual liberada. As proximas entradas voltam a atualizar este valor.'
+                              : 'Vem da nota/entrada. Clique para liberar correcao manual.',
+                          onTap: _manualCostEditEnabled
+                              ? null
+                              : _confirmManualCostEdit,
+                        ),
+                        _field(
+                          _purchaseQuantity,
+                          'Quantidade recebida na última compra',
+                          number: true,
+                          readOnly: !_manualCostEditEnabled,
+                          helperText: _manualCostEditEnabled
+                              ? 'Informe a quantidade correta que entrou no estoque.'
+                              : 'Vem da nota/entrada. Clique para liberar correcao manual.',
+                          onTap: _manualCostEditEnabled
+                              ? null
+                              : _confirmManualCostEdit,
+                        ),
+                        _readOnlyField(
+                          _lastPurchaseUnitCost,
+                          'Custo unitário da última compra',
+                          helperText: _manualCostEditEnabled
+                              ? 'Correcao manual liberada. Ajuste total/quantidade se precisar alterar o unitario.'
+                              : 'Calculado pela nota/entrada. Clique para liberar correcao manual.',
+                          locked: !_manualCostEditEnabled,
+                          focusNode: _unitCostFocus,
+                          onTap: _manualCostEditEnabled
+                              ? null
+                              : _confirmManualCostEdit,
+                        ),
+                        _readOnlyField(
+                          _averageCost,
+                          'Custo médio atual',
+                          helperText: _manualCostEditEnabled
+                              ? 'Correcao manual liberada. Proximas entradas recalculam a media normalmente.'
+                              : 'Media ponderada das entradas. Clique para liberar correcao manual.',
+                          locked: !_manualCostEditEnabled,
+                          focusNode: _averageCostFocus,
+                          onTap: _manualCostEditEnabled
+                              ? null
+                              : _confirmManualCostEdit,
+                        ),
+                        _field(
+                          _salePrice,
+                          'Venda',
+                          number: true,
+                          unitPrice: true,
+                          focusNode: _saleFocus,
+                        ),
+                        _field(
+                          _marginPercent,
+                          'Margem %',
+                          number: true,
+                          focusNode: _marginFocus,
+                        ),
                       ],
                     ),
-                  const SizedBox(height: 16),
-                  _Section('Fiscal atual'),
-                  _fiscalAssistantPanel(),
-                  const SizedBox(height: 12),
-                  _Fields(
-                    children: [
-                      _field(
-                        _ncm,
-                        'NCM',
-                        helperText:
-                            'Normalmente vem do XML. Base completa oficial deve ser consultada por tabela/API NCM.',
-                      ),
-                      _field(
-                        _cest,
-                        'CEST',
-                        helperText:
-                            'Use quando houver substituicao tributaria conforme regra fiscal do produto.',
-                      ),
-                      _catalogDropdown(
-                        _cfopSale,
-                        'CFOP venda',
-                        _cfopSaleOptions,
-                      ),
-                      _catalogDropdown(_origin, 'Origem', _fiscalOrigins),
-                      _catalogDropdown(_cst, 'CST ICMS', _icmsCstOptions),
-                      _catalogDropdown(_csosn, 'CSOSN', _csosnOptions),
-                      _field(_icmsRate, 'ICMS %', number: true),
-                      _field(_pisRate, 'PIS %', number: true),
-                      _field(_cofinsRate, 'COFINS %', number: true),
-                      _field(_ipiRate, 'IPI %', number: true),
-                      _field(_issRate, 'ISS %', number: true),
-                      _field(_municipalServiceCode, 'Código servico municipal'),
-                      _field(
-                        _taxRate,
-                        'Aliquota fiscal padrao %',
-                        number: true,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  _area(_fiscalNotes, 'Observações fiscais'),
-                  const SizedBox(height: 16),
-                  _Section('Reforma Tributaria - IBS/CBS/IS'),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Preparado para novo regime IBS/CBS'),
-                    value: _newTaxSystem,
-                    onChanged: (value) => setState(() => _newTaxSystem = value),
-                  ),
-                  _Fields(
-                    children: [
-                      _catalogDropdown(
-                        _ibsCbsCst,
-                        'CST IBS/CBS',
-                        _ibsCbsCstOptions,
-                      ),
-                      _field(_ibsCbsClassification, 'cClassTrib'),
-                      _field(_cbsRate, 'CBS %', number: true),
-                      _field(_ibsStateRate, 'IBS estadual %', number: true),
-                      _field(_ibsCityRate, 'IBS municipal %', number: true),
-                      _field(_selectiveTaxCst, 'CST IS'),
-                      _field(_selectiveTaxClassification, 'cClassTrib IS'),
-                      _field(
-                        _selectiveTaxRate,
-                        'Imposto Seletivo %',
-                        number: true,
+                    if (widget.product != null) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFEFF6FF),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFBFDBFE)),
+                        ),
+                        child: Wrap(
+                          spacing: 18,
+                          runSpacing: 8,
+                          children: [
+                            _FiscalStockInfo(
+                              label: 'Entrou com nota',
+                              value:
+                                  '${_number(widget.product!.fiscalReceivedQuantity)} ${widget.product!.unit}',
+                            ),
+                            _FiscalStockInfo(
+                              label: 'Ja usado em notas',
+                              value:
+                                  '${_number(widget.product!.fiscalIssuedQuantity)} ${widget.product!.unit}',
+                            ),
+                            _FiscalStockInfo(
+                              label: 'Disponivel para emitir',
+                              value:
+                                  '${_number(widget.product!.fiscalAvailableQuantity)} ${widget.product!.unit}',
+                            ),
+                            _FiscalStockInfo(
+                              label: 'Notas/entradas',
+                              value: '${widget.product!.fiscalEntryCount}',
+                            ),
+                          ],
+                        ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-                  _area(_oldTaxSystemNotes, 'Notas regra antiga/transicao'),
-                  const SizedBox(height: 12),
-                  _area(_newTaxSystemNotes, 'Notas regra nova IBS/CBS/IS'),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text(
+                        'Converter pacote/embalagem da nota para unidade de estoque',
+                      ),
+                      subtitle: const Text(
+                        'Deixe cadastrado quando o fornecedor manda 1 pacote/caixa/embalagem, mas o estoque e a venda controlam por unidade.',
+                      ),
+                      value: _purchaseConversionEnabled,
+                      onChanged: (value) =>
+                          setState(() => _purchaseConversionEnabled = value),
+                    ),
+                    if (_purchaseConversionEnabled) ...[
+                      _Fields(
+                        children: [
+                          DropdownButtonFormField<String>(
+                            initialValue:
+                                _unitOptions.containsKey(_purchaseInvoiceUnit)
+                                ? _purchaseInvoiceUnit
+                                : 'pc',
+                            decoration: const InputDecoration(
+                              labelText: 'Unidade que vem na nota/XML',
+                              border: OutlineInputBorder(),
+                            ),
+                            items: [
+                              for (final entry in _unitOptions.entries)
+                                DropdownMenuItem(
+                                  value: entry.key,
+                                  child: Text('${entry.key} - ${entry.value}'),
+                                ),
+                            ],
+                            onChanged: (value) => setState(
+                              () => _purchaseInvoiceUnit = value ?? 'pc',
+                            ),
+                          ),
+                          _field(
+                            _purchasePackageFactor,
+                            'Unidades por pacote/embalagem',
+                            number: true,
+                          ),
+                          _field(
+                            _purchasePackageBarcode,
+                            'Código do pacote/caixa/embalagem',
+                          ),
+                        ],
+                      ),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 4, bottom: 8),
+                        child: Text(
+                          'Exemplo: se a nota vem 1 eb e dentro entram 45 un, deixe unidade da nota = eb e fator = 45. Se amanhã mudar para 50, altere aqui; os próximos recebimentos já puxam o novo padrão.',
+                          style: TextStyle(color: Color(0xFF64748B)),
+                        ),
+                      ),
+                    ],
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Controla lote e validade'),
+                      subtitle: const Text(
+                        'Use para alimentos, mercado, farmacia, cosmeticos e itens com vencimento.',
+                      ),
+                      value: _tracksBatch,
+                      onChanged: (value) =>
+                          setState(() => _tracksBatch = value),
+                    ),
+                    if (_tracksBatch)
+                      _Fields(
+                        children: [
+                          _field(_initialBatchNumber, 'Lote inicial'),
+                          _dateField(
+                            _initialExpirationDate,
+                            'Validade inicial',
+                          ),
+                        ],
+                      ),
+                  ],
+                  const SizedBox(height: 16),
+                  if (_editorTab == 2) ...[
+                    _Section('Fiscal atual'),
+                    _fiscalAssistantPanel(),
+                    const SizedBox(height: 12),
+                    _Fields(
+                      children: [
+                        _field(
+                          _ncm,
+                          'NCM',
+                          helperText:
+                              'Normalmente vem do XML. Base completa oficial deve ser consultada por tabela/API NCM.',
+                        ),
+                        _field(
+                          _cest,
+                          'CEST',
+                          helperText:
+                              'Use quando houver substituicao tributaria conforme regra fiscal do produto.',
+                        ),
+                        _catalogDropdown(
+                          _cfopSale,
+                          'CFOP venda',
+                          _cfopSaleOptions,
+                        ),
+                        _catalogDropdown(_origin, 'Origem', _fiscalOrigins),
+                        _catalogDropdown(_cst, 'CST ICMS', _icmsCstOptions),
+                        _catalogDropdown(_csosn, 'CSOSN', _csosnOptions),
+                        _field(_icmsRate, 'ICMS %', number: true),
+                        _field(_pisRate, 'PIS %', number: true),
+                        _field(_cofinsRate, 'COFINS %', number: true),
+                        _field(_ipiRate, 'IPI %', number: true),
+                        _field(_issRate, 'ISS %', number: true),
+                        _field(
+                          _municipalServiceCode,
+                          'Código servico municipal',
+                        ),
+                        _field(
+                          _taxRate,
+                          'Aliquota fiscal padrao %',
+                          number: true,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _area(_fiscalNotes, 'Observações fiscais'),
+                    const SizedBox(height: 16),
+                    _Section('Reforma Tributaria - IBS/CBS/IS'),
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Preparado para novo regime IBS/CBS'),
+                      value: _newTaxSystem,
+                      onChanged: (value) =>
+                          setState(() => _newTaxSystem = value),
+                    ),
+                    _Fields(
+                      children: [
+                        _catalogDropdown(
+                          _ibsCbsCst,
+                          'CST IBS/CBS',
+                          _ibsCbsCstOptions,
+                        ),
+                        _field(_ibsCbsClassification, 'cClassTrib'),
+                        _field(_cbsRate, 'CBS %', number: true),
+                        _field(_ibsStateRate, 'IBS estadual %', number: true),
+                        _field(_ibsCityRate, 'IBS municipal %', number: true),
+                        _field(_selectiveTaxCst, 'CST IS'),
+                        _field(_selectiveTaxClassification, 'cClassTrib IS'),
+                        _field(
+                          _selectiveTaxRate,
+                          'Imposto Seletivo %',
+                          number: true,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    _area(_oldTaxSystemNotes, 'Notas regra antiga/transicao'),
+                    const SizedBox(height: 12),
+                    _area(_newTaxSystemNotes, 'Notas regra nova IBS/CBS/IS'),
+                  ],
                   if (_error != null) ...[
                     const SizedBox(height: 12),
                     Text(
@@ -3596,11 +3624,22 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 4, bottom: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 15),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F8FE),
+        border: Border.all(color: const Color(0xFFD7E6F7)),
+        borderRadius: BorderRadius.circular(14),
+      ),
       child: Text(
         title,
-        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
+        style: const TextStyle(
+          color: Color(0xFF173B70),
+          fontSize: 24,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }

@@ -29,7 +29,7 @@ import 'marketplaces_screen.dart';
 import 'pdv_operators_screen.dart';
 import 'pdv_screen.dart';
 import 'pdv_terminals_screen.dart';
-import 'products_screen.dart';
+import 'inventory_screen.dart';
 import 'production_orders_screen.dart';
 import 'promotions_screen.dart';
 import 'reports_screen.dart';
@@ -409,7 +409,7 @@ class _AppShellState extends State<AppShell> {
             label: 'Estoque',
             icon: Icons.inventory_2_outlined,
             selectedIcon: Icons.inventory_2,
-            screen: ProductsScreen(session: widget.session),
+            screen: InventoryScreen(session: widget.session),
           ),
         if (widget.session.hasModule('product_promotions') &&
             widget.session.can('products:promotions'))
