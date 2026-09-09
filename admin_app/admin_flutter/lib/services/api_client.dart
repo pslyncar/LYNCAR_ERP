@@ -21,6 +21,7 @@ import '../models/monitoring_snapshot.dart';
 import '../models/payable.dart';
 import '../models/payment_setting.dart';
 import '../models/master_finance_setting.dart';
+import '../models/master_email_setting.dart';
 import '../models/pdv_operator.dart';
 import '../models/pdv_sync.dart';
 import '../models/pdv_terminal.dart';
@@ -3080,6 +3081,26 @@ class ApiClient {
       if (token.isNotEmpty) 'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
     };
+  }
+
+  Future<MasterEmailSetting> getMasterEmailSetting(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/master/email-settings'),
+      headers: _authHeaders(token),
+    );
+    return MasterEmailSetting.fromJson(_decodeResponse(response));
+  }
+
+  Future<MasterEmailSetting> updateMasterEmailSetting(
+    String token,
+    MasterEmailSettingInput input,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/master/email-settings'),
+      headers: _authHeaders(token),
+      body: jsonEncode(input.toJson()),
+    );
+    return MasterEmailSetting.fromJson(_decodeResponse(response));
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {

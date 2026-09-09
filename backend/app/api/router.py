@@ -15,6 +15,7 @@ from app.api.routes import (
     master_contact_requests,
     master_access,
     master_integrations,
+    master_email,
     master_plans,
     master_companies,
     monitoring,
@@ -55,6 +56,7 @@ api_router.include_router(master_billing.router, prefix="/master", tags=["master
 api_router.include_router(master_contact_requests.router, prefix="/master", tags=["master"])
 api_router.include_router(master_access.router, prefix="/master", tags=["master"])
 api_router.include_router(master_integrations.router, prefix="/master", tags=["master"])
+api_router.include_router(master_email.router, prefix="/master", tags=["master"])
 api_router.include_router(master_plans.router, prefix="/master", tags=["master"])
 api_router.include_router(master_segments.router, prefix="/master", tags=["master"])
 api_router.include_router(master_payment_settings.router, prefix="/master", tags=["master"])

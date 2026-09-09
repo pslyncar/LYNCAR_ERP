@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials
@@ -24,7 +25,10 @@ from app.schemas.dashboard import (
     DashboardSummaryRead,
 )
 from app.schemas.company_billing import CompanyBillingRead
-from app.services.company_billing import pending_billing_for_dashboard
+from app.services.company_billing import (
+    apply_overdue_charges_for_company_in_session,
+    pending_billing_for_dashboard,
+)
 from app.services.mercado_pago import create_pix_for_billing
 from app.services.tenancy import company_code_from_token_claims
 
@@ -47,6 +51,11 @@ def _tenant_company_code(
 
 
 def billing_read(row: CompanyBilling) -> CompanyBillingRead:
+    amount = Decimal(str(row.amount or 0))
+    interest = Decimal(str(row.interest_amount or 0))
+    late_fee = Decimal(str(row.late_fee_amount or 0))
+    correction = Decimal(str(getattr(row, "monetary_correction_amount", 0) or 0))
+    waived = Decimal(str(row.waived_amount or 0))
     return CompanyBillingRead(
         id=row.id,
         company_id=row.company_id,
@@ -54,7 +63,15 @@ def billing_read(row: CompanyBilling) -> CompanyBillingRead:
         company_name=row.company.name,
         reference_month=row.reference_month,
         due_date=row.due_date,
-        amount=row.amount,
+        amount=amount,
+        interest_amount=interest,
+        late_fee_amount=late_fee,
+        monetary_correction_amount=correction,
+        waived_amount=waived,
+        total_due=amount + interest + late_fee + correction - waived,
+        waived_at=row.waived_at,
+        waived_by=row.waived_by,
+        waiver_reason=row.waiver_reason,
         payment_method=row.payment_method,
         status=row.status,
         paid_at=row.paid_at,
@@ -317,6 +334,11 @@ def sync_dashboard_billing_payment(
             raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
         if billing.company_id != company.id:
             raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
+        # Recalculate charges on every polling cycle so an open Pix dialog
+        # also updates when the due date or grace period is crossed.
+        apply_overdue_charges_for_company_in_session(master_db, company)
+        if not billing.mercado_pago_payment_id or not billing.pix_qr_code:
+            create_pix_for_billing(master_db, billing)
         if billing.mercado_pago_payment_id:
             payment = get_payment(billing.mercado_pago_payment_id)
             apply_payment_status(master_db, payment)

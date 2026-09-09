@@ -101,6 +101,7 @@ def create_pix_for_billing(db: Session, billing: CompanyBilling) -> CompanyBilli
         Decimal(str(billing.amount))
         + Decimal(str(getattr(billing, "interest_amount", 0) or 0))
         + Decimal(str(getattr(billing, "late_fee_amount", 0) or 0))
+        + Decimal(str(getattr(billing, "monetary_correction_amount", 0) or 0))
         - Decimal(str(getattr(billing, "waived_amount", 0) or 0))
     ).quantize(Decimal("0.01"))
     payload = {

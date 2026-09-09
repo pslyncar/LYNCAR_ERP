@@ -9,6 +9,7 @@ class CompanyBilling {
     required this.amount,
     this.interestAmount = 0,
     this.lateFeeAmount = 0,
+    this.monetaryCorrectionAmount = 0,
     this.waivedAmount = 0,
     this.totalDue,
     this.paymentMethod,
@@ -35,6 +36,7 @@ class CompanyBilling {
   final double amount;
   final double interestAmount;
   final double lateFeeAmount;
+  final double monetaryCorrectionAmount;
   final double waivedAmount;
   final double? totalDue;
   final String? paymentMethod;
@@ -68,6 +70,8 @@ class CompanyBilling {
       amount: double.parse(json['amount'].toString()),
       interestAmount: double.tryParse('${json['interest_amount'] ?? 0}') ?? 0,
       lateFeeAmount: double.tryParse('${json['late_fee_amount'] ?? 0}') ?? 0,
+      monetaryCorrectionAmount:
+          double.tryParse('${json['monetary_correction_amount'] ?? 0}') ?? 0,
       waivedAmount: double.tryParse('${json['waived_amount'] ?? 0}') ?? 0,
       totalDue: json['total_due'] == null
           ? null

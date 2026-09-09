@@ -1238,14 +1238,32 @@ class _DashboardNoticePanel extends StatelessWidget {
   }
 }
 
-class _NoticePreviewCard extends StatelessWidget {
+class _NoticePreviewCard extends StatefulWidget {
   const _NoticePreviewCard({required this.item, required this.onOpenPayment});
 
   final DashboardContent item;
   final VoidCallback onOpenPayment;
 
   @override
+  State<_NoticePreviewCard> createState() => _NoticePreviewCardState();
+}
+
+class _NoticePreviewCardState extends State<_NoticePreviewCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
     final overdue = item.contentType == 'billing_overdue';
     final billing = overdue || item.contentType == 'billing_due';
     final color = overdue
@@ -1262,58 +1280,80 @@ class _NoticePreviewCard extends StatelessWidget {
         billing ||
         (item.targetUrl != null && item.targetUrl!.trim().isNotEmpty);
     final onTap = billing
-        ? onOpenPayment
+        ? widget.onOpenPayment
         : hasAction
         ? () => redirectToUrl(item.targetUrl!)
         : null;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: background,
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        final pulse = overdue ? _pulse.value : 0.0;
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: color.withValues(alpha: .22)),
-          ),
-          child: Row(
-            children: [
-              Icon(_iconForDashboardContent(item.contentType), color: color),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      item.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF172554),
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    if ((item.description ?? '').trim().isNotEmpty)
-                      Text(
-                        item.description!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF526581),
-                          fontSize: 12,
-                        ),
-                      ),
-                  ],
+            child: Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: background,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: overdue
+                      ? color.withValues(alpha: .28 + pulse * .42)
+                      : color.withValues(alpha: .22),
+                  width: overdue ? 1.5 : 1,
                 ),
+                boxShadow: overdue
+                    ? [
+                        BoxShadow(
+                          color: color.withValues(alpha: .05 + pulse * .10),
+                          blurRadius: 10 + pulse * 6,
+                        ),
+                      ]
+                    : null,
               ),
-              if (hasAction) Icon(Icons.chevron_right, color: color),
-            ],
+              child: Row(
+                children: [
+                  Icon(
+                    _iconForDashboardContent(item.contentType),
+                    color: color,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF172554),
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        if ((item.description ?? '').trim().isNotEmpty)
+                          Text(
+                            item.description!,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFF526581),
+                              fontSize: 12,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  if (hasAction) Icon(Icons.chevron_right, color: color),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1987,7 +2027,7 @@ class _ShowcaseSection extends StatelessWidget {
   }
 }
 
-class _ShowcaseCard extends StatelessWidget {
+class _ShowcaseCard extends StatefulWidget {
   const _ShowcaseCard({
     required this.item,
     required this.apiBaseUrl,
@@ -2001,7 +2041,25 @@ class _ShowcaseCard extends StatelessWidget {
   final bool highlighted;
 
   @override
+  State<_ShowcaseCard> createState() => _ShowcaseCardState();
+}
+
+class _ShowcaseCardState extends State<_ShowcaseCard>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _overduePulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _overduePulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
     final hasUrl = item.targetUrl != null && item.targetUrl!.trim().isNotEmpty;
     final overdue = item.contentType == 'billing_overdue';
     final dueBilling = item.contentType == 'billing_due';
@@ -2010,109 +2068,131 @@ class _ShowcaseCard extends StatelessWidget {
         ? const Color(0xFFDC2626)
         : dueBilling
         ? const Color(0xFF2563EB)
-        : highlighted
+        : widget.highlighted
         ? const Color(0xFF38BDF8)
         : const Color(0xFF1E6BE3);
-    final imageUrl = _publicUrl(apiBaseUrl, item.imageUrl);
+    final imageUrl = _publicUrl(widget.apiBaseUrl, item.imageUrl);
 
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: overdue
-            ? const Color(0xFFFFF1F2)
-            : dueBilling
-            ? const Color(0xFFEFF6FF)
-            : highlighted
-            ? const Color(0xEE0F172A)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: highlighted ? color : const Color(0xFFE2E8F0),
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+    return AnimatedBuilder(
+      animation: _overduePulse,
+      builder: (context, child) {
+        final pulse = overdue ? _overduePulse.value : 0.0;
+        return DecoratedBox(
+          decoration: BoxDecoration(
+            color: overdue
+                ? const Color(0xFFFFF1F2)
+                : dueBilling
+                ? const Color(0xFFEFF6FF)
+                : widget.highlighted
+                ? const Color(0xEE0F172A)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: overdue
+                  ? color.withValues(alpha: .35 + pulse * .45)
+                  : widget.highlighted
+                  ? color
+                  : const Color(0xFFE2E8F0),
+              width: overdue ? 1.5 : 1,
+            ),
+            boxShadow: overdue
+                ? [
+                    BoxShadow(
+                      color: color.withValues(alpha: .06 + pulse * .12),
+                      blurRadius: 12 + pulse * 8,
+                      spreadRadius: pulse * 1.5,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (imageUrl == null)
-                  Icon(_iconForContent(item.contentType), color: color)
-                else
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(7),
-                    child: SizedBox(
-                      width: 48,
-                      height: 48,
-                      child: Image.network(
-                        imageUrl,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => Icon(
-                          _iconForContent(item.contentType),
-                          color: color,
+                Row(
+                  children: [
+                    if (imageUrl == null)
+                      Icon(_iconForContent(item.contentType), color: color)
+                    else
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(7),
+                        child: SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) => Icon(
+                              _iconForContent(item.contentType),
+                              color: color,
+                            ),
+                          ),
                         ),
                       ),
+                    const SizedBox(width: 9),
+                    if ((item.badge ?? '').isNotEmpty)
+                      _AlertBadge(label: item.badge!, color: color),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  item.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: widget.highlighted
+                        ? Colors.white
+                        : const Color(0xFF0F172A),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: Text(
+                    item.description ?? '',
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: widget.highlighted
+                          ? const Color(0xFFDCEBFF)
+                          : const Color(0xFF64748B),
+                      height: 1.3,
                     ),
                   ),
-                const SizedBox(width: 9),
-                if ((item.badge ?? '').isNotEmpty)
-                  _AlertBadge(label: item.badge!, color: color),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: highlighted ? Colors.white : const Color(0xFF0F172A),
-                fontSize: 17,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Expanded(
-              child: Text(
-                item.description ?? '',
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: highlighted
-                      ? const Color(0xFFDCEBFF)
-                      : const Color(0xFF64748B),
-                  height: 1.3,
                 ),
-              ),
-            ),
-            Row(
-              children: [
-                if ((item.priceLabel ?? '').isNotEmpty)
-                  Expanded(
-                    child: Text(
-                      item.priceLabel!,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: color,
-                        fontWeight: FontWeight.w900,
-                      ),
+                Row(
+                  children: [
+                    if ((item.priceLabel ?? '').isNotEmpty)
+                      Expanded(
+                        child: Text(
+                          item.priceLabel!,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: color,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      )
+                    else
+                      const Spacer(),
+                    OutlinedButton.icon(
+                      onPressed: isBilling
+                          ? widget.onOpenPayment
+                          : hasUrl
+                          ? () => redirectToUrl(item.targetUrl!)
+                          : null,
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: Text(_buttonLabel(item)),
                     ),
-                  )
-                else
-                  const Spacer(),
-                OutlinedButton.icon(
-                  onPressed: isBilling
-                      ? onOpenPayment
-                      : hasUrl
-                      ? () => redirectToUrl(item.targetUrl!)
-                      : null,
-                  icon: const Icon(Icons.open_in_new, size: 16),
-                  label: Text(_buttonLabel(item)),
+                  ],
                 ),
               ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -2308,6 +2388,19 @@ class _ClientPixDialogState extends State<_ClientPixDialog> {
                             fontWeight: FontWeight.w900,
                           ),
                         ),
+                        if (_billing.isOverdue &&
+                            (_billing.interestAmount > 0 ||
+                                _billing.lateFeeAmount > 0 ||
+                                _billing.monetaryCorrectionAmount > 0)) ...[
+                          const SizedBox(height: 8),
+                          Text(
+                            'Valor atualizado após o vencimento',
+                            style: TextStyle(
+                              color: Color(0xFFDC2626),
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         const Text(
                           'Aponte a câmera do banco para o QR Code. A confirmação acontece automaticamente.',
