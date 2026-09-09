@@ -65,10 +65,10 @@ class Sale {
       amountPaid: _toDouble(json['amount_paid']),
       changeAmount: _toDouble(json['change_amount']),
       notes: json['notes'] as String?,
-      soldAt: DateTime.parse(json['sold_at'] as String),
+      soldAt: _parseBackendDateTime(json['sold_at'] as String),
       canceledAt: json['canceled_at'] == null
           ? null
-          : DateTime.parse(json['canceled_at'] as String),
+          : _parseBackendDateTime(json['canceled_at'] as String),
       hasFiscalDocument: json['has_fiscal_document'] as bool? ?? false,
       hasAuthorizedFiscalDocument:
           json['has_authorized_fiscal_document'] as bool? ?? false,
@@ -80,6 +80,25 @@ class Sale {
           .toList(),
     );
   }
+}
+
+/// Backend timestamps without an offset are stored in UTC.
+/// Offset-aware values are converted to the browser/device local timezone.
+DateTime _parseBackendDateTime(String value) {
+  final parsed = DateTime.parse(value);
+  if (parsed.isUtc) {
+    return parsed.toLocal();
+  }
+  return DateTime.utc(
+    parsed.year,
+    parsed.month,
+    parsed.day,
+    parsed.hour,
+    parsed.minute,
+    parsed.second,
+    parsed.millisecond,
+    parsed.microsecond,
+  ).toLocal();
 }
 
 class SaleItem {
