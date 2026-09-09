@@ -5,7 +5,7 @@ import 'package:flutter/services.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../services/browser_redirect.dart';
-import '../widgets/login/login_page.dart';
+import 'login_screen_new.dart';
 
 String get _defaultApiBaseUrl {
   final currentUri = Uri.base;
@@ -365,21 +365,28 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: LoginPage(
+      body: NewLoginScreen(
         formKey: _formKey,
-        companyController: _companyController,
-        apiController: _apiController,
         emailController: _emailController,
         passwordController: _passwordController,
-        companyFocus: _companyFocus,
-        apiFocus: _apiFocus,
         emailFocus: _emailFocus,
         passwordFocus: _passwordFocus,
         showTechnicalFields: _showTechnicalLoginFields,
+        companyController: _companyController,
+        apiController: _apiController,
+        companyFocus: _companyFocus,
+        apiFocus: _apiFocus,
         loading: _loading,
         error: _error,
         onLogin: _login,
+        onComingSoon: _showComingSoon,
       ),
+    );
+  }
+
+  void _showComingSoon() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Este recurso estará disponível em breve.')),
     );
   }
 }
