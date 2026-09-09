@@ -31,6 +31,7 @@ from app.services.access_control import user_has_configured_permission
 from app.services.product_batches import apply_batch_out, return_to_batch
 from app.services.product_costs import apply_stock_in, apply_stock_out
 from app.services.pdv_pricing import effective_product_sale_price
+from app.services.tenancy import company_code_from_token_claims
 
 router = APIRouter()
 
@@ -57,10 +58,10 @@ def _tenant_company_code(
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
     payload = decode_access_token(credentials.credentials)
-    company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code.strip():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.")
-    return company_code.strip()
+    try:
+        return company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.") from exc
 
 
 def _sales_settings_for_company(company_code: str) -> SalesSettings:

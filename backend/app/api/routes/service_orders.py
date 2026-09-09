@@ -31,6 +31,7 @@ from app.schemas.service_order import (
 from app.schemas.printing import ThermalPrintRequest, ThermalPrintResponse
 from app.services.access_control import user_has_configured_permission
 from app.services.service_order_totals import recalculate_service_order_totals
+from app.services.tenancy import company_code_from_token_claims
 
 router = APIRouter()
 
@@ -55,10 +56,10 @@ def tenant_company_code(
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
     payload = decode_access_token(credentials.credentials)
-    company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code.strip():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.")
-    return company_code.strip()
+    try:
+        return company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.") from exc
 
 
 def sales_max_discount_percent(company_code: str) -> Decimal:

@@ -16,6 +16,7 @@ class AutomaticLoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    company_id: int | None = None
     company_code: str
     company_name: str
     business_type: str = "custom"

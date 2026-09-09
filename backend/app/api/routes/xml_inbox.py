@@ -26,7 +26,7 @@ from app.schemas.xml_inbox import (
 )
 from app.schemas.stock_entry import StockEntryRead
 from app.services.nfe_xml import parse_nfe_xml
-from app.services.tenancy import session_for_company
+from app.services.tenancy import company_code_from_token_claims, session_for_company
 
 router = APIRouter()
 bearer_scheme = HTTPBearer(auto_error=False)
@@ -76,10 +76,12 @@ def _company_code(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Token de acesso ausente.")
     payload = decode_access_token(credentials.credentials)
-    company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or payload.get("scope") == "master":
+    if payload.get("scope") == "master":
         raise HTTPException(status_code=403, detail="Caixa de XML disponivel apenas para empresas.")
-    return company_code
+    try:
+        return company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
 
 
 def _email_address(company: Company) -> str:

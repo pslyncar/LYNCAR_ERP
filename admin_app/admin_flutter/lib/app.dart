@@ -19,6 +19,17 @@ import 'services/session_storage.dart';
 
 final rootNavigatorKey = GlobalKey<NavigatorState>();
 
+String get _webApiBaseUrl {
+  final host = Uri.base.host;
+  if (host == 'erp.lyncar.com.br' || host.endsWith('.lyncar.com.br')) {
+    return 'https://api.lyncar.com.br';
+  }
+  return const String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://127.0.0.1:8000',
+  );
+}
+
 class PapezzoSyncAdminApp extends StatelessWidget {
   const PapezzoSyncAdminApp({super.key});
 
@@ -190,7 +201,7 @@ class _AuthGateState extends State<AuthGate> {
   static const _sessionKey = 'papezzosync.session';
   static const _lastActivityKey = 'papezzosync.lastActivity';
   static const _pdvCashSessionKey = 'papezzosync.pdv.cashSession';
-  static const _siteInactivityTimeout = Duration(hours: 8);
+  static const _siteInactivityTimeout = Duration(hours: 3);
   static const _activityWriteInterval = Duration(seconds: 15);
   static const _tokenRefreshWindow = Duration(minutes: 10);
 
@@ -202,6 +213,7 @@ class _AuthGateState extends State<AuthGate> {
   bool _refreshingSession = false;
   Timer? _sessionTimer;
   DateTime? _lastActivityWriteAt;
+  DateTime? _lastWebSessionRefreshAt;
   final _activityFocusNode = FocusNode(debugLabel: 'activity-listener');
 
   bool get _mobileAppMode {
@@ -242,6 +254,22 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _restoreSession() async {
+    if (kIsWeb && !_mobileAppMode) {
+      try {
+        final session = await ApiClient(_webApiBaseUrl).restoreWebSession();
+        if (!mounted) return;
+        setState(() {
+          _session = session;
+          _ready = true;
+        });
+        unawaited(_initializeActivityOnRestore());
+        unawaited(_sendHeartbeat(session));
+        return;
+      } catch (_) {
+        if (mounted) setState(() => _ready = true);
+        return;
+      }
+    }
     final rawSession = await _storage.read(_sessionKey);
     final lastActivity = await _readLastActivity();
 
@@ -268,7 +296,12 @@ class _AuthGateState extends State<AuthGate> {
       try {
         session = await ApiClient(session.apiBaseUrl).refreshSession(session);
         unawaited(_storeSession(session));
-      } catch (_) {
+      } catch (error) {
+        if (_isInvalidSessionError(error)) {
+          await _clearStoredSession();
+          if (mounted) setState(() => _ready = true);
+          return;
+        }
         // Mantem a sessao local quando o refresh falha por conexao temporaria.
       }
       if (!mounted) return;
@@ -293,10 +326,17 @@ class _AuthGateState extends State<AuthGate> {
   }
 
   Future<void> _storeSession(Session session) {
+    if (kIsWeb && !_mobileAppMode) {
+      return Future.value();
+    }
     return _storage.write(_sessionKey, jsonEncode(session.toStorageJson()));
   }
 
   void _logout() {
+    final current = _session;
+    if (current != null && kIsWeb && !_mobileAppMode) {
+      unawaited(ApiClient(current.apiBaseUrl).logout(current));
+    }
     rootNavigatorKey.currentState?.popUntil((route) => route.isFirst);
     unawaited(_clearStoredSession());
     setState(() {
@@ -326,6 +366,12 @@ class _AuthGateState extends State<AuthGate> {
     await _storage.write(_lastActivityKey, now.toIso8601String());
   }
 
+  Future<void> _initializeActivityOnRestore() async {
+    if (await _readLastActivity() == null) {
+      await _touchActivity();
+    }
+  }
+
   Future<DateTime?> _readLastActivity() async {
     final value = await _storage.read(_lastActivityKey);
     if (value == null) {
@@ -353,6 +399,26 @@ class _AuthGateState extends State<AuthGate> {
       return;
     }
     unawaited(_sendHeartbeat(session));
+    if (_usesInactivityTimeout) {
+      final lastActivity = await _readLastActivity();
+      final inactive =
+          lastActivity == null ||
+          DateTime.now().toUtc().difference(lastActivity) >
+              _siteInactivityTimeout;
+      if (inactive) {
+        _logout();
+        return;
+      }
+    }
+    if (kIsWeb && !_mobileAppMode && session.token.isEmpty) {
+      final now = DateTime.now().toUtc();
+      if (_lastWebSessionRefreshAt == null ||
+          now.difference(_lastWebSessionRefreshAt!) > _tokenRefreshWindow) {
+        _lastWebSessionRefreshAt = now;
+        await _refreshSessionIfPossible();
+      }
+      return;
+    }
     if (!session.isTokenExpired &&
         session.tokenExpiresWithin(_tokenRefreshWindow)) {
       await _refreshSessionIfPossible();
@@ -403,12 +469,29 @@ class _AuthGateState extends State<AuthGate> {
       if (!mounted) return;
       await _storeSession(refreshed);
       setState(() => _session = refreshed);
-      await _touchActivity();
-    } catch (_) {
+    } catch (error) {
+      if (_isInvalidSessionError(error)) {
+        _logout();
+      }
       // Falha temporaria de rede/API nao deve derrubar o usuario antes do token vencer.
     } finally {
       _refreshingSession = false;
     }
+  }
+
+  bool _isInvalidSessionError(Object error) {
+    if (error is! ApiException) {
+      return false;
+    }
+    const invalidCodes = {
+      'SESSION_EXPIRED',
+      'SESSION_IDLE_TIMEOUT',
+      'TOKEN_INVALID',
+      'TENANT_CONTEXT_INVALID',
+      'TENANT_NOT_FOUND',
+      'COMPANY_BLOCKED',
+    };
+    return error.statusCode == 401 || invalidCodes.contains(error.code);
   }
 
   @override

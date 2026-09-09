@@ -1,7 +1,7 @@
 from datetime import UTC, datetime, timedelta
 import secrets
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import bearer_scheme, get_current_user
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.errors import api_error
 from app.core.master_database import MasterSessionLocal
 from app.core.security import (
     create_access_token,
@@ -40,7 +41,17 @@ from app.services.tenancy import (
     get_enabled_modules_for_company,
     normalize_company_code,
     require_active_company,
+    company_code_from_token_claims,
+    company_from_token_claims,
     session_for_company,
+)
+from app.services.web_sessions import (
+    create_session,
+    csrf_from_request,
+    refresh_csrf_cookie,
+    revoke_session,
+    rotate_session,
+    session_from_request,
 )
 
 router = APIRouter()
@@ -48,6 +59,72 @@ router = APIRouter()
 PDV_ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 180
 PDV_REFRESH_MAX_AGE_DAYS = 365
 PDV_TERMINAL_USER_EMAIL = "_pdv_terminal@lyncar.local"
+
+
+def _web_session_payload(claims: dict) -> dict:
+    """Restore the complete navigation context after a browser reload."""
+    payload = dict(claims)
+    settings = get_settings()
+    company_code = str(payload.get("company_code") or "")
+    if company_code == settings.master_company_code or payload.get("scope") == "master":
+        payload.update(
+            business_type="master",
+            plan_code="enterprise",
+            enabled_modules=["master"],
+            seller_role_enabled=True,
+            technician_role_enabled=True,
+        )
+        return payload
+    company = get_company_by_code(company_code)
+    if company is None:
+        return payload
+    enabled_modules = modules_for_business_type(
+        company.business_type,
+        company.enabled_modules,
+        company.plan or "start",
+    )
+    operational_roles = segment_operational_roles(company.business_type)
+    payload.update(
+        company_code=normalize_company_code(company.code),
+        company_id=company.id,
+        company_name=company.name,
+        business_type=company.business_type,
+        plan_code=company.plan or "start",
+        enabled_modules=enabled_modules,
+        seller_role_enabled=operational_roles["seller"],
+        technician_role_enabled=operational_roles["technician"],
+    )
+    return payload
+
+
+@router.post("/web/login")
+def web_login(login_in: LoginRequest, request: Request, response: Response) -> dict:
+    """Browser login: the access token stays server-side; the browser receives only cookies."""
+    token_response = login(login_in)
+    create_session(token_response.access_token, request, response)
+    return token_response.model_dump(exclude={"access_token", "token_type"}) | {
+        "authenticated": True,
+        "csrf_cookie": True,
+    }
+
+
+@router.get("/web/session")
+def web_session(request: Request, response: Response) -> dict:
+    row = session_from_request(request)
+    refresh_csrf_cookie(request, response)
+    return _web_session_payload(row.claims) | {"authenticated": True}
+
+
+@router.post("/web/refresh")
+def web_refresh(request: Request, response: Response) -> dict:
+    claims = rotate_session(request, response)
+    return _web_session_payload(claims) | {"authenticated": True}
+
+
+@router.post("/web/logout")
+def web_logout(request: Request, response: Response) -> dict:
+    revoke_session(request, response)
+    return {"authenticated": False}
 
 
 def _is_pdv_client_type(value: str | None) -> bool:
@@ -67,9 +144,10 @@ def _ensure_company_active(company_code: str) -> None:
     try:
         require_active_company(company_code)
     except LookupError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Empresa bloqueada ou inativa. Procure a Lyncar.",
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            "COMPANY_BLOCKED",
+            "A empresa esta bloqueada ou inativa. Procure a Lyncar.",
         ) from exc
 
 
@@ -125,8 +203,15 @@ def _token_response_for_tenant_user(
                 "role": current.role,
                 "permissions": permissions,
                 "company_code": normalize_company_code(company_code),
+                "company_id": company.id if company else None,
                 "company_name": company_name,
                 "plan_code": plan_code,
+                "business_type": company.business_type if company else "custom",
+                "enabled_modules": enabled_modules,
+                "seller_role_enabled": operational_roles["seller"],
+                "technician_role_enabled": operational_roles["technician"],
+                "must_change_password": bool(current.must_change_password),
+                "user_email": current.email.lower(),
                 "client_type": client_type or "web",
             },
             expires_minutes=PDV_ACCESS_TOKEN_EXPIRE_MINUTES
@@ -135,6 +220,7 @@ def _token_response_for_tenant_user(
         )
         return TokenResponse(
             access_token=token,
+            company_id=company.id if company else None,
             company_code=normalize_company_code(company_code),
             company_name=company_name,
             business_type=company.business_type if company else "custom",
@@ -166,6 +252,12 @@ def _token_response_for_master_user(user: MasterUser) -> TokenResponse:
             "company_code": settings.master_company_code,
             "company_name": settings.master_company_name,
             "scope": "master",
+            "business_type": "master",
+            "plan_code": "enterprise",
+            "enabled_modules": ["master"],
+            "seller_role_enabled": True,
+            "technician_role_enabled": True,
+            "must_change_password": bool(current.must_change_password),
         },
     )
     return TokenResponse(
@@ -358,12 +450,20 @@ def login(login_in: LoginRequest) -> TokenResponse:
             "role": user_role,
             "permissions": permissions,
             "company_code": company_code,
+            "company_id": company.id if company else None,
             "company_name": company_name,
             "plan_code": plan_code,
+            "business_type": company.business_type if company else "custom",
+            "enabled_modules": enabled_modules,
+            "seller_role_enabled": operational_roles["seller"],
+            "technician_role_enabled": operational_roles["technician"],
+            "must_change_password": must_change_password,
+            "user_email": user.email.lower(),
         },
     )
     return TokenResponse(
         access_token=token,
+        company_id=company.id if company else None,
         company_code=company_code,
         company_name=company_name,
         business_type=company.business_type if company else "custom",
@@ -449,9 +549,6 @@ def refresh_token(
         ) from exc
 
     settings = get_settings()
-    company_code = normalize_company_code(
-        str(payload.get("company_code") or settings.default_company_code)
-    )
     subject = str(payload.get("sub") or "")
     if payload.get("scope") == "master" or subject.startswith("master:"):
         master_id_text = subject.split(":", 1)[1] if ":" in subject else ""
@@ -465,6 +562,14 @@ def refresh_token(
                 )
             return _token_response_for_master_user(user)
 
+    try:
+        company_code = company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            "TENANT_CONTEXT_INVALID",
+            "Nao foi possivel validar a empresa desta sessao. Entre novamente.",
+        ) from exc
     user_id = int(subject)
     _ensure_company_active(company_code)
     with session_for_company(company_code) as db:
@@ -473,6 +578,13 @@ def refresh_token(
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario inativo ou nao encontrado.",
+            )
+        token_email = payload.get("user_email")
+        if isinstance(token_email, str) and user.email.lower() != token_email.lower():
+            raise api_error(
+                status.HTTP_401_UNAUTHORIZED,
+                "TENANT_ACCESS_REVOKED",
+                "A sessao nao corresponde ao usuario desta empresa. Entre novamente.",
             )
         return _token_response_for_tenant_user(
             company_code,
@@ -517,12 +629,14 @@ def refresh_pdv_token(
                 detail="Sessao do PDV antiga demais. Entre novamente.",
             )
 
-    company_code = normalize_company_code(str(payload.get("company_code") or ""))
-    if not company_code:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Empresa da sessao do PDV nao identificada.",
-        )
+    try:
+        company_code = company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "TENANT_CONTEXT_INVALID",
+            "A empresa desta sessao do PDV nao pode ser validada. Entre novamente.",
+        ) from exc
     _ensure_company_active(company_code)
     _ensure_pdv_windows_enabled(company_code)
 
@@ -619,8 +733,15 @@ def heartbeat(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token invalido ou expirado.",
         ) from exc
-    company_code = normalize_company_code(str(token_data.get("company_code") or ""))
-    if company_code and company_code != get_settings().master_company_code:
+    if token_data.get("scope") != "master":
+        try:
+            company_code = company_code_from_token_claims(token_data)
+        except LookupError as exc:
+            raise api_error(
+                status.HTTP_403_FORBIDDEN,
+                "TENANT_CONTEXT_INVALID",
+                "Nao foi possivel validar a empresa desta sessao. Entre novamente.",
+            ) from exc
         touch_company_presence(
             company_code=company_code,
             user=current_user,
@@ -647,9 +768,6 @@ def read_current_user(
         ) from exc
     settings = get_settings()
     subject = str(payload.get("sub") or "")
-    company_code = normalize_company_code(
-        str(payload.get("company_code") or settings.master_company_code)
-    )
     company_name = str(payload.get("company_name") or settings.master_company_name)
     if payload.get("scope") == "master" or subject.startswith("master:"):
         try:
@@ -681,7 +799,15 @@ def read_current_user(
                 permissions=get_master_user_permission_codes(master_db, user),
             )
 
-    company = get_company_by_code(company_code)
+    try:
+        company = company_from_token_claims(payload)
+        company_code = normalize_company_code(company.code)
+    except LookupError as exc:
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            "TENANT_CONTEXT_INVALID",
+            "Nao foi possivel validar a empresa desta sessao. Entre novamente.",
+        ) from exc
     _ensure_company_active(company_code)
     plan_code = company.plan if company else "start"
     enabled_modules = modules_for_business_type(

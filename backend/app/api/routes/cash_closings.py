@@ -19,6 +19,7 @@ from app.schemas.cash_closing import (
     CashClosingTreasuryReview,
 )
 from app.services.business_day import business_date, company_cutoff_minutes, crossed_business_day
+from app.services.tenancy import company_code_from_token_claims
 
 router = APIRouter()
 
@@ -140,9 +141,10 @@ def create_cash_closing(
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
     token_payload = decode_access_token(credentials.credentials)
-    company_code = token_payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.")
+    try:
+        company_code = company_code_from_token_claims(token_payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.") from exc
     cutoff_minutes = company_cutoff_minutes(company_code)
     closed_at = datetime.now(timezone.utc)
     cash_session: PdvCashSession | None = None

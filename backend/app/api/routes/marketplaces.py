@@ -43,6 +43,7 @@ from app.services.mercado_livre import (
     refresh_access_token,
 )
 from app.services.tenancy import session_for_company
+from app.services.tenancy import company_code_from_token_claims
 
 router = APIRouter()
 MERCADO_LIVRE_ITEMS_BATCH_SIZE = 20
@@ -50,10 +51,12 @@ MERCADO_LIVRE_ITEMS_BATCH_SIZE = 20
 
 def _company_code_from_credentials(credentials) -> str:
     payload = decode_access_token(credentials.credentials)
-    company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code.strip():
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token sem empresa.")
-    return company_code
+    if payload.get("scope") == "master":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acao disponivel apenas para empresas.")
+    try:
+        return company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Contexto da empresa invalido.") from exc
 
 
 def _parse_ml_datetime(value: object) -> datetime | None:

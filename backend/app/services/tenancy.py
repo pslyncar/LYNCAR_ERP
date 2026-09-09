@@ -53,11 +53,43 @@ def get_company_by_code(company_code: str) -> Company | None:
         return db.scalar(select(Company).where(Company.code == normalized))
 
 
+def get_company_by_id(company_id: int) -> Company | None:
+    with MasterSessionLocal() as db:
+        return db.get(Company, company_id)
+
+
 def require_active_company(company_code: str) -> Company:
     company = get_company_by_code(company_code)
     if company is None or not company.active or company.status != "active":
         raise LookupError("Empresa nao encontrada ou inativa.")
     return company
+
+
+def require_active_company_by_id(company_id: int) -> Company:
+    company = get_company_by_id(company_id)
+    if company is None or not company.active or company.status != "active":
+        raise LookupError("Empresa nao encontrada ou inativa.")
+    return company
+
+
+def company_from_token_claims(payload: dict) -> Company:
+    """Resolve tenant identity from the immutable id, with legacy fallback."""
+
+    company_id = payload.get("company_id")
+    if company_id is not None:
+        try:
+            return require_active_company_by_id(int(company_id))
+        except (TypeError, ValueError):
+            raise LookupError("Contexto da empresa invalido.") from None
+
+    company_code = payload.get("company_code")
+    if isinstance(company_code, str) and company_code.strip():
+        return require_active_company(company_code)
+    raise LookupError("Contexto da empresa ausente.")
+
+
+def company_code_from_token_claims(payload: dict) -> str:
+    return normalize_company_code(company_from_token_claims(payload).code)
 
 
 def get_enabled_modules_for_company(company_code: str) -> list[str]:

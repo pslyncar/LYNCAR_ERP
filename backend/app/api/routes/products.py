@@ -33,6 +33,7 @@ from app.schemas.stock_movement import (
     StockWithdrawalRead,
 )
 from app.services.product_batches import ensure_initial_product_batch, list_available_batches
+from app.services.tenancy import company_code_from_token_claims
 from app.services.product_batches import apply_batch_out
 from app.services.product_costs import apply_stock_out, base_unit_cost, refresh_inventory_value
 from app.services.fiscal_assistant import learn_from_product
@@ -150,9 +151,11 @@ def _product_image_scope(
     company_code = "tenant"
     if credentials is not None:
         payload = decode_access_token(credentials.credentials)
-        company_code = normalize_company_code(
-            str(payload.get("company_code") or "tenant")
-        )
+        if payload.get("scope") != "master":
+            try:
+                company_code = company_code_from_token_claims(payload)
+            except LookupError as exc:
+                raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
     return f"tenant-products-{company_code}"
 
 

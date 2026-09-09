@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     )
     master_database_url: str | None = None
     secret_key: str = "change-me"
+    jwt_issuer: str = "lyncar-api"
+    jwt_audience: str = "lyncar-clients"
     access_token_expire_minutes: int = 60
     default_company_code: str = "papezzosync"
     default_company_name: str = "PapezzoSync"

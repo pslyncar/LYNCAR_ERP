@@ -5,7 +5,7 @@ from app.api.dependencies import bearer_scheme, require_any_permission, require_
 from app.core.security import decode_access_token
 from app.models.user import User
 from app.services.plan_limits import enforce_file_limit
-from app.services.tenancy import normalize_company_code
+from app.services.tenancy import company_code_from_token_claims, normalize_company_code
 from app.services.uploads import UPLOAD_ROOT, save_public_file, save_public_image
 
 router = APIRouter()
@@ -23,7 +23,10 @@ async def upload_tenant_image(
         company_code = "tenant"
     else:
         payload = decode_access_token(credentials.credentials)
-        company_code = str(payload.get("company_code") or "tenant")
+        try:
+            company_code = company_code_from_token_claims(payload)
+        except LookupError as exc:
+            raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
     content = await file.read()
     enforce_file_limit(company_code, UPLOAD_ROOT, len(content))
     file.file.seek(0)
@@ -58,7 +61,10 @@ async def upload_support_image(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Token de acesso ausente.")
     payload = decode_access_token(credentials.credentials)
-    company_code = normalize_company_code(str(payload.get("company_code") or "support"))
+    try:
+        company_code = company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
     content = await file.read()
     enforce_file_limit(company_code, UPLOAD_ROOT, len(content))
     file.file.seek(0)

@@ -26,10 +26,24 @@ from app.schemas.dashboard import (
 from app.schemas.company_billing import CompanyBillingRead
 from app.services.company_billing import pending_billing_for_dashboard
 from app.services.mercado_pago import create_pix_for_billing
+from app.services.tenancy import company_code_from_token_claims
 
 router = APIRouter()
 
 ONLINE_THRESHOLD_MINUTES = 5
+
+
+def _tenant_company_code(
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Token de acesso ausente.")
+    try:
+        return company_code_from_token_claims(
+            decode_access_token(credentials.credentials)
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
 
 
 def billing_read(row: CompanyBilling) -> CompanyBillingRead:
@@ -263,12 +277,7 @@ def get_dashboard_billing_payment(
     current_user: User = Depends(require_permission("dashboard:view")),
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> CompanyBillingRead:
-    company_code = None
-    if credentials is not None:
-        payload = decode_access_token(credentials.credentials)
-        company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code:
-        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    company_code = _tenant_company_code(credentials)
 
     pending = pending_billing_for_dashboard(company_code)
     if pending is None:
@@ -294,12 +303,7 @@ def sync_dashboard_billing_payment(
 ) -> CompanyBillingRead:
     """Refresh the current company's Mercado Pago payment status for the Pix dialog."""
     del current_user
-    company_code = None
-    if credentials is not None:
-        payload = decode_access_token(credentials.credentials)
-        company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code:
-        raise HTTPException(status_code=404, detail="Empresa não encontrada.")
+    company_code = _tenant_company_code(credentials)
 
     with MasterSessionLocal() as master_db:
         company = master_db.scalar(
@@ -329,12 +333,9 @@ def get_dashboard_summary(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> DashboardSummaryRead:
     online_since = datetime.now(UTC) - timedelta(minutes=ONLINE_THRESHOLD_MINUTES)
-    company_code = None
-    if credentials is not None:
-        payload = decode_access_token(credentials.credentials)
-        company_code = payload.get("company_code")
+    company_code = _tenant_company_code(credentials)
     business_type, enabled_modules = get_company_context(
-        company_code if isinstance(company_code, str) else None
+        company_code
     )
     is_technical_dashboard = (
         business_type == "assistencia_tecnica"

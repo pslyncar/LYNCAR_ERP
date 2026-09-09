@@ -32,12 +32,13 @@ class Session {
   final bool mustChangePassword;
 
   factory Session.fromJson(Map<String, dynamic> json, String apiBaseUrl) {
-    final token = json['access_token'] as String;
+    final token = json['access_token']?.toString() ?? '';
     return Session(
       apiBaseUrl: apiBaseUrl,
       token: token,
-      userId: _intClaimFromToken(token, 'sub'),
-      role: _roleFromToken(token),
+      userId: _intClaimFromToken(token, 'sub') ??
+          int.tryParse(json['sub']?.toString() ?? ''),
+      role: json['role']?.toString() ?? _roleFromToken(token),
       companyCode:
           json['company_code']?.toString() ??
           _claimFromToken(token, 'company_code', 'papezzosync'),
@@ -53,7 +54,7 @@ class Session {
           .toList(),
       sellerRoleEnabled: json['seller_role_enabled'] as bool? ?? false,
       technicianRoleEnabled: json['technician_role_enabled'] as bool? ?? false,
-      permissions: (json['permissions'] as List<dynamic>)
+      permissions: (json['permissions'] as List<dynamic>? ?? const [])
           .map((permission) => permission.toString())
           .toList(),
       mustChangePassword: json['must_change_password'] as bool? ?? false,

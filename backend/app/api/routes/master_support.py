@@ -139,7 +139,12 @@ def _tenant_actor(credentials: HTTPAuthorizationCredentials | None) -> tuple[dic
         raise HTTPException(status_code=401, detail="Token invalido ou expirado.") from exc
     if payload.get("scope") == "master":
         raise HTTPException(status_code=403, detail="Use o painel master para suporte master.")
-    company_code = normalize_company_code(str(payload.get("company_code") or ""))
+    from app.services.tenancy import company_code_from_token_claims
+
+    try:
+        company_code = company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
     try:
         user_id = int(str(payload.get("sub") or ""))
     except ValueError as exc:
@@ -195,7 +200,12 @@ def _company_code_from_ws_token(token: str) -> str:
     payload = _decode_ws_token(token)
     if payload.get("scope") == "master":
         raise HTTPException(status_code=403, detail="Use o canal master.")
-    return normalize_company_code(str(payload.get("company_code") or ""))
+    from app.services.tenancy import company_code_from_token_claims
+
+    try:
+        return company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
 
 
 async def _ws_loop(websocket: WebSocket, *, company_code: str | None, is_master: bool) -> None:

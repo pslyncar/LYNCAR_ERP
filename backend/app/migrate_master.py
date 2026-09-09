@@ -32,6 +32,7 @@ from app.models.pdv_update import (  # noqa: F401
 )
 from app.models.subscription_plan import SubscriptionPlan  # noqa: F401
 from app.models.website_contact_request import WebsiteContactRequest  # noqa: F401
+from app.models.auth_session import AuthSession, SecurityAuditLog  # noqa: F401
 from app.services.company_modules import (
     modules_for_business_type,
     plan_allows_module,
@@ -148,7 +149,6 @@ MASTER_IBS_CBS_CLASS_TRIB_COLUMNS = [
     ("ibs_rate_reduction_percent", "NUMERIC(7, 4)"),
     ("cbs_rate_reduction_percent", "NUMERIC(7, 4)"),
 ]
-
 
 def column_exists(table_name: str, column_name: str) -> bool:
     with master_engine.connect() as connection:

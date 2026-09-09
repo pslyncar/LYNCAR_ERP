@@ -189,7 +189,12 @@ def check_pdv_update(
         ) from exc
 
     settings = get_settings()
-    company_code = normalize_company_code(str(payload.get("company_code") or ""))
+    from app.services.tenancy import company_code_from_token_claims
+
+    try:
+        company_code = company_code_from_token_claims(payload)
+    except LookupError:
+        company_code = ""
     if not company_code or company_code == settings.master_company_code:
         return PdvUpdateCheckResponse(
             update_available=False,

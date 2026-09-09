@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import os
 import secrets
+from uuid import uuid4
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -67,6 +68,9 @@ def create_access_token(
         "exp": expires_at,
         "iat": datetime.now(UTC),
         "type": "access",
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+        "jti": str(uuid4()),
     }
     if extra_claims:
         payload.update(extra_claims)
@@ -76,17 +80,36 @@ def create_access_token(
 
 def decode_access_token(token: str) -> dict[str, Any]:
     settings = get_settings()
-    return jwt.decode(token, settings.secret_key, algorithms=[JWT_ALGORITHM])
+    payload = jwt.decode(
+        token,
+        settings.secret_key,
+        algorithms=[JWT_ALGORITHM],
+        options={"verify_aud": False},
+    )
+    if payload.get("type") != "access":
+        raise jwt.InvalidTokenError("Tipo de token invalido.")
+    if payload.get("iss") not in (None, settings.jwt_issuer):
+        raise jwt.InvalidTokenError("Emissor de token invalido.")
+    if payload.get("aud") not in (None, settings.jwt_audience):
+        raise jwt.InvalidTokenError("Audiencia de token invalida.")
+    return payload
 
 
 def decode_access_token_unverified_exp(token: str) -> dict[str, Any]:
     settings = get_settings()
-    return jwt.decode(
+    payload = jwt.decode(
         token,
         settings.secret_key,
         algorithms=[JWT_ALGORITHM],
-        options={"verify_exp": False},
+        options={"verify_exp": False, "verify_aud": False},
     )
+    if payload.get("type") != "access":
+        raise jwt.InvalidTokenError("Tipo de token invalido.")
+    if payload.get("iss") not in (None, settings.jwt_issuer):
+        raise jwt.InvalidTokenError("Emissor de token invalido.")
+    if payload.get("aud") not in (None, settings.jwt_audience):
+        raise jwt.InvalidTokenError("Audiencia de token invalida.")
+    return payload
 
 
 def generate_agent_token() -> str:

@@ -30,7 +30,11 @@ from app.services.master_user_index import (
     upsert_user_index,
 )
 from app.services.plan_limits import enforce_user_limit
-from app.services.tenancy import get_company_by_code, get_enabled_modules_for_company
+from app.services.tenancy import (
+    company_code_from_token_claims,
+    get_company_by_code,
+    get_enabled_modules_for_company,
+)
 
 router = APIRouter()
 
@@ -389,10 +393,12 @@ def _company_code_from_credentials(
     if credentials is None:
         raise HTTPException(status_code=401, detail="Token de acesso ausente.")
     payload = decode_access_token(credentials.credentials)
-    company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code:
-        raise HTTPException(status_code=401, detail="Token sem empresa.")
-    return company_code
+    if payload.get("scope") == "master":
+        raise HTTPException(status_code=403, detail="Acao disponivel apenas para empresas.")
+    try:
+        return company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=401, detail="Contexto da empresa invalido.") from exc
 
 
 def normalize_seller_code(value: str | None) -> str | None:

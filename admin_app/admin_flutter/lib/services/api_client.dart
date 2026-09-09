@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
-import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+import 'http_facade.dart' as http;
 import 'package:http_parser/http_parser.dart';
 
 import '../models/client.dart';
@@ -66,7 +66,7 @@ class ApiClient {
     required String password,
   }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/login'),
+      Uri.parse('$baseUrl/auth/${kIsWeb ? 'web/login' : 'login'}'),
       headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
         'company_code': companyCode,
@@ -106,11 +106,25 @@ class ApiClient {
 
   Future<Session> refreshSession(Session session) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/auth/refresh'),
+      Uri.parse('$baseUrl/auth/${kIsWeb ? 'web/refresh' : 'refresh'}'),
       headers: _authHeaders(session.token),
     );
     final data = _decodeResponse(response);
     return Session.fromJson(data, session.apiBaseUrl);
+  }
+
+  Future<Session> restoreWebSession() async {
+    final response = await http.get(Uri.parse('$baseUrl/auth/web/session'));
+    return Session.fromJson(_decodeResponse(response), baseUrl);
+  }
+
+  Future<void> logout(Session session) async {
+    if (!kIsWeb) return;
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/web/logout'),
+      headers: _authHeaders(session.token),
+    );
+    _decodeResponse(response);
   }
 
   Future<Session> refreshPdvSession(Session session) async {
@@ -3063,12 +3077,13 @@ class ApiClient {
 
   Map<String, String> _authHeaders(String token) {
     return {
-      'Authorization': 'Bearer $token',
+      if (token.isNotEmpty) 'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
     };
   }
 
   Map<String, dynamic> _decodeResponse(http.Response response) {
+    http.updateCsrfToken(response.headers['x-csrf-token']);
     final decoded = jsonDecode(response.body);
     final data = decoded is Map<String, dynamic>
         ? decoded
@@ -3078,6 +3093,7 @@ class ApiClient {
         _detailMessage(data),
         data: data,
         statusCode: response.statusCode,
+        code: _detailCode(data),
       );
     }
     return data;
@@ -3091,6 +3107,7 @@ class ApiClient {
           _detailMessage(decoded),
           data: decoded,
           statusCode: response.statusCode,
+          code: _detailCode(decoded),
         );
       }
       throw ApiException('Erro na API.', statusCode: response.statusCode);
@@ -3118,14 +3135,23 @@ class ApiClient {
     }
     return 'Erro na API.';
   }
+
+  String? _detailCode(Map<String, dynamic> data) {
+    final detail = data['detail'];
+    if (detail is Map<String, dynamic>) {
+      return detail['code']?.toString();
+    }
+    return null;
+  }
 }
 
 class ApiException implements Exception {
-  ApiException(this.message, {this.data, this.statusCode});
+  ApiException(this.message, {this.data, this.statusCode, this.code});
 
   final String message;
   final Map<String, dynamic>? data;
   final int? statusCode;
+  final String? code;
 
   @override
   String toString() => message;

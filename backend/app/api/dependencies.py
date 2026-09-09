@@ -1,9 +1,10 @@
 from fastapi import Depends, HTTPException, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials
 from jwt import ExpiredSignatureError, InvalidTokenError
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.errors import api_error
 from app.core.master_database import MasterSessionLocal
 from app.core.security import decode_access_token
 from app.models.master_user import MasterUser
@@ -12,9 +13,34 @@ from app.services.access_control import user_has_permission
 from app.services.company_modules import permission_allowed_by_modules
 from app.services.master_permissions import master_user_has_permission
 from app.services.plan_limits import enforce_database_limit
-from app.services.tenancy import get_enabled_modules_for_company, require_active_company
+from app.services.tenancy import (
+    company_code_from_token_claims,
+    get_enabled_modules_for_company,
+)
+from app.services.web_sessions import internal_access_token, session_from_request
 
-bearer_scheme = HTTPBearer(auto_error=False)
+
+class CookieAwareBearer:
+    """Keep existing route dependencies while accepting the HttpOnly web session."""
+
+    def __call__(self, request: Request) -> HTTPAuthorizationCredentials | None:
+        authorization = request.headers.get("Authorization", "")
+        if authorization.lower().startswith("bearer "):
+            return HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=authorization.split(" ", 1)[1].strip()
+            )
+        if request.cookies.get("lyncar_session"):
+            try:
+                row = session_from_request(request)
+            except HTTPException:
+                return None
+            return HTTPAuthorizationCredentials(
+                scheme="Bearer", credentials=internal_access_token(row)
+            )
+        return None
+
+
+bearer_scheme = CookieAwareBearer()
 PDV_CLIENT_TYPES = {"pdv", "pdv_windows", "windows_pdv", "pdv_desktop"}
 
 
@@ -26,15 +52,13 @@ def _is_pdv_client_type(value: object) -> bool:
 def _ensure_company_access(payload: dict | None) -> list[str] | None:
     if payload is None or payload.get("scope") == "master":
         return None
-    company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code.strip():
-        return None
     try:
-        require_active_company(company_code)
+        company_code = company_code_from_token_claims(payload)
     except LookupError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Empresa bloqueada ou inativa. Procure a Lyncar.",
+        raise api_error(
+            status.HTTP_403_FORBIDDEN,
+            "TENANT_CONTEXT_INVALID",
+            "Nao foi possivel validar a empresa desta sessao. Entre novamente.",
         ) from exc
     enabled_modules = get_enabled_modules_for_company(company_code)
     if (
@@ -56,15 +80,17 @@ def _decode_credentials_or_401(
     try:
         return decode_access_token(credentials.credentials)
     except ExpiredSignatureError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expirado.",
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "SESSION_EXPIRED",
+            "Sua sessao expirou. Entre novamente.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except InvalidTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token invalido.",
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "TOKEN_INVALID",
+            "Sua sessao nao e valida. Entre novamente.",
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
@@ -102,6 +128,14 @@ def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario inativo ou nao encontrado.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    token_email = payload.get("user_email")
+    if isinstance(token_email, str) and user.email.lower() != token_email.lower():
+        raise api_error(
+            status.HTTP_401_UNAUTHORIZED,
+            "TENANT_ACCESS_REVOKED",
+            "A sessao nao corresponde ao usuario desta empresa. Entre novamente.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -203,17 +237,16 @@ def require_permission(permission_code: str):
                 detail="Usuario sem permissao para esta acao.",
             )
         payload = _decode_credentials_or_401(credentials)
-        if payload is not None:
-            company_code = payload.get("company_code")
-            if isinstance(company_code, str) and payload.get("scope") != "master":
-                enabled_modules = _ensure_company_access(payload) or []
-                if not permission_allowed_by_modules(permission_code, enabled_modules):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Modulo nao contratado para esta empresa.",
-                    )
-                if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-                    enforce_database_limit(db, company_code)
+        if payload is not None and payload.get("scope") != "master":
+            company_code = company_code_from_token_claims(payload)
+            enabled_modules = _ensure_company_access(payload) or []
+            if not permission_allowed_by_modules(permission_code, enabled_modules):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Modulo nao contratado para esta empresa.",
+                )
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                enforce_database_limit(db, company_code)
         return current_user
 
     return dependency
@@ -228,17 +261,16 @@ def require_any_permission(*permission_codes: str):
     ) -> User:
         allowed_codes = set(permission_codes)
         payload = _decode_credentials_or_401(credentials)
-        if payload is not None:
-            company_code = payload.get("company_code")
-            if isinstance(company_code, str) and payload.get("scope") != "master":
-                enabled_modules = _ensure_company_access(payload) or []
-                allowed_codes = {
-                    code
-                    for code in allowed_codes
-                    if permission_allowed_by_modules(code, enabled_modules)
-                }
-                if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
-                    enforce_database_limit(db, company_code)
+        if payload is not None and payload.get("scope") != "master":
+            company_code = company_code_from_token_claims(payload)
+            enabled_modules = _ensure_company_access(payload) or []
+            allowed_codes = {
+                code
+                for code in allowed_codes
+                if permission_allowed_by_modules(code, enabled_modules)
+            }
+            if request.method in {"POST", "PUT", "PATCH", "DELETE"}:
+                enforce_database_limit(db, company_code)
         if not any(
             user_has_permission(db, current_user, permission_code)
             for permission_code in allowed_codes

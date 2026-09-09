@@ -264,6 +264,19 @@ FISCAL_DOCUMENT_ITEM_COLUMNS = [
     ("selective_tax_classification", "VARCHAR(20)"),
 ]
 
+COMPANY_BILLING_COLUMNS = [
+    ("mercado_pago_payment_id", "VARCHAR(80)"),
+    ("mercado_pago_status", "VARCHAR(40)"),
+    ("mercado_pago_payer_name", "VARCHAR(180)"),
+    ("mercado_pago_payer_email", "VARCHAR(180)"),
+    ("mercado_pago_payer_document", "VARCHAR(80)"),
+    ("mercado_pago_external_reference", "VARCHAR(120)"),
+    ("mercado_pago_idempotency_key", "VARCHAR(80)"),
+    ("pix_qr_code", "TEXT"),
+    ("pix_qr_code_base64", "TEXT"),
+    ("pix_ticket_url", "TEXT"),
+]
+
 PRODUCTION_ORDER_COLUMNS = [
     ("completed_by_user_id", "INTEGER"),
     ("canceled_by_user_id", "INTEGER"),
@@ -308,7 +321,6 @@ def add_client_columns(bind_engine=engine) -> None:
         connection.execute(
             text("ALTER TABLE clients ALTER COLUMN person_type SET DEFAULT 'PF'")
         )
-
         connection.execute(
             text(
                 """
@@ -317,6 +329,15 @@ def add_client_columns(bind_engine=engine) -> None:
                 """
             )
         )
+
+
+def add_company_billing_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in COMPANY_BILLING_COLUMNS:
+            if not column_exists_in_connection(connection, "company_billings", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE company_billings ADD COLUMN {column_name} {column_type}")
+                )
 
 
 def add_equipment_columns() -> None:
@@ -1248,6 +1269,7 @@ def main() -> None:
     migrate_master()
     Base.metadata.create_all(bind=engine)
     add_client_columns()
+    add_company_billing_columns()
     add_equipment_columns()
     add_alert_columns()
     add_equipment_current_status_columns()

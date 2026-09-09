@@ -31,6 +31,7 @@ from app.schemas.pdv_terminal import (
 )
 from app.services.business_day import company_cutoff_minutes, crossed_business_day
 from app.services.plan_limits import enforce_pdv_terminal_limit, lock_pdv_terminal_quota
+from app.services.tenancy import company_code_from_token_claims
 
 router = APIRouter()
 LOCAL_TIMEZONE = ZoneInfo("America/Sao_Paulo")
@@ -94,10 +95,10 @@ def _tenant_company_code(
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token ausente.")
     payload = decode_access_token(credentials.credentials)
-    company_code = payload.get("company_code")
-    if not isinstance(company_code, str) or not company_code:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.")
-    return company_code
+    try:
+        return company_code_from_token_claims(payload)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Empresa invalida.") from exc
 
 
 def _new_activation_code() -> str:
