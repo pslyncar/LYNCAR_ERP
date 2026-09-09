@@ -255,7 +255,7 @@ class ApiClient {
     request.files.add(
       http.MultipartFile.fromBytes('file', bytes, filename: filename),
     );
-    final streamed = await request.send();
+    final streamed = await http.sendMultipart(request);
     final response = await http.Response.fromStream(streamed);
     return MasterSupportTicket.fromJson(_decodeResponse(response));
   }
@@ -759,7 +759,7 @@ class ApiClient {
       'POST',
       Uri.parse('$baseUrl/uploads/$path'),
     );
-    request.headers['Authorization'] = 'Bearer $token';
+    request.headers.addAll(_authHeaders(token)..remove('Content-Type'));
     final lowerName = filename.toLowerCase();
     final contentType = lowerName.endsWith('.png')
         ? MediaType('image', 'png')
@@ -776,7 +776,7 @@ class ApiClient {
         contentType: contentType,
       ),
     );
-    final streamed = await request.send();
+    final streamed = await http.sendMultipart(request);
     final response = await http.Response.fromStream(streamed);
     final data = _decodeResponse(response);
     return data['url']?.toString() ?? '';
@@ -791,7 +791,7 @@ class ApiClient {
       'POST',
       Uri.parse('$baseUrl/uploads/master-contract'),
     );
-    request.headers['Authorization'] = 'Bearer $token';
+    request.headers.addAll(_authHeaders(token)..remove('Content-Type'));
     final lowerName = filename.toLowerCase();
     final contentType = lowerName.endsWith('.pdf')
         ? MediaType('application', 'pdf')
@@ -817,7 +817,7 @@ class ApiClient {
         contentType: contentType,
       ),
     );
-    final streamed = await request.send();
+    final streamed = await http.sendMultipart(request);
     final response = await http.Response.fromStream(streamed);
     final data = _decodeResponse(response);
     return {
@@ -2265,12 +2265,12 @@ class ApiClient {
       'POST',
       Uri.parse('$baseUrl/fiscal/certificate'),
     );
-    request.headers['Authorization'] = 'Bearer $token';
+    request.headers.addAll(_authHeaders(token)..remove('Content-Type'));
     request.files.add(
       http.MultipartFile.fromBytes('certificate', bytes, filename: filename),
     );
     request.fields['password'] = password;
-    final streamed = await request.send();
+    final streamed = await http.sendMultipart(request);
     final response = await http.Response.fromStream(streamed);
     return _decodeResponse(response);
   }

@@ -20,6 +20,19 @@ Map<String, String>? _headers(Map<String, String>? headers) {
   return {...?headers, 'X-CSRF-Token': _csrfToken!};
 }
 
+/// Sends multipart requests through the same browser client used by the
+/// regular API calls. This is important on web: the shared BrowserClient is
+/// configured with credentials enabled, so the HttpOnly web session cookie is
+/// included during image/file uploads as well.
+Future<package_http.StreamedResponse> sendMultipart(
+  package_http.BaseRequest request,
+) {
+  if (_csrfToken != null) {
+    request.headers['X-CSRF-Token'] = _csrfToken!;
+  }
+  return _client.send(request);
+}
+
 Future<package_http.Response> get(
   Uri url, {
   Map<String, String>? headers,
