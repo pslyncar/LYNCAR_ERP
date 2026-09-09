@@ -403,11 +403,12 @@ class _MasterBillingScreenState extends State<MasterBillingScreen> {
                                         icon: const Icon(Icons.qr_code_2),
                                       ),
                                       IconButton(
-                                        tooltip: 'Sincronizar Mercado Pago',
+                                        tooltip: billing.status == 'paid'
+                                            ? 'Atualizar dados do pagador'
+                                            : 'Sincronizar Mercado Pago',
                                         onPressed:
                                             billing.mercadoPagoPaymentId ==
                                                     null ||
-                                                billing.status == 'paid' ||
                                                 billing.status == 'canceled'
                                             ? null
                                             : () => _syncPayment(billing),
