@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 import hashlib
 import secrets
+from urllib.parse import urlsplit
 
 from fastapi import HTTPException, Request, Response, status
 from sqlalchemy import select
@@ -13,8 +14,8 @@ from app.core.security import create_access_token, decode_access_token
 from app.models.auth_session import AuthSession, SecurityAuditLog
 from app.services.tenancy import require_active_company_by_id
 
-SESSION_COOKIE = "lyncar_session"
-CSRF_COOKIE = "lyncar_csrf"
+SESSION_COOKIE_PREFIX = "lyncar_session_"
+CSRF_COOKIE_PREFIX = "lyncar_csrf_"
 REFRESH_DAYS = 30
 IDLE_TIMEOUT = timedelta(hours=3)
 
@@ -34,6 +35,44 @@ def _hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
+def request_origin(request: Request) -> str:
+    """Return the browser application origin used to partition web cookies.
+
+    The web frontends all call the same API host.  A single cookie on that
+    host would therefore make a client session visible to the Master app (and
+    vice versa).  Fetch requests carry their application origin in `Origin`;
+    direct/server-side requests fall back to `Referer` and finally the API
+    request URL.
+    """
+    candidate = request.headers.get("origin")
+    if not candidate or candidate.lower() == "null":
+        referer = request.headers.get("referer")
+        candidate = referer or str(request.base_url)
+    parsed = urlsplit(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        parsed = urlsplit(str(request.base_url))
+    scheme = parsed.scheme.lower()
+    host = parsed.hostname.lower()
+    port = parsed.port
+    default_port = (scheme == "http" and port == 80) or (
+        scheme == "https" and port == 443
+    )
+    return f"{scheme}://{host}{f':{port}' if port and not default_port else ''}"
+
+
+def _cookie_names(request: Request) -> tuple[str, str]:
+    suffix = _hash(request_origin(request))[:20]
+    return f"{SESSION_COOKIE_PREFIX}{suffix}", f"{CSRF_COOKIE_PREFIX}{suffix}"
+
+
+def session_cookie_name(request: Request) -> str:
+    return _cookie_names(request)[0]
+
+
+def has_session_cookie(request: Request) -> bool:
+    return session_cookie_name(request) in request.cookies
+
+
 def _cookie_options() -> dict:
     settings = get_settings()
     return {
@@ -44,19 +83,23 @@ def _cookie_options() -> dict:
     }
 
 
-def _set_cookies(response: Response, session_token: str, csrf_token: str) -> None:
+def _set_cookies(
+    request: Request, response: Response, session_token: str, csrf_token: str
+) -> None:
     options = _cookie_options()
-    response.set_cookie(SESSION_COOKIE, session_token, httponly=True, **{k: v for k, v in options.items() if k != "httponly"})
-    response.set_cookie(CSRF_COOKIE, csrf_token, **options)
+    session_cookie, csrf_cookie = _cookie_names(request)
+    response.set_cookie(session_cookie, session_token, httponly=True, **{k: v for k, v in options.items() if k != "httponly"})
+    response.set_cookie(csrf_cookie, csrf_token, **options)
     # The token is intentionally not secret; it is the readable half of the
     # double-submit CSRF protection and is needed by a frontend on another
     # subdomain to send X-CSRF-Token.
     response.headers["X-CSRF-Token"] = csrf_token
 
 
-def _clear_cookies(response: Response) -> None:
-    response.delete_cookie(SESSION_COOKIE, path="/")
-    response.delete_cookie(CSRF_COOKIE, path="/")
+def _clear_cookies(request: Request, response: Response) -> None:
+    session_cookie, csrf_cookie = _cookie_names(request)
+    response.delete_cookie(session_cookie, path="/")
+    response.delete_cookie(csrf_cookie, path="/")
 
 
 def _audit(db, event: str, request: Request, session: AuthSession | None, outcome: str = "success", metadata: dict | None = None) -> None:
@@ -102,7 +145,7 @@ def _validate_row(db, row: AuthSession | None, request: Request, refresh: bool =
 
 
 def session_from_request(request: Request, refresh: bool = False) -> AuthSession:
-    token = request.cookies.get(SESSION_COOKIE)
+    token = request.cookies.get(session_cookie_name(request))
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "SESSION_REQUIRED", "message": "Sessao ausente. Entre novamente."})
     with MasterSessionLocal() as db:
@@ -116,12 +159,13 @@ def session_from_request(request: Request, refresh: bool = False) -> AuthSession
 
 
 def csrf_from_request(request: Request) -> None:
-    cookie = request.cookies.get(CSRF_COOKIE)
+    session_cookie, csrf_cookie = _cookie_names(request)
+    cookie = request.cookies.get(csrf_cookie)
     header = request.headers.get("X-CSRF-Token")
     if not cookie or not header or not secrets.compare_digest(cookie, header):
         raise HTTPException(status.HTTP_403_FORBIDDEN, detail={"code": "CSRF_INVALID", "message": "A validacao de seguranca falhou. Atualize a pagina e tente novamente."})
     with MasterSessionLocal() as db:
-        row = db.scalar(select(AuthSession).where(AuthSession.token_hash == _hash(request.cookies.get(SESSION_COOKIE, ""))))
+        row = db.scalar(select(AuthSession).where(AuthSession.token_hash == _hash(request.cookies.get(session_cookie, ""))))
         if row is None or not secrets.compare_digest(row.csrf_hash, _hash(cookie)):
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail={"code": "CSRF_INVALID", "message": "A validacao de seguranca falhou. Atualize a pagina e tente novamente."})
 
@@ -134,7 +178,7 @@ def refresh_csrf_cookie(request: Request, response: Response) -> None:
     token from the session bootstrap keeps the double-submit check usable
     without exposing the session cookie.
     """
-    session_token = request.cookies.get(SESSION_COOKIE)
+    session_token = request.cookies.get(session_cookie_name(request))
     if not session_token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "SESSION_REQUIRED", "message": "Sessao ausente. Entre novamente."})
     csrf_token = secrets.token_urlsafe(32)
@@ -143,7 +187,7 @@ def refresh_csrf_cookie(request: Request, response: Response) -> None:
         _validate_row(db, row, request)
         row.csrf_hash = _hash(csrf_token)
         db.commit()
-    _set_cookies(response, session_token, csrf_token)
+    _set_cookies(request, response, session_token, csrf_token)
 
 
 def _create_row(
@@ -182,7 +226,7 @@ def create_session(access_token: str, request: Request, response: Response) -> A
         _audit(db, "session_created", request, row)
         db.commit()
         db.refresh(row)
-        _set_cookies(response, session_token, csrf_token)
+        _set_cookies(request, response, session_token, csrf_token)
         return row
 
 
@@ -211,17 +255,17 @@ def rotate_session(request: Request, response: Response) -> dict:
         db_row.replaced_by_id = new_row.id
         _audit(db, "session_rotated", request, new_row, metadata={"replaced_session_id": db_row.id})
         db.commit()
-        _set_cookies(response, session_token, csrf_token)
+        _set_cookies(request, response, session_token, csrf_token)
     return new_claims
 
 
 def revoke_session(request: Request, response: Response) -> None:
     csrf_from_request(request)
-    token = request.cookies.get(SESSION_COOKIE)
+    token = request.cookies.get(session_cookie_name(request))
     with MasterSessionLocal() as db:
         row = db.scalar(select(AuthSession).where(AuthSession.token_hash == _hash(token or "")))
         if row is not None and row.revoked_at is None:
             row.revoked_at = datetime.now(UTC)
             _audit(db, "session_revoked", request, row)
             db.commit()
-    _clear_cookies(response)
+    _clear_cookies(request, response)

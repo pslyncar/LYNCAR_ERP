@@ -204,6 +204,7 @@ class _AuthGateState extends State<AuthGate> {
   static const _siteInactivityTimeout = Duration(hours: 3);
   static const _activityWriteInterval = Duration(seconds: 15);
   static const _tokenRefreshWindow = Duration(minutes: 10);
+  static const _webSessionCheckInterval = Duration(minutes: 1);
 
   final _storage = AppSessionStorage();
   final _legacyStorage = BrowserSessionStorage();
@@ -214,6 +215,7 @@ class _AuthGateState extends State<AuthGate> {
   Timer? _sessionTimer;
   DateTime? _lastActivityWriteAt;
   DateTime? _lastWebSessionRefreshAt;
+  DateTime? _lastWebSessionCheckAt;
   final _activityFocusNode = FocusNode(debugLabel: 'activity-listener');
 
   bool get _mobileAppMode {
@@ -397,6 +399,29 @@ class _AuthGateState extends State<AuthGate> {
     final session = _session;
     if (session == null) {
       return;
+    }
+    if (kIsWeb && !_mobileAppMode) {
+      final now = DateTime.now().toUtc();
+      if (_lastWebSessionCheckAt == null ||
+          now.difference(_lastWebSessionCheckAt!) >= _webSessionCheckInterval) {
+        _lastWebSessionCheckAt = now;
+        try {
+          // The server session is shared by tabs of the same origin. This
+          // check makes a logout in another tab return this tab to login too.
+          final restored = await ApiClient(
+            session.apiBaseUrl,
+          ).restoreWebSession();
+          if (mounted && _session == session) {
+            setState(() => _session = restored);
+          }
+        } catch (error) {
+          if (_isInvalidSessionError(error)) {
+            _logout();
+            return;
+          }
+          // A temporary network error must not log out an active user.
+        }
+      }
     }
     unawaited(_sendHeartbeat(session));
     if (_usesInactivityTimeout) {

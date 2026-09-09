@@ -14,7 +14,7 @@ from app.services.tenancy import (
     normalize_company_code,
     session_for_company,
 )
-from app.services.web_sessions import session_from_request
+from app.services.web_sessions import has_session_cookie, session_from_request
 
 settings = get_settings()
 
@@ -55,7 +55,7 @@ def _company_code_from_request(request: Request) -> str:
                 "TENANT_CONTEXT_INVALID",
                 "Nao foi possivel validar a empresa desta sessao. Entre novamente.",
             ) from exc
-    if request.cookies.get("lyncar_session"):
+    if has_session_cookie(request):
         row = session_from_request(request)
         if row.claims.get("scope") == "master":
             return normalize_company_code(settings.default_company_code)

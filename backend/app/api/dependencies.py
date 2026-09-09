@@ -17,7 +17,7 @@ from app.services.tenancy import (
     company_code_from_token_claims,
     get_enabled_modules_for_company,
 )
-from app.services.web_sessions import internal_access_token, session_from_request
+from app.services.web_sessions import has_session_cookie, internal_access_token, session_from_request
 
 
 class CookieAwareBearer:
@@ -29,7 +29,7 @@ class CookieAwareBearer:
             return HTTPAuthorizationCredentials(
                 scheme="Bearer", credentials=authorization.split(" ", 1)[1].strip()
             )
-        if request.cookies.get("lyncar_session"):
+        if has_session_cookie(request):
             try:
                 row = session_from_request(request)
             except HTTPException:
