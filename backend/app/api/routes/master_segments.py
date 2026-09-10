@@ -137,5 +137,7 @@ def delete_segment(
                 )
             for company in companies:
                 company.business_type = destination.code
+                # A configuração explícita da empresa é preservada. Somente
+                # empresas sem lista explícita herdam o novo segmento.
         db.delete(segment)
         db.commit()

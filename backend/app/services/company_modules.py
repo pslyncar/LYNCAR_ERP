@@ -321,11 +321,19 @@ def modules_for_business_type(
     modules: list[str] | None,
     plan_code: str | None = None,
 ) -> list[str]:
-    plan_modules = set(plan_default_modules(plan_code))
     if modules is not None:
+        # A lista da empresa é a exceção explícita configurada pelo master.
+        # Não reaplique o plano aqui, pois isso apagaria liberações individuais.
         return normalize_modules(modules)
-    enabled = set(segment_default_modules(business_type))
-    return filter_modules_by_plan(sorted(enabled | plan_modules), plan_code)
+
+    # Para empresas que herdam a configuração, o módulo precisa estar
+    # permitido pelo segmento e pelo plano. A interseção evita que um recurso
+    # operacional do segmento escape de um plano que não o inclui.
+    segment_modules = set(segment_default_modules(business_type))
+    plan_modules = set(plan_default_modules(plan_code))
+    if not segment_modules or not plan_modules:
+        return []
+    return normalize_modules(sorted(segment_modules & plan_modules))
 
 
 def permission_allowed_by_modules(permission_code: str, enabled_modules: list[str]) -> bool:

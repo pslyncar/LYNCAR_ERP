@@ -140,7 +140,7 @@ class _UsersScreenState extends State<UsersScreen> {
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Cadastre usuários e vincule cada pessoa a um perfil de acesso.',
+                        'Cadastre usuários usando somente os perfis liberados para esta empresa.',
                         style: TextStyle(color: Color(0xFF64748B)),
                       ),
                     ],
@@ -221,7 +221,7 @@ class _ProfilesWarning extends StatelessWidget {
           SizedBox(width: 12),
           Expanded(
             child: Text(
-              'Crie perfis em Configurações antes de cadastrar novos usuários.',
+              'Crie perfis em Configurações antes de cadastrar novos usuários. Os módulos disponíveis respeitam o plano, o segmento e as liberações específicas desta empresa.',
               style: TextStyle(color: Color(0xFF475569)),
             ),
           ),
@@ -300,8 +300,12 @@ class _UsersTable extends StatelessWidget {
                     spacing: 4,
                     children: [
                       IconButton(
-                        tooltip: 'Editar usuário',
-                        onPressed: () => onEdit(user),
+                        tooltip: user.role == 'admin'
+                            ? 'Administrador não pode ser editado aqui'
+                            : 'Editar usuário',
+                        onPressed: user.role == 'admin'
+                            ? null
+                            : () => onEdit(user),
                         icon: const Icon(Icons.edit_outlined),
                       ),
                       IconButton(
@@ -419,12 +423,18 @@ class _UserDialogState extends State<_UserDialog> {
       } else {
         savedUser = await widget.api.createSystemUser(widget.token, payload);
       }
-      await widget.api.setSystemUserPermission(
-        widget.token,
-        savedUser.id,
-        permissionCode: 'sales:discount:override',
-        allowed: _discountOverride,
-      );
+      final discountPermissionAvailable =
+          _selectedRole?.permissions.contains('sales:discount:override') ==
+              true ||
+          widget.user?.permissions.contains('sales:discount:override') == true;
+      if (discountPermissionAvailable) {
+        await widget.api.setSystemUserPermission(
+          widget.token,
+          savedUser.id,
+          permissionCode: 'sales:discount:override',
+          allowed: _discountOverride,
+        );
+      }
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (error) {
       if (await _showDuplicateEmailBlock(error)) return;
@@ -599,16 +609,34 @@ class _UserDialogState extends State<_UserDialog> {
                   onChanged: (value) => setState(() => _appAccess = value),
                 ),
                 const SizedBox(height: 4),
-                SwitchListTile(
-                  contentPadding: EdgeInsets.zero,
-                  secondary: const Icon(Icons.percent_outlined),
-                  title: const Text('Desconto livre'),
-                  subtitle: const Text(
-                    'Permite este usuario ultrapassar o limite de desconto em vendas e OS.',
-                  ),
-                  value: _discountOverride,
-                  onChanged: (value) =>
-                      setState(() => _discountOverride = value),
+                Builder(
+                  builder: (context) {
+                    final discountPermissionAvailable =
+                        _selectedRole?.permissions.contains(
+                              'sales:discount:override',
+                            ) ==
+                            true ||
+                        widget.user?.permissions.contains(
+                              'sales:discount:override',
+                            ) ==
+                            true;
+                    return SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      secondary: const Icon(Icons.percent_outlined),
+                      title: const Text('Desconto livre'),
+                      subtitle: Text(
+                        discountPermissionAvailable
+                            ? 'Permite este usuário ultrapassar o limite de desconto em vendas e OS.'
+                            : 'Disponível somente quando o módulo de vendas estiver liberado para a empresa.',
+                      ),
+                      value: discountPermissionAvailable
+                          ? _discountOverride
+                          : false,
+                      onChanged: discountPermissionAvailable
+                          ? (value) => setState(() => _discountOverride = value)
+                          : null,
+                    );
+                  },
                 ),
                 const SizedBox(height: 4),
                 SwitchListTile(

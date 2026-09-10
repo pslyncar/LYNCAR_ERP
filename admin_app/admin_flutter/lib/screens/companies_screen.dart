@@ -199,7 +199,7 @@ const _businessTypeModules = {
 };
 
 bool _moduleAllowedByPlanInfo(String module, _PlanInfo? plan) {
-  return true;
+  return plan?.defaultModules.contains(module) ?? false;
 }
 
 class _PlanInfo {
@@ -1652,7 +1652,11 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
         currentMonthly == (oldInfo?.monthlyPrice ?? '');
     setState(() {
       _plan = plan;
-      _enabledModules = _suggestedModulesFor(plan, _businessType);
+      // Existing companies may have an explicit module exception. Changing
+      // the plan must not silently erase that deliberate configuration.
+      if (widget.company == null) {
+        _enabledModules = _suggestedModulesFor(plan, _businessType);
+      }
       if (shouldUsePlanPrice) {
         _monthlyPrice.text = info.monthlyPrice ?? '';
       }
@@ -1770,7 +1774,11 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
                   if (value == null) return;
                   setState(() {
                     _businessType = value;
-                    _enabledModules = _suggestedModulesFor(_plan, value);
+                    // Keep explicit company-level modules when editing an
+                    // existing tenant; suggestions apply only to new ones.
+                    if (widget.company == null) {
+                      _enabledModules = _suggestedModulesFor(_plan, value);
+                    }
                   });
                 },
               ),

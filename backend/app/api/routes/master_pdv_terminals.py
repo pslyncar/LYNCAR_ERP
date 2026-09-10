@@ -22,7 +22,11 @@ from app.schemas.pdv_terminal import (
     PdvBusinessDaySettings,
 )
 from app.services.business_day import company_cutoff_minutes, crossed_business_day
-from app.services.tenancy import normalize_company_code, session_for_company
+from app.services.tenancy import (
+    get_enabled_modules_for_company,
+    normalize_company_code,
+    session_for_company,
+)
 from app.services.plan_limits import (
     company_resource_usage,
     enforce_pdv_terminal_limit,
@@ -123,7 +127,7 @@ def _require_company_with_pdv_windows(company_code: str) -> str:
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Empresa cliente nao encontrada ou inativa.",
             )
-        if "pdv_windows" not in (company.enabled_modules or []):
+        if "pdv_windows" not in get_enabled_modules_for_company(company.code):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(

@@ -13,7 +13,7 @@ from app.models import master_permission as _master_permission  # noqa: F401
 from app.models import master_support as _master_support  # noqa: F401
 from app.models.master_user import MasterUser
 from app.models.master_user_index import MasterUserIndex
-from app.services.company_modules import ALL_MODULES, normalize_modules
+from app.services.company_modules import normalize_modules, modules_for_business_type
 
 
 def normalize_company_code(value: str) -> str:
@@ -95,11 +95,19 @@ def company_code_from_token_claims(payload: dict) -> str:
 def get_enabled_modules_for_company(company_code: str) -> list[str]:
     company = get_company_by_code(company_code)
     if company is None:
-        return ALL_MODULES
-    # enabled_modules é a decisão final do master: pode vir do plano, segmento
-    # ou de uma liberação específica. Refiltrar pelo plano aqui apagava a
-    # exceção individual concedida à empresa.
-    return normalize_modules(company.enabled_modules or ALL_MODULES)
+        # Falha de resolução de tenant nunca pode virar acesso total.
+        return []
+    # None significa que a empresa ainda usa os padrões de plano/segmento.
+    # Lista vazia é uma decisão explícita do master e deve continuar vazia.
+    if company.enabled_modules is None:
+        return modules_for_business_type(
+            company.business_type,
+            None,
+            company.plan,
+        )
+    # Uma lista preenchida é a decisão final específica da empresa. Não
+    # reaplicamos o plano aqui, pois isso apagaria exceções individuais.
+    return normalize_modules(company.enabled_modules)
 
 
 @lru_cache(maxsize=128)

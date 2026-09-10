@@ -68,13 +68,9 @@ def update_plan(
             )
         for field, value in plan_in.model_dump().items():
             setattr(plan, field, value)
-        if plan_in.default_modules is not None:
-            normalized_modules = sorted(set(plan_in.default_modules))
-            companies = db.scalars(
-                select(Company).where(Company.plan == plan.code)
-            ).all()
-            for company in companies:
-                company.enabled_modules = normalized_modules
+        # Não sobrescreva a configuração específica de cada empresa ao
+        # editar o plano. Empresas legadas com enabled_modules nulo continuam
+        # herdando plano/segmento dinamicamente.
         db.commit()
         db.refresh(plan)
         return plan
@@ -116,9 +112,10 @@ def delete_plan(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="Plano de destino nao encontrado.",
                 )
-            destination_modules = sorted(set(destination.default_modules or []))
             for company in companies:
                 company.plan = destination.code
-                company.enabled_modules = destination_modules
+                # Preserve a decisão específica da empresa. A resolução
+                # efetiva passa a considerar o novo plano quando a empresa
+                # não possui uma lista explícita.
         db.delete(plan)
         db.commit()

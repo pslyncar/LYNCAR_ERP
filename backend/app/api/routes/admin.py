@@ -40,6 +40,7 @@ router = APIRouter()
 
 _SYSTEM_ROLES = {"admin"}
 _LEGACY_ROLES = {"technician", "seller", "cashier", "client"}
+_NON_ASSIGNABLE_ROLES = _SYSTEM_ROLES | _LEGACY_ROLES
 _SYSTEM_USER_EMAILS = {"_pdv_terminal@lyncar.local"}
 
 
@@ -313,7 +314,17 @@ def update_user(
         user.email = email
         update_data.pop("email")
 
-    target_role = _role_or_400(db, update_data.get("role", user.role))
+    requested_role = update_data.get("role", user.role)
+    if user.role in _SYSTEM_ROLES and requested_role != user.role:
+        raise HTTPException(
+            status_code=403,
+            detail="O administrador do sistema não pode ser rebaixado por uma empresa.",
+        )
+    target_role = _role_or_400(
+        db,
+        requested_role,
+        allow_existing_system_role=user.role in _SYSTEM_ROLES,
+    )
     if update_data.get("active") is True and not user.active:
         enforce_user_limit(db, company_code, activating_new_user=True)
     if "seller_code" in update_data:
@@ -420,23 +431,46 @@ def _ensure_role_flags_allowed(
     is_technician_profile: bool,
     credentials: HTTPAuthorizationCredentials | None,
 ) -> None:
+    enabled_modules = set(_enabled_modules_from_credentials(credentials))
     allowed = _operational_roles_from_credentials(credentials)
     if is_seller_profile and not allowed["seller"]:
         raise HTTPException(
             status_code=403,
             detail="Perfil de vendedor nao liberado para o segmento desta empresa.",
         )
+    if is_seller_profile and "sales" not in enabled_modules:
+        raise HTTPException(
+            status_code=403,
+            detail="O módulo de vendas não está liberado para esta empresa.",
+        )
     if is_technician_profile and not allowed["technician"]:
         raise HTTPException(
             status_code=403,
             detail="Perfil de tecnico nao liberado para o segmento desta empresa.",
         )
+    if is_technician_profile and not ({"service_orders", "tickets"} & enabled_modules):
+        raise HTTPException(
+            status_code=403,
+            detail="O módulo de atendimento técnico não está liberado para esta empresa.",
+        )
 
 
-def _role_or_400(db: Session, role_name: str) -> Role:
+def _role_or_400(
+    db: Session,
+    role_name: str,
+    *,
+    allow_existing_system_role: bool = False,
+) -> Role:
     role = db.scalar(select(Role).where(Role.name == role_name, Role.active.is_(True)))
     if role is None:
         raise HTTPException(status_code=400, detail="Perfil invalido.")
+    if role.name in _NON_ASSIGNABLE_ROLES and not (
+        allow_existing_system_role and role.name in _SYSTEM_ROLES
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Perfis internos do sistema não podem ser atribuídos a funcionários.",
+        )
     return role
 
 
@@ -456,7 +490,7 @@ def list_roles(
     enabled_modules = _enabled_modules_from_credentials(credentials)
     roles = db.scalars(
         select(Role)
-        .where(Role.active.is_(True), Role.name.notin_(_LEGACY_ROLES))
+        .where(Role.active.is_(True), Role.name.notin_(_NON_ASSIGNABLE_ROLES))
         .order_by(Role.label)
     ).all()
     return [serialize_role(db, role, enabled_modules) for role in roles]

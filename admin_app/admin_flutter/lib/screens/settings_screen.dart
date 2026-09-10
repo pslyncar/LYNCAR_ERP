@@ -107,7 +107,8 @@ const _permissionUsageHints = {
       'Mostra Produtos/Estoque quando combinado com estoque e permite consultar itens.',
   'products:create': 'Permite cadastrar produto.',
   'products:update': 'Permite alterar produto, preço e dados do cadastro.',
-  'products:promotions': 'Mostra Preços e promoções e permite criar ou encerrar ofertas.',
+  'products:promotions':
+      'Mostra Preços e promoções e permite criar ou encerrar ofertas.',
   'products:delete': 'Permite excluir produto.',
   'stock:view': 'Mostra Estoque e permite consultar saldo.',
   'stock:move': 'Permite movimentar estoque manualmente.',
@@ -906,7 +907,7 @@ class _AccessProfilesPanelState extends State<AccessProfilesPanel> {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      'Monte cargos da sua empresa usando apenas os módulos liberados no plano.',
+                      'Monte cargos da sua empresa usando apenas o que foi liberado pelo plano, segmento e regras específicas da empresa.',
                       style: TextStyle(color: Color(0xFF64748B)),
                     ),
                   ],
@@ -1040,9 +1041,12 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
         .toSet();
     _isSellerProfile =
         widget.session.sellerRoleEnabled &&
+        widget.session.hasModule('sales') &&
         (widget.role?.isSellerProfile ?? false);
     _isTechnicianProfile =
         widget.session.technicianRoleEnabled &&
+        (widget.session.hasModule('service_orders') ||
+            widget.session.hasModule('tickets')) &&
         (widget.role?.isTechnicianProfile ?? false);
   }
 
@@ -1169,8 +1173,13 @@ class _AccessProfileDialogState extends State<_AccessProfileDialog> {
                   ),
                   const Gap(14),
                   _OperationalRoleBox(
-                    sellerAvailable: widget.session.sellerRoleEnabled,
-                    technicianAvailable: widget.session.technicianRoleEnabled,
+                    sellerAvailable:
+                        widget.session.sellerRoleEnabled &&
+                        widget.session.hasModule('sales'),
+                    technicianAvailable:
+                        widget.session.technicianRoleEnabled &&
+                        (widget.session.hasModule('service_orders') ||
+                            widget.session.hasModule('tickets')),
                     isSellerProfile: _isSellerProfile,
                     isTechnicianProfile: _isTechnicianProfile,
                     canOverrideDiscount: _selected.contains(

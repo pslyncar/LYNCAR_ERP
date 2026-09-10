@@ -308,7 +308,8 @@ class _AppShellState extends State<AppShell> {
           ),
         ),
       if (!isMasterPanel) ...[
-        if (widget.session.can('dashboard:view'))
+        if (widget.session.hasModule('dashboard') &&
+            widget.session.can('dashboard:view'))
           _Destination(
             category: AppNavigationSection.home,
             label: 'Início',
@@ -334,7 +335,8 @@ class _AppShellState extends State<AppShell> {
               ],
             ),
           ),
-        if (widget.session.can('dashboard:view'))
+        if (widget.session.hasModule('dashboard') &&
+            widget.session.can('dashboard:view'))
           _Destination(
             category: AppNavigationSection.home,
             label: 'Loja Lyncar',
@@ -342,7 +344,8 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.storefront,
             screen: ClientStoreScreen(session: widget.session),
           ),
-        if (widget.session.can('clients:view'))
+        if (widget.session.hasModule('clients') &&
+            widget.session.can('clients:view'))
           _Destination(
             category: AppNavigationSection.records,
             label: 'Clientes',
@@ -350,8 +353,10 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.business,
             screen: ClientsScreen(session: widget.session),
           ),
-        if (widget.session.can('equipments:view') ||
-            widget.session.can('monitoring:view'))
+        if ((widget.session.hasModule('equipments') ||
+                widget.session.hasModule('monitoring')) &&
+            (widget.session.can('equipments:view') ||
+                widget.session.can('monitoring:view')))
           _Destination(
             category: AppNavigationSection.records,
             label: 'Máquinas',
@@ -359,7 +364,8 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.computer,
             screen: EquipmentsScreen(session: widget.session),
           ),
-        if (widget.session.can('service_orders:view'))
+        if (widget.session.hasModule('service_orders') &&
+            widget.session.can('service_orders:view'))
           _Destination(
             category: AppNavigationSection.operation,
             label: 'OS',
@@ -377,7 +383,8 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.receipt_long,
             screen: SalesScreen(session: widget.session),
           ),
-        if (widget.session.can('sales:create'))
+        if (widget.session.hasModule('pdv') &&
+            widget.session.can('sales:create'))
           _Destination(
             category: AppNavigationSection.operation,
             label: 'PDV',
@@ -401,9 +408,10 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.account_balance_wallet,
             screen: CashClosingsScreen(session: widget.session),
           ),
-        if (widget.session.can('finance:view') ||
-            widget.session.can('finance:receivables:view') ||
-            widget.session.can('finance:payables:view'))
+        if (widget.session.hasModule('finance') &&
+            (widget.session.can('finance:view') ||
+                widget.session.can('finance:receivables:view') ||
+                widget.session.can('finance:payables:view')))
           _Destination(
             category: AppNavigationSection.finance,
             label: 'Financeiro',
@@ -411,8 +419,10 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.account_balance,
             screen: FinanceScreen(session: widget.session),
           ),
-        if (widget.session.can('products:view') ||
-            widget.session.can('stock:view'))
+        if ((widget.session.hasModule('products') ||
+                widget.session.hasModule('stock')) &&
+            (widget.session.can('products:view') ||
+                widget.session.can('stock:view')))
           _Destination(
             category: AppNavigationSection.stock,
             label: 'Estoque',
@@ -458,9 +468,10 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.input,
             screen: StockEntriesScreen(session: widget.session),
           ),
-        if (widget.session.can('suppliers:view') ||
-            widget.session.can('suppliers:create') ||
-            widget.session.can('suppliers:update'))
+        if (widget.session.hasModule('suppliers') &&
+            (widget.session.can('suppliers:view') ||
+                widget.session.can('suppliers:create') ||
+                widget.session.can('suppliers:update')))
           _Destination(
             category: AppNavigationSection.records,
             label: 'Fornecedores',
@@ -468,8 +479,9 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.local_shipping,
             screen: SuppliersScreen(session: widget.session),
           ),
-        if (widget.session.can('production:view') ||
-            widget.session.can('production:create'))
+        if (widget.session.hasModule('production') &&
+            (widget.session.can('production:view') ||
+                widget.session.can('production:create')))
           _Destination(
             category: AppNavigationSection.stock,
             label: 'Produção',
@@ -477,10 +489,11 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.precision_manufacturing,
             screen: ProductionOrdersScreen(session: widget.session),
           ),
-        if (widget.session.can('service_contracts:view') ||
-            widget.session.can('service_contracts:manage') ||
-            widget.session.can('service_contracts:appointments') ||
-            widget.session.can('service_contracts:billing'))
+        if (widget.session.hasModule('service_contracts') &&
+            (widget.session.can('service_contracts:view') ||
+                widget.session.can('service_contracts:manage') ||
+                widget.session.can('service_contracts:appointments') ||
+                widget.session.can('service_contracts:billing')))
           _Destination(
             category: AppNavigationSection.operation,
             label: 'Contratos',
@@ -488,7 +501,8 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.event_note,
             screen: ServiceContractsScreen(session: widget.session),
           ),
-        if (widget.session.canUseFiscal &&
+        if (widget.session.hasModule('fiscal') &&
+            widget.session.canUseFiscal &&
             widget.session.can('fiscal:documents:view'))
           _Destination(
             category: AppNavigationSection.fiscal,
@@ -507,14 +521,8 @@ class _AppShellState extends State<AppShell> {
                         setState(() => _issuingFiscalDocument = true),
                   ),
           ),
-        if (widget.session.can('products:view') ||
-            widget.session.can('stock:view') ||
-            widget.session.can('sales:view') ||
-            widget.session.can('finance:view') ||
-            widget.session.can('finance:receivables:view') ||
-            widget.session.can('finance:payables:view') ||
-            widget.session.can('stock:entries:view') ||
-            widget.session.can('clients:view'))
+        if (widget.session.hasModule('reports') &&
+            widget.session.can('reports:view'))
           _Destination(
             category: AppNavigationSection.management,
             label: 'Relatórios',
@@ -540,7 +548,8 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.badge,
             screen: PdvOperatorsScreen(session: widget.session),
           ),
-        if (widget.session.can('users:manage'))
+        if (widget.session.hasModule('users') &&
+            widget.session.can('users:manage'))
           _Destination(
             category: AppNavigationSection.management,
             label: 'Usuários',

@@ -30,7 +30,10 @@ from app.services.company_billing import (
     pending_billing_for_dashboard,
 )
 from app.services.mercado_pago import create_pix_for_billing
-from app.services.tenancy import company_code_from_token_claims
+from app.services.tenancy import (
+    company_code_from_token_claims,
+    get_enabled_modules_for_company,
+)
 
 router = APIRouter()
 
@@ -124,7 +127,11 @@ def get_company_context(company_code: str | None) -> tuple[str | None, list[str]
         company = master_db.scalar(select(Company).where(Company.code == company_code))
         if company is None:
             return None, []
-        return company.business_type, company.enabled_modules or []
+        # Keep dashboard visibility aligned with the same effective-module
+        # resolver used by auth and API dependencies. Never interpret the raw
+        # database list here, otherwise legacy/inherited companies can see a
+        # different dashboard from the menu and route guards.
+        return company.business_type, get_enabled_modules_for_company(company.code)
 
 
 def list_dashboard_contents(
