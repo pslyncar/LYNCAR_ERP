@@ -24,6 +24,7 @@ import 'master_finance_settings_screen.dart';
 import 'master_pdv_terminals_screen.dart';
 import 'master_plans_screen.dart';
 import 'master_staff_screen.dart';
+import 'master_security_sessions_screen.dart';
 import 'master_website_contacts_screen.dart';
 import 'marketplaces_screen.dart';
 import 'pdv_operators_screen.dart';
@@ -183,6 +184,14 @@ class _AppShellState extends State<AppShell> {
           icon: Icons.people_alt_outlined,
           selectedIcon: Icons.people_alt,
           screen: MasterAccessScreen(session: widget.session),
+        ),
+      if (isMasterPanel && widget.session.canMaster('master:companies'))
+        _Destination(
+          category: AppNavigationSection.masterAccess,
+          label: 'Sessões e dispositivos',
+          icon: Icons.devices_outlined,
+          selectedIcon: Icons.devices,
+          screen: MasterSecuritySessionsScreen(session: widget.session),
         ),
       if (isMasterPanel && widget.session.canMaster('master:staff'))
         _Destination(

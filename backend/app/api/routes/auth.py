@@ -55,9 +55,11 @@ from app.services.web_sessions import (
     create_session,
     csrf_from_request,
     list_sessions,
+    list_master_sessions,
     refresh_csrf_cookie,
     revoke_session,
     revoke_other_sessions,
+    revoke_master_session,
     rotate_session,
     session_from_request,
 )
@@ -152,6 +154,29 @@ def web_sessions(request: Request) -> dict:
 def web_revoke_other_sessions(request: Request) -> dict:
     count = revoke_other_sessions(request)
     return {"revoked": count}
+
+
+@router.get("/web/master/sessions")
+def web_master_sessions(
+    request: Request,
+    company_code: str | None = Query(default=None, max_length=64),
+    limit: int = Query(default=50, ge=1, le=50),
+    offset: int = Query(default=0, ge=0, le=10000),
+) -> dict:
+    return {
+        "sessions": list_master_sessions(
+            request,
+            company_code=company_code,
+            limit=limit,
+            offset=offset,
+        )
+    }
+
+
+@router.post("/web/master/sessions/{session_id}/revoke")
+def web_master_revoke_session(session_id: int, request: Request) -> dict:
+    revoke_master_session(request, session_id)
+    return {"revoked": True}
 
 
 def _is_pdv_client_type(value: str | None) -> bool:

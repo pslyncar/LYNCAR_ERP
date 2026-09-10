@@ -34,6 +34,7 @@ import '../models/sale.dart';
 import '../models/service_order.dart';
 import '../models/service_contract.dart';
 import '../models/session.dart';
+import '../models/web_session_info.dart';
 import '../models/master_support.dart';
 import '../models/stock_movement.dart';
 import '../models/stock_entry.dart';
@@ -124,6 +125,38 @@ class ApiClient {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/web/logout'),
       headers: _authHeaders(session.token),
+    );
+    _decodeResponse(response);
+  }
+
+  Future<List<WebSessionInfo>> listMasterWebSessions(
+    String token, {
+    String? companyCode,
+    int limit = 50,
+  }) async {
+    final query = <String, String>{'limit': '$limit'};
+    if (companyCode != null && companyCode.trim().isNotEmpty) {
+      query['company_code'] = companyCode.trim();
+    }
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/auth/web/master/sessions',
+      ).replace(queryParameters: query),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeResponse(response);
+    final items = data['sessions'];
+    if (items is! List) return const [];
+    return items
+        .whereType<Map>()
+        .map((item) => WebSessionInfo.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  Future<void> revokeMasterWebSession(String token, int sessionId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/web/master/sessions/$sessionId/revoke'),
+      headers: _authHeaders(token),
     );
     _decodeResponse(response);
   }

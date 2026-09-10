@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.master_database import MasterSessionLocal
 from app.core.security import create_access_token, decode_access_token
 from app.models.auth_session import AuthSession, SecurityAuditLog
+from app.models.company import Company
 from app.services.tenancy import require_active_company_by_id
 
 SESSION_COOKIE_PREFIX = "lyncar_session_"
@@ -312,6 +313,20 @@ def _ip_hint(value: str | None) -> str | None:
     return ".".join(parts[:2] + ["*"]) if len(parts) == 4 else "*"
 
 
+def _user_hint(value: str | None) -> str:
+    """Return a privacy-preserving account hint for the Master screen."""
+    if not value:
+        return "Usuário da empresa"
+    if "@" not in value:
+        return "Usuário da empresa"
+    local, domain = value.split("@", 1)
+    if len(local) <= 2:
+        masked_local = local[:1] + "•"
+    else:
+        masked_local = local[:1] + "•••" + local[-1:]
+    return f"{masked_local}@{domain}"
+
+
 def revoke_other_sessions(request: Request) -> int:
     """Revoke every other active browser session for this user/company."""
     csrf_from_request(request)
@@ -334,3 +349,106 @@ def revoke_other_sessions(request: Request) -> int:
             _audit(db, "session_revoked", request, row, metadata={"reason": "revoke_others"})
         db.commit()
     return len(rows)
+
+
+def _require_master_session(request: Request) -> AuthSession:
+    current = session_from_request(request)
+    settings = get_settings()
+    if current.claims.get("scope") != "master" and current.company_code != settings.master_company_code:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail={
+                "code": "MASTER_SESSION_REQUIRED",
+                "message": "Acesso restrito à administração da Lyncar.",
+            },
+        )
+    return current
+
+
+def list_master_sessions(
+    request: Request,
+    *,
+    company_code: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """List active tenant web sessions for authorized Master operators.
+
+    Only operational metadata is returned. Full IPs, cookies and token claims
+    never leave the server; this keeps the screen useful without turning it
+    into a user-tracking surface.
+    """
+    current = _require_master_session(request)
+    now = datetime.now(UTC)
+    normalized_code = company_code.strip().lower() if company_code else None
+    with MasterSessionLocal() as db:
+        statement = (
+            select(AuthSession)
+            .where(
+                AuthSession.revoked_at.is_(None),
+                AuthSession.refresh_expires_at > now,
+            )
+            .order_by(AuthSession.last_seen_at.desc())
+            .offset(offset)
+            .limit(min(max(limit, 1), 50))
+        )
+        if normalized_code:
+            statement = statement.where(AuthSession.company_code == normalized_code)
+        rows = list(db.scalars(statement))
+        company_ids = {row.company_id for row in rows if row.company_id is not None}
+        companies = {}
+        if company_ids:
+            companies = {
+                company.id: company.name
+                for company in db.scalars(select(Company).where(Company.id.in_(company_ids)))
+            }
+        _audit(
+            db,
+            "master_sessions_listed",
+            request,
+            current,
+            metadata={"company_code": normalized_code, "count": len(rows)},
+        )
+        db.commit()
+    return [
+        {
+            "id": row.id,
+            "current": row.id == current.id,
+            "company_code": row.company_code,
+            "company_name": companies.get(row.company_id) or row.company_code,
+            "user_hint": _user_hint(row.claims.get("user_email")),
+            "created_at": row.created_at,
+            "last_seen_at": row.last_seen_at,
+            "expires_at": row.expires_at,
+            "user_agent": row.user_agent,
+            "ip_hint": _ip_hint(row.ip_address),
+        }
+        for row in rows
+    ]
+
+
+def revoke_master_session(request: Request, session_id: int) -> None:
+    csrf_from_request(request)
+    current = _require_master_session(request)
+    now = datetime.now(UTC)
+    with MasterSessionLocal() as db:
+        target = db.get(AuthSession, session_id)
+        if target is None or target.revoked_at is not None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail={"code": "SESSION_NOT_FOUND", "message": "Sessão não encontrada ou já encerrada."},
+            )
+        if target.id == current.id:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                detail={"code": "CURRENT_SESSION", "message": "Use Sair para encerrar o dispositivo atual."},
+            )
+        target.revoked_at = now
+        _audit(
+            db,
+            "master_session_revoked",
+            request,
+            current,
+            metadata={"target_session_id": target.id, "target_company_code": target.company_code},
+        )
+        db.commit()
