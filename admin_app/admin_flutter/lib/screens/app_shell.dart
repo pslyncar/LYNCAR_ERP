@@ -539,7 +539,7 @@ class _AppShellState extends State<AppShell> {
             selectedIcon: Icons.devices_other,
             screen: PdvTerminalsScreen(session: widget.session),
           ),
-        if (widget.session.hasModule('pdv_windows') &&
+        if (widget.session.hasModule('pdv') &&
             widget.session.can('pdv_operators:manage'))
           _Destination(
             category: AppNavigationSection.management,
