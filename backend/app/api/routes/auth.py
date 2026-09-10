@@ -16,6 +16,7 @@ from app.core.security import (
     decode_access_token,
     decode_access_token_unverified_exp,
     hash_password,
+    needs_password_rehash,
     verify_password,
 )
 from app.models.master_user import MasterUser
@@ -36,6 +37,11 @@ from app.services.company_modules import modules_for_business_type, segment_oper
 from app.services.company_presence import touch_company_presence
 from app.services.master_permissions import get_master_user_permission_codes
 from app.services.master_user_index import find_user_companies, redirect_detail_for_email
+from app.services.login_throttle import (
+    enforce_login_rate_limit,
+    record_login_failure,
+    record_login_success,
+)
 from app.services.tenancy import (
     get_company_by_code,
     get_enabled_modules_for_company,
@@ -48,8 +54,10 @@ from app.services.tenancy import (
 from app.services.web_sessions import (
     create_session,
     csrf_from_request,
+    list_sessions,
     refresh_csrf_cookie,
     revoke_session,
+    revoke_other_sessions,
     rotate_session,
     session_from_request,
 )
@@ -100,7 +108,14 @@ def _web_session_payload(claims: dict) -> dict:
 @router.post("/web/login")
 def web_login(login_in: LoginRequest, request: Request, response: Response) -> dict:
     """Browser login: the access token stays server-side; the browser receives only cookies."""
-    token_response = login(login_in)
+    enforce_login_rate_limit(request, login_in.company_code, login_in.email)
+    try:
+        token_response = login(login_in)
+    except HTTPException as exc:
+        if exc.status_code in {status.HTTP_401_UNAUTHORIZED, status.HTTP_409_CONFLICT}:
+            record_login_failure(request, login_in.company_code, login_in.email)
+        raise
+    record_login_success(request, login_in.company_code, login_in.email)
     create_session(token_response.access_token, request, response)
     return token_response.model_dump(exclude={"access_token", "token_type"}) | {
         "authenticated": True,
@@ -125,6 +140,18 @@ def web_refresh(request: Request, response: Response) -> dict:
 def web_logout(request: Request, response: Response) -> dict:
     revoke_session(request, response)
     return {"authenticated": False}
+
+
+@router.get("/web/sessions")
+def web_sessions(request: Request) -> dict:
+    """Return only the signed-in user's active browser sessions."""
+    return {"sessions": list_sessions(request)}
+
+
+@router.post("/web/sessions/revoke-others")
+def web_revoke_other_sessions(request: Request) -> dict:
+    count = revoke_other_sessions(request)
+    return {"revoked": count}
 
 
 def _is_pdv_client_type(value: str | None) -> bool:
@@ -414,6 +441,9 @@ def login(login_in: LoginRequest) -> TokenResponse:
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="E-mail ou senha invalidos.",
                 )
+            if needs_password_rehash(user.password_hash):
+                user.password_hash = hash_password(login_in.password)
+                db.commit()
             return _token_response_for_master_user(user)
 
     company = get_company_by_code(company_code)
@@ -439,6 +469,10 @@ def login(login_in: LoginRequest) -> TokenResponse:
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="E-mail ou senha invalidos.",
             )
+
+        if needs_password_rehash(user.password_hash):
+            user.password_hash = hash_password(login_in.password)
+            db.commit()
 
         permissions = sorted(get_user_permission_codes(db, user, enabled_modules))
         user_id = user.id

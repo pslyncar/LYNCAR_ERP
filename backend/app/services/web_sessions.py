@@ -269,3 +269,68 @@ def revoke_session(request: Request, response: Response) -> None:
             _audit(db, "session_revoked", request, row)
             db.commit()
     _clear_cookies(request, response)
+
+
+def list_sessions(request: Request) -> list[dict]:
+    """List active browser sessions belonging to the current identity only."""
+    current = session_from_request(request)
+    now = datetime.now(UTC)
+    with MasterSessionLocal() as db:
+        rows = list(
+            db.scalars(
+                select(AuthSession)
+                .where(
+                    AuthSession.user_subject == current.user_subject,
+                    AuthSession.company_id == current.company_id,
+                    AuthSession.revoked_at.is_(None),
+                    AuthSession.refresh_expires_at > now,
+                )
+                .order_by(AuthSession.last_seen_at.desc())
+            )
+        )
+    return [
+        {
+            "id": row.id,
+            "current": row.id == current.id,
+            "created_at": row.created_at,
+            "last_seen_at": row.last_seen_at,
+            "user_agent": row.user_agent,
+            "ip_hint": _ip_hint(row.ip_address),
+        }
+        for row in rows
+    ]
+
+
+def _ip_hint(value: str | None) -> str | None:
+    """Return a useful, non-sensitive hint instead of exposing the full IP."""
+    if not value:
+        return None
+    if ":" in value:
+        parts = value.split(":")
+        return "…:" + ":".join(parts[-2:])
+    parts = value.split(".")
+    return ".".join(parts[:2] + ["*"]) if len(parts) == 4 else "*"
+
+
+def revoke_other_sessions(request: Request) -> int:
+    """Revoke every other active browser session for this user/company."""
+    csrf_from_request(request)
+    current = session_from_request(request)
+    now = datetime.now(UTC)
+    with MasterSessionLocal() as db:
+        rows = list(
+            db.scalars(
+                select(AuthSession).where(
+                    AuthSession.user_subject == current.user_subject,
+                    AuthSession.company_id == current.company_id,
+                    AuthSession.revoked_at.is_(None),
+                    AuthSession.id != current.id,
+                    AuthSession.refresh_expires_at > now,
+                )
+            )
+        )
+        for row in rows:
+            row.revoked_at = now
+            _audit(db, "session_revoked", request, row, metadata={"reason": "revoke_others"})
+        db.commit()
+    return len(rows)

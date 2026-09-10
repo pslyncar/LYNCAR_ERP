@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import hmac
 import os
@@ -8,6 +9,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import jwt
+from argon2 import PasswordHasher
+from argon2.exceptions import InvalidHashError, VerificationError, VerifyMismatchError
+from argon2.low_level import Type
 
 from app.core.config import get_settings
 
@@ -16,23 +20,24 @@ SALT_BYTES = 16
 HASH_BYTES = 32
 PASSWORD_HASH_PREFIX = "pbkdf2_sha256"
 JWT_ALGORITHM = "HS256"
+ARGON2ID_PREFIX = "$argon2id$"
+PASSWORD_HASHER = PasswordHasher(type=Type.ID)
 
 
 def hash_password(password: str) -> str:
-    salt = os.urandom(SALT_BYTES)
-    password_hash = hashlib.pbkdf2_hmac(
-        "sha256",
-        password.encode("utf-8"),
-        salt,
-        PBKDF2_ITERATIONS,
-        dklen=HASH_BYTES,
-    )
-    salt_b64 = base64.b64encode(salt).decode("ascii")
-    hash_b64 = base64.b64encode(password_hash).decode("ascii")
-    return f"{PASSWORD_HASH_PREFIX}${PBKDF2_ITERATIONS}${salt_b64}${hash_b64}"
+    """Hash passwords with the current password-storage standard (Argon2id)."""
+    return PASSWORD_HASHER.hash(password)
 
 
 def verify_password(password: str, stored_hash: str) -> bool:
+    if stored_hash.startswith(ARGON2ID_PREFIX):
+        try:
+            return PASSWORD_HASHER.verify(stored_hash, password)
+        except (InvalidHashError, VerificationError, VerifyMismatchError):
+            return False
+
+    # Compatibility path for accounts created before Argon2id was introduced.
+    # A successful legacy verification is rehashed by the login flow.
     try:
         prefix, iterations_text, salt_b64, hash_b64 = stored_hash.split("$", 3)
         if prefix != PASSWORD_HASH_PREFIX:
@@ -41,7 +46,7 @@ def verify_password(password: str, stored_hash: str) -> bool:
         iterations = int(iterations_text)
         salt = base64.b64decode(salt_b64.encode("ascii"))
         expected_hash = base64.b64decode(hash_b64.encode("ascii"))
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, binascii.Error):
         return False
 
     password_hash = hashlib.pbkdf2_hmac(
@@ -52,6 +57,16 @@ def verify_password(password: str, stored_hash: str) -> bool:
         dklen=len(expected_hash),
     )
     return hmac.compare_digest(password_hash, expected_hash)
+
+
+def needs_password_rehash(stored_hash: str) -> bool:
+    """Return whether a successful login should upgrade the stored hash."""
+    if not stored_hash.startswith(ARGON2ID_PREFIX):
+        return True
+    try:
+        return PASSWORD_HASHER.check_needs_rehash(stored_hash)
+    except (InvalidHashError, VerificationError):
+        return True
 
 
 def create_access_token(
