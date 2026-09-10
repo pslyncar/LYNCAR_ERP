@@ -97,18 +97,14 @@ def get_enabled_modules_for_company(company_code: str) -> list[str]:
     if company is None:
         # Falha de resolução de tenant nunca pode virar acesso total.
         return []
-    # Empresas novas sem seleção própria herdam dinamicamente do plano e do
-    # segmento. Empresas personalizadas mantêm exatamente a concessão do
-    # master, mesmo quando o plano/segmento muda depois.
-    if getattr(company, "module_access_source", "custom") == "inherited":
-        return modules_for_business_type(
-            company.business_type,
-            None,
-            company.plan,
-        )
-    # Uma lista preenchida é a decisão final específica da empresa. Não
-    # reaplicamos o plano aqui, pois isso apagaria exceções individuais.
-    return normalize_modules(company.enabled_modules)
+    # A empresa herda sempre o conjunto atual do plano/segmento. Somente
+    # concessões e revogações explícitas por módulo ficam fora da herança.
+    base_modules = set(
+        modules_for_business_type(company.business_type, None, company.plan)
+    )
+    grants = set(normalize_modules(company.manual_module_grants or []))
+    revocations = set(normalize_modules(company.manual_module_revocations or []))
+    return sorted((base_modules | grants) - revocations)
 
 
 @lru_cache(maxsize=128)

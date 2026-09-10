@@ -36,7 +36,7 @@ from app.models.website_contact_request import WebsiteContactRequest  # noqa: F4
 from app.models.auth_session import AuthSession, SecurityAuditLog  # noqa: F401
 from app.services.company_modules import (
     modules_for_business_type,
-    plan_allows_module,
+    normalize_modules,
 )
 from app.services.plan_limits import normalize_plan_code
 from app.services.tenancy import seed_master_identity
@@ -84,6 +84,8 @@ COMPANY_COLUMNS = [
     ("digital_certificate_notes", "TEXT"),
     ("enabled_modules", "JSON NOT NULL DEFAULT '[]'"),
     ("module_access_source", "VARCHAR(20) NOT NULL DEFAULT 'custom'"),
+    ("manual_module_grants", "JSON NOT NULL DEFAULT '[]'"),
+    ("manual_module_revocations", "JSON NOT NULL DEFAULT '[]'"),
     ("xml_email_token", "VARCHAR(40)"),
     ("xml_email_enabled", "BOOLEAN NOT NULL DEFAULT true"),
     ("business_day_cutoff_minutes", "INTEGER NOT NULL DEFAULT 180"),
@@ -329,21 +331,30 @@ def normalize_existing_company_modules() -> None:
         companies = list(db.scalars(select(Company)).all())
         changed = False
         for company in companies:
-            modules = set(company.enabled_modules or [])
             plan = normalize_plan_code(company.plan)
-            if "stock" in modules and "suppliers" not in modules:
-                modules.add("suppliers")
+            current = set(normalize_modules(company.enabled_modules or []))
+            base = set(modules_for_business_type(company.business_type, None, plan))
+            existing_grants = set(normalize_modules(company.manual_module_grants or []))
+            existing_revocations = set(normalize_modules(company.manual_module_revocations or []))
+            # A legacy row has no per-module provenance. Preserve its current
+            # access and classify only differences from the plan/segment as
+            # exceptions; matching modules remain inherited dynamically.
+            if not existing_grants and not existing_revocations:
+                existing_grants = current - base
+                existing_revocations = base - current
+            effective = sorted((base | existing_grants) - existing_revocations)
+            if company.enabled_modules != effective:
+                company.enabled_modules = effective
                 changed = True
-            if plan_allows_module(plan, "service_contracts") and "service_contracts" not in modules:
-                modules.add("service_contracts")
+            if company.manual_module_grants != sorted(existing_grants):
+                company.manual_module_grants = sorted(existing_grants)
                 changed = True
-            normalized_modules = modules_for_business_type(
-                company.business_type,
-                None if getattr(company, "module_access_source", "custom") == "inherited" else sorted(modules),
-                plan,
-            )
-            if normalized_modules != (company.enabled_modules or []):
-                company.enabled_modules = normalized_modules
+            if company.manual_module_revocations != sorted(existing_revocations):
+                company.manual_module_revocations = sorted(existing_revocations)
+                changed = True
+            source = "custom" if existing_grants or existing_revocations else "inherited"
+            if company.module_access_source != source:
+                company.module_access_source = source
                 changed = True
         if changed:
             db.commit()
@@ -372,16 +383,9 @@ def _ensure_sidebar_modules_in_existing_records(db) -> None:
     for plan in plans:
         current_plan_modules.update(plan.default_modules or [])
     if current_plan_modules & new_modules:
-        # Empresas já criadas guardam uma seleção própria. Para o recurso que
-        # é padrão de plano, sincroniza somente as empresas Pro.
-        changed = False
-        for company in db.scalars(select(Company).where(Company.plan == "pro")).all():
-            modules = set(company.enabled_modules or [])
-            if "product_promotions" not in modules:
-                company.enabled_modules = sorted(modules | {"product_promotions"})
-                changed = True
-        if changed:
-            db.commit()
+        # A migração por empresa, abaixo, calcula as exceções módulo a módulo.
+        # Não altere o cache de empresas aqui, pois isso perderia a origem do
+        # acesso e poderia transformar uma concessão do plano em manual.
         return
     additions_by_base = {
         "stock": {"stock_entries", "stock_withdrawals"},
@@ -406,15 +410,6 @@ def _ensure_sidebar_modules_in_existing_records(db) -> None:
         modules.update(always_on)
         if sorted(modules) != (segment.default_modules or []):
             segment.default_modules = sorted(modules)
-            changed = True
-    for company in db.scalars(select(Company)).all():
-        modules = set(company.enabled_modules or [])
-        for base, additions in additions_by_base.items():
-            if base in modules:
-                modules.update(additions)
-        modules.update(always_on)
-        if sorted(modules) != (company.enabled_modules or []):
-            company.enabled_modules = sorted(modules)
             changed = True
     if changed:
         db.commit()

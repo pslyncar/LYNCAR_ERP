@@ -10,7 +10,11 @@ from app.schemas.business_segment import (
     BusinessSegmentRead,
     BusinessSegmentUpdate,
 )
-from app.services.company_modules import modules_for_business_type, normalize_modules
+from app.services.company_modules import (
+    modules_for_business_type,
+    normalize_modules,
+    plan_default_modules,
+)
 
 router = APIRouter()
 
@@ -69,9 +73,13 @@ def create_segment(
 def update_segment(
     segment_code: str,
     segment_in: BusinessSegmentUpdate,
-    apply_to_existing_companies: bool = Query(
-        True,
-        description="Atualiza empresas que herdaram o segmento; concessões personalizadas são preservadas.",
+    apply_to_existing_companies: bool | None = Query(
+        None,
+        description="Compatibilidade: aplica todas as alterações de módulos.",
+    ),
+    apply_modules: str | None = Query(
+        None,
+        description="IDs dos módulos que devem ser aplicados às empresas do segmento.",
     ),
     _: dict = Depends(require_master_permission("master:billing")),
 ) -> BusinessSegment:
@@ -85,15 +93,25 @@ def update_segment(
         companies = list(
             db.scalars(select(Company).where(Company.business_type == segment.code)).all()
         )
-        if not apply_to_existing_companies:
-            for company in companies:
-                if getattr(company, "module_access_source", "custom") == "inherited":
-                    company.enabled_modules = modules_for_business_type(
-                        company.business_type,
-                        None,
-                        company.plan,
-                    )
-                    company.module_access_source = "custom"
+        old_segment_modules = set(normalize_modules(segment.default_modules or []))
+        new_segment_modules = set(normalize_modules(segment_in.default_modules))
+        changed_modules = old_segment_modules ^ new_segment_modules
+        if apply_modules is not None:
+            selected_modules = {
+                module.strip()
+                for module in apply_modules.split(",")
+                if module.strip()
+            } & changed_modules
+        elif apply_to_existing_companies is False:
+            selected_modules = set()
+        else:
+            selected_modules = changed_modules
+        old_effective_by_company: dict[int, set[str]] = {}
+        for company in companies:
+            base = set(modules_for_business_type(company.business_type, None, company.plan))
+            grants = set(normalize_modules(company.manual_module_grants or []))
+            revocations = set(normalize_modules(company.manual_module_revocations or []))
+            old_effective_by_company[company.id] = (base | grants) - revocations
         segment.name = segment_in.name.strip()
         segment.description = segment_in.description
         segment.max_users = segment_in.max_users
@@ -103,6 +121,33 @@ def update_segment(
         segment.technician_role_enabled = segment_in.technician_role_enabled
         segment.active = segment_in.active
         segment.sort_order = segment_in.sort_order
+        for company in companies:
+            new_base = set(
+                normalize_modules(
+                    sorted(
+                        new_segment_modules
+                        & set(plan_default_modules(company.plan))
+                    )
+                )
+            )
+            grants = set(normalize_modules(company.manual_module_grants or []))
+            revocations = set(normalize_modules(company.manual_module_revocations or []))
+            # Applying a module makes it inherited again. Remove a previous
+            # per-company override only for the buttons selected by the admin.
+            for module in selected_modules:
+                grants.discard(module)
+                revocations.discard(module)
+            for module in changed_modules - selected_modules:
+                if module in old_effective_by_company[company.id]:
+                    grants.add(module)
+                    revocations.discard(module)
+                else:
+                    revocations.add(module)
+                    grants.discard(module)
+            company.manual_module_grants = sorted(grants)
+            company.manual_module_revocations = sorted(revocations)
+            company.enabled_modules = sorted((new_base | grants) - revocations)
+            company.module_access_source = "custom" if grants or revocations else "inherited"
         db.commit()
         db.refresh(segment)
         return segment

@@ -480,18 +480,16 @@ class ApiClient {
     String token,
     String code,
     SubscriptionPlan plan, {
-    bool? applyToExistingCompanies,
+    Set<String>? applyModules,
   }) async {
     final uri = Uri.parse('$baseUrl/master/plans/$code');
+    final modules = applyModules == null
+        ? null
+        : (applyModules.toList()..sort());
     final response = await http.put(
-      applyToExistingCompanies == null
+      modules == null
           ? uri
-          : uri.replace(
-              queryParameters: {
-                'apply_to_existing_companies': applyToExistingCompanies
-                    .toString(),
-              },
-            ),
+          : uri.replace(queryParameters: {'apply_modules': modules.join(',')}),
       headers: _authHeaders(token),
       body: jsonEncode(plan.toUpdateJson()),
     );
@@ -543,18 +541,16 @@ class ApiClient {
     String token,
     String code,
     BusinessSegment segment, {
-    bool? applyToExistingCompanies,
+    Set<String>? applyModules,
   }) async {
     final uri = Uri.parse('$baseUrl/master/segments/$code');
+    final modules = applyModules == null
+        ? null
+        : (applyModules.toList()..sort());
     final response = await http.put(
-      applyToExistingCompanies == null
+      modules == null
           ? uri
-          : uri.replace(
-              queryParameters: {
-                'apply_to_existing_companies': applyToExistingCompanies
-                    .toString(),
-              },
-            ),
+          : uri.replace(queryParameters: {'apply_modules': modules.join(',')}),
       headers: _authHeaders(token),
       body: jsonEncode(segment.toUpdateJson()),
     );

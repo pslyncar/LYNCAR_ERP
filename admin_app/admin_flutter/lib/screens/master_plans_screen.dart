@@ -110,18 +110,19 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
       builder: (context) => _PlanDialog(plan: plan),
     );
     if (updated == null) return;
-    final applyToExistingCompanies = await _confirmAccessPropagation(
+    final applyModules = await _confirmAccessPropagation(
       scope: 'plano',
       name: plan.name,
-      changed: !_sameModules(plan.defaultModules, updated.defaultModules),
+      previousModules: plan.defaultModules,
+      nextModules: updated.defaultModules,
     );
-    if (!mounted || applyToExistingCompanies == null) return;
+    if (!mounted || applyModules == null) return;
     try {
       await _api.updateMasterPlan(
         widget.session.token,
         plan.code,
         updated,
-        applyToExistingCompanies: applyToExistingCompanies,
+        applyModules: applyModules,
       );
       await _load();
     } on ApiException catch (error) {
@@ -173,18 +174,19 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
       builder: (context) => _SegmentDialog(segment: segment),
     );
     if (updated == null) return;
-    final applyToExistingCompanies = await _confirmAccessPropagation(
+    final applyModules = await _confirmAccessPropagation(
       scope: 'segmento',
       name: segment.name,
-      changed: !_sameModules(segment.defaultModules, updated.defaultModules),
+      previousModules: segment.defaultModules,
+      nextModules: updated.defaultModules,
     );
-    if (!mounted || applyToExistingCompanies == null) return;
+    if (!mounted || applyModules == null) return;
     try {
       await _api.updateMasterSegment(
         widget.session.token,
         segment.code,
         updated,
-        applyToExistingCompanies: applyToExistingCompanies,
+        applyModules: applyModules,
       );
       await _load();
     } on ApiException catch (error) {
@@ -277,45 +279,85 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
     );
   }
 
-  bool _sameModules(List<String> first, List<String> second) {
-    return first.toSet().length == second.toSet().length &&
-        first.toSet().containsAll(second);
-  }
-
-  Future<bool?> _confirmAccessPropagation({
+  Future<Set<String>?> _confirmAccessPropagation({
     required String scope,
     required String name,
-    required bool changed,
+    required List<String> previousModules,
+    required List<String> nextModules,
   }) {
-    if (!changed) return Future<bool?>.value(true);
-    return showDialog<bool>(
+    final previous = previousModules.toSet();
+    final next = nextModules.toSet();
+    final changed = <String>{
+      ...previous.difference(next),
+      ...next.difference(previous),
+    };
+    if (changed.isEmpty) return Future<Set<String>?>.value(<String>{});
+    final selected = {...changed};
+    final sortedChanged = changed.toList()..sort();
+    return showDialog<Set<String>?>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text('Aplicar alteração do $scope?'),
-        content: Text(
-          'Você alterou os módulos liberados de "$name". '
-          'Como deseja tratar as empresas que já usam esta configuração?\n\n'
-          'Aplicar alteração: empresas que herdam do $scope passam a seguir '
-          'a nova configuração. Concessões personalizadas por empresa são '
-          'preservadas.\n\n'
-          'Manter acessos atuais: congela o acesso atual das empresas existentes; '
-          'novas empresas seguirão a configuração nova.',
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: Text('Aplicar alterações do $scope'),
+          content: SizedBox(
+            width: 540,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Você alterou os módulos de "$name". Escolha quais botões '
+                  'devem ser sincronizados para as empresas que herdam esta configuração. '
+                  'Exceções dadas manualmente continuam preservadas nos demais botões.',
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 300,
+                  child: ListView.builder(
+                    itemCount: sortedChanged.length,
+                    itemBuilder: (context, index) {
+                      final module = sortedChanged[index];
+                      final isAdded = next.contains(module);
+                      return CheckboxListTile(
+                        value: selected.contains(module),
+                        dense: true,
+                        controlAffinity: ListTileControlAffinity.leading,
+                        title: Text(_planModuleLabels[module] ?? module),
+                        subtitle: Text(
+                          isAdded
+                              ? 'Liberar este botão para quem herda o $scope.'
+                              : 'Remover este botão de quem herda o $scope.',
+                        ),
+                        onChanged: (value) => setDialogState(() {
+                          if (value == true) {
+                            selected.add(module);
+                          } else {
+                            selected.remove(module);
+                          }
+                        }),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancelar'),
+            ),
+            OutlinedButton(
+              onPressed: () => Navigator.of(context).pop(<String>{}),
+              child: const Text('Manter acessos atuais'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(selected),
+              child: const Text('Aplicar selecionados'),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancelar'),
-          ),
-          OutlinedButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Manter acessos atuais'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Aplicar alteração'),
-          ),
-        ],
       ),
     );
   }

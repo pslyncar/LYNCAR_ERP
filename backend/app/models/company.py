@@ -51,6 +51,18 @@ class Company(MasterBase):
         default="custom",
         nullable=False,
     )
+    # Exceções por módulo: o plano/segmento continua sendo a fonte padrão e
+    # somente estes módulos ficam fora da herança automática.
+    manual_module_grants: Mapped[list[str]] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )
+    manual_module_revocations: Mapped[list[str]] = mapped_column(
+        JSON,
+        default=list,
+        nullable=False,
+    )
     monthly_price: Mapped[str | None] = mapped_column(String(30))
     billing_day: Mapped[str | None] = mapped_column(String(2))
     payment_method: Mapped[str | None] = mapped_column(String(40))

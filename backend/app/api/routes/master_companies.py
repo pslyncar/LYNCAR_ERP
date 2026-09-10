@@ -23,7 +23,7 @@ from app.services.company_tax_profile import (
     apply_lookup_to_company,
     lookup_company_tax_profile,
 )
-from app.services.company_modules import modules_for_business_type
+from app.services.company_modules import modules_for_business_type, normalize_modules
 from app.services.master_holidays import _resolve_ibge_city_code
 from app.services.master_user_index import (
     remove_user_index,
@@ -712,9 +712,19 @@ def create_company(
             email=str(company_in.email) if company_in.email else None,
         )
         validate_billing_fields(company_in.billing_day, company_in.payment_method)
-        module_access_source = (
-            "inherited" if company_in.enabled_modules is None else "custom"
+        normalized_plan = normalize_plan_code(company_in.plan)
+        base_modules = set(
+            modules_for_business_type(company_in.business_type, None, normalized_plan)
         )
+        explicit_modules = company_in.enabled_modules is not None
+        desired_modules = (
+            set(normalize_modules(company_in.enabled_modules))
+            if explicit_modules
+            else base_modules
+        )
+        manual_grants = desired_modules - base_modules if explicit_modules else set()
+        manual_revocations = base_modules - desired_modules if explicit_modules else set()
+        module_access_source = "custom" if manual_grants or manual_revocations else "inherited"
         company = Company(
             code=code,
             name=company_in.name.strip(),
@@ -739,14 +749,12 @@ def create_company(
             tax_regime=company_in.tax_regime,
             crt=company_in.crt,
             database_url=database_url,
-            plan=normalize_plan_code(company_in.plan),
+            plan=normalized_plan,
             plan_overrides=_clean_plan_overrides(company_in.plan_overrides),
-            enabled_modules=modules_for_business_type(
-                company_in.business_type,
-                company_in.enabled_modules,
-                normalize_plan_code(company_in.plan),
-            ),
+            enabled_modules=sorted(desired_modules),
             module_access_source=module_access_source,
+            manual_module_grants=sorted(manual_grants),
+            manual_module_revocations=sorted(manual_revocations),
             monthly_price=company_in.monthly_price
             or plan_defaults(company_in.plan).monthly_price,
             billing_day=company_in.billing_day,
@@ -831,25 +839,34 @@ def update_company(
             data["plan"] = normalize_plan_code(data["plan"])
             if "monthly_price" in data and not data.get("monthly_price"):
                 data["monthly_price"] = plan_defaults(data["plan"]).monthly_price
+        business_type = data.get("business_type", company.business_type)
+        plan_code = normalize_plan_code(data.get("plan", company.plan))
         if "enabled_modules" in data:
-            business_type = data.get("business_type", company.business_type)
-            plan_code = normalize_plan_code(data.get("plan", company.plan))
-            data["enabled_modules"] = modules_for_business_type(
-                business_type,
-                data["enabled_modules"],
-                plan_code,
+            base_modules = set(modules_for_business_type(business_type, None, plan_code))
+            explicit_modules = data["enabled_modules"] is not None
+            desired_modules = (
+                set(normalize_modules(data["enabled_modules"]))
+                if explicit_modules
+                else base_modules
             )
-            data["module_access_source"] = "custom"
-        elif (
-            ("business_type" in data or "plan" in data)
-            and getattr(company, "module_access_source", "custom") == "inherited"
-        ):
-            data["enabled_modules"] = modules_for_business_type(
-                data.get("business_type", company.business_type),
-                None,
-                normalize_plan_code(data.get("plan", company.plan)),
+            data["enabled_modules"] = sorted(desired_modules)
+            data["manual_module_grants"] = (
+                sorted(desired_modules - base_modules) if explicit_modules else []
             )
-            data["module_access_source"] = "inherited"
+            data["manual_module_revocations"] = (
+                sorted(base_modules - desired_modules) if explicit_modules else []
+            )
+            data["module_access_source"] = (
+                "custom"
+                if data["manual_module_grants"] or data["manual_module_revocations"]
+                else "inherited"
+            )
+        elif "business_type" in data or "plan" in data:
+            grants = set(normalize_modules(company.manual_module_grants or []))
+            revocations = set(normalize_modules(company.manual_module_revocations or []))
+            base_modules = set(modules_for_business_type(business_type, None, plan_code))
+            data["enabled_modules"] = sorted((base_modules | grants) - revocations)
+            data["module_access_source"] = "custom" if grants or revocations else "inherited"
         if "plan_overrides" in data:
             data["plan_overrides"] = _clean_plan_overrides(data["plan_overrides"])
         if "contract_signed_at" in data or "contract_expires_at" in data:
