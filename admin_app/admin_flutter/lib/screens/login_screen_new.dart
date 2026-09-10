@@ -132,123 +132,73 @@ class _BrandPanel extends StatelessWidget {
             ),
           ),
           Positioned(
-            right: -180,
+            left: -180,
             bottom: -220,
-            child: Transform.rotate(
-              angle: -.15,
-              child: Container(
-                width: 620,
-                height: 330,
-                decoration: BoxDecoration(
-                  color: _accent.withValues(alpha: .07),
-                  borderRadius: BorderRadius.circular(80),
-                ),
+            child: Container(
+              width: 620,
+              height: 330,
+              decoration: BoxDecoration(
+                color: _accent.withValues(alpha: .06),
+                borderRadius: BorderRadius.circular(100),
               ),
             ),
           ),
-          SafeArea(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final compactHeight = constraints.maxHeight < 820;
-                final previewScale = constraints.maxHeight < 720
-                    ? .78
-                    : constraints.maxHeight < 820
-                    ? .90
-                    : .98;
-                final horizontalPadding = constraints.maxWidth < 1050
-                    ? 36.0
-                    : 64.0;
-                final contentWidth =
-                    (constraints.maxWidth - horizontalPadding - 42).clamp(
-                      320.0,
-                      double.infinity,
-                    );
-
-                return Padding(
-                  padding: EdgeInsets.fromLTRB(horizontalPadding, 34, 42, 28),
-                  child: SizedBox(
-                    width: contentWidth,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _BrandHeader(),
-                        SizedBox(height: compactHeight ? 42 : 105),
-                        Text.rich(
-                          TextSpan(
-                            children: [
-                              TextSpan(text: 'Tudo da sua empresa,\n'),
-                              TextSpan(
-                                text: 'em um só lugar.',
-                                style: TextStyle(color: _accent),
-                              ),
-                            ],
-                          ),
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: compactHeight ? 38 : 46,
-                            height: 1.12,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -1.2,
-                          ),
-                        ),
-                        SizedBox(height: compactHeight ? 16 : 22),
-                        const Text(
-                          'Estoque, vendas, financeiro, clientes e muito mais.\n'
-                          'Mais controle para hoje. Mais resultado para amanhã.',
-                          style: TextStyle(
-                            color: Color(0xFFC0D0E3),
-                            fontSize: 17,
-                            height: 1.55,
-                          ),
-                        ),
-                        SizedBox(height: compactHeight ? 22 : 34),
-                        const Row(
-                          children: [
-                            _Feature(
-                              icon: Icons.bar_chart_rounded,
-                              label: 'Gestão\ncompleta',
-                            ),
-                            SizedBox(width: 30),
-                            _Feature(
-                              icon: Icons.verified_user_outlined,
-                              label: 'Seguro\ne confiável',
-                            ),
-                            SizedBox(width: 30),
-                            _Feature(
-                              icon: Icons.bolt_outlined,
-                              label: 'Feito para\nsua rotina',
-                            ),
-                          ],
-                        ),
-                        // Reserve a distinct lower band for the preview and
-                        // the motto so the rotated card never collides with
-                        // the feature row above it.
-                        SizedBox(height: compactHeight ? 20 : 32),
-                        Row(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            Expanded(
-                              child: SizedBox(
-                                height: 230 * previewScale,
-                                child: Transform.translate(
-                                  offset: Offset(0, compactHeight ? 18 : 14),
-                                  child: Transform.scale(
-                                    scale: previewScale,
-                                    alignment: Alignment.topLeft,
-                                    child: const _DashboardPreview(),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 18),
-                            const SizedBox(width: 104, child: _Motto()),
-                          ],
-                        ),
+          Center(
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                Container(
+                  width: 360,
+                  height: 220,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    gradient: RadialGradient(
+                      colors: [
+                        _accent.withValues(alpha: .18),
+                        Colors.transparent,
                       ],
                     ),
                   ),
-                );
-              },
+                ),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/brand/lyncar_logo_clean.png',
+                      width: 250,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Text(
+                        'Lyncar',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 52,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 26),
+                    Container(
+                      width: 42,
+                      height: 2,
+                      decoration: BoxDecoration(
+                        color: _accent,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                    const Text(
+                      'Seu negócio no controle.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: Color(0xFFE7F1FC),
+                        fontSize: 19,
+                        fontWeight: FontWeight.w500,
+                        letterSpacing: .2,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
