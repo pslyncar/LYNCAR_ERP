@@ -116,7 +116,7 @@ PERMISSIONS = [
         "cash_closings",
         "Aprovar, corrigir e marcar divergencias nos fechamentos de caixa.",
     ),
-    PermissionDefinition("pdv_operators:manage", "Administrar PDV Windows", "pdv_windows", "Criar operadores, fiscais e terminais do aplicativo Windows."),
+    PermissionDefinition("pdv_operators:manage", "Administrar operadores de caixa", "pdv", "Criar operadores e fiscais para o PDV."),
     PermissionDefinition("service_orders:view", "Ver OS", "service_orders", "Visualizar ordens de serviço."),
     PermissionDefinition("service_orders:create", "Criar OS", "service_orders", "Abrir ordens de serviço."),
     PermissionDefinition("service_orders:update", "Editar OS", "service_orders", "Alterar ordens de serviço."),
