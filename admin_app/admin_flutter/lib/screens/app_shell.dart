@@ -16,7 +16,7 @@ import 'fiscal_documents_screen.dart';
 import 'emitir_nota_fiscal_screen.dart';
 import 'first_access_tour.dart';
 import 'master_access_screen.dart';
-import 'master_billing_screen.dart';
+import 'master_billing_v2_screen.dart';
 import 'master_contracts_screen.dart';
 import 'master_integrations_screen.dart';
 import 'master_payment_settings_screen.dart';
@@ -223,7 +223,7 @@ class _AppShellState extends State<AppShell> {
           label: 'Cobranças',
           icon: Icons.payments_outlined,
           selectedIcon: Icons.payments,
-          screen: MasterBillingScreen(session: widget.session),
+          screen: MasterBillingV2Screen(session: widget.session),
         ),
       if (isMasterPanel && widget.session.canMaster('master:billing'))
         _Destination(
