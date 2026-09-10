@@ -242,8 +242,6 @@ SEGMENT_DEFAULTS = {
 
 def normalize_modules(modules: list[str] | None) -> list[str]:
     enabled = set(modules or [])
-    if "stock" in enabled:
-        enabled.add("suppliers")
     return sorted(module for module in enabled if module in ALL_MODULES)
 
 
