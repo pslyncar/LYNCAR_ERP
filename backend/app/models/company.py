@@ -44,6 +44,13 @@ class Company(MasterBase):
     plan: Mapped[str] = mapped_column(String(80), default="erp")
     plan_overrides: Mapped[dict | None] = mapped_column(JSON)
     enabled_modules: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # Guarda a origem da configuração para não confundir uma concessão
+    # específica da empresa com o acesso herdado do plano/segmento.
+    module_access_source: Mapped[str] = mapped_column(
+        String(20),
+        default="custom",
+        nullable=False,
+    )
     monthly_price: Mapped[str | None] = mapped_column(String(30))
     billing_day: Mapped[str | None] = mapped_column(String(2))
     payment_method: Mapped[str | None] = mapped_column(String(40))

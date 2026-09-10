@@ -712,6 +712,9 @@ def create_company(
             email=str(company_in.email) if company_in.email else None,
         )
         validate_billing_fields(company_in.billing_day, company_in.payment_method)
+        module_access_source = (
+            "inherited" if company_in.enabled_modules is None else "custom"
+        )
         company = Company(
             code=code,
             name=company_in.name.strip(),
@@ -743,6 +746,7 @@ def create_company(
                 company_in.enabled_modules,
                 normalize_plan_code(company_in.plan),
             ),
+            module_access_source=module_access_source,
             monthly_price=company_in.monthly_price
             or plan_defaults(company_in.plan).monthly_price,
             billing_day=company_in.billing_day,
@@ -823,22 +827,29 @@ def update_company(
             ),
             exclude_id=company_id,
         )
-        if "business_type" in data or "enabled_modules" in data:
-            business_type = data.get("business_type", company.business_type)
-            modules = data.get("enabled_modules", company.enabled_modules)
         if "plan" in data and data["plan"] is not None:
             data["plan"] = normalize_plan_code(data["plan"])
             if "monthly_price" in data and not data.get("monthly_price"):
                 data["monthly_price"] = plan_defaults(data["plan"]).monthly_price
-        if "business_type" in data or "enabled_modules" in data or "plan" in data:
+        if "enabled_modules" in data:
             business_type = data.get("business_type", company.business_type)
-            modules = data.get("enabled_modules", company.enabled_modules)
             plan_code = normalize_plan_code(data.get("plan", company.plan))
             data["enabled_modules"] = modules_for_business_type(
                 business_type,
-                modules,
+                data["enabled_modules"],
                 plan_code,
             )
+            data["module_access_source"] = "custom"
+        elif (
+            ("business_type" in data or "plan" in data)
+            and getattr(company, "module_access_source", "custom") == "inherited"
+        ):
+            data["enabled_modules"] = modules_for_business_type(
+                data.get("business_type", company.business_type),
+                None,
+                normalize_plan_code(data.get("plan", company.plan)),
+            )
+            data["module_access_source"] = "inherited"
         if "plan_overrides" in data:
             data["plan_overrides"] = _clean_plan_overrides(data["plan_overrides"])
         if "contract_signed_at" in data or "contract_expires_at" in data:

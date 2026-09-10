@@ -33,7 +33,7 @@ from app.schemas.auth import (
 )
 from app.schemas.pdv_terminal import PdvTerminalActivationRequest
 from app.services.access_control import get_user_permission_codes
-from app.services.company_modules import modules_for_business_type, segment_operational_roles
+from app.services.company_modules import segment_operational_roles
 from app.services.company_presence import touch_company_presence
 from app.services.master_permissions import get_master_user_permission_codes
 from app.services.master_user_index import find_user_companies, redirect_detail_for_email
@@ -88,11 +88,7 @@ def _web_session_payload(claims: dict) -> dict:
     company = get_company_by_code(company_code)
     if company is None:
         return payload
-    enabled_modules = modules_for_business_type(
-        company.business_type,
-        company.enabled_modules,
-        company.plan or "start",
-    )
+    enabled_modules = get_enabled_modules_for_company(company.code)
     operational_roles = segment_operational_roles(company.business_type)
     payload.update(
         company_code=normalize_company_code(company.code),
@@ -228,11 +224,7 @@ def _token_response_for_tenant_user(
     company = get_company_by_code(company_code)
     company_name = company.name if company else company_code
     plan_code = (company.plan or "start") if company else "start"
-    enabled_modules = modules_for_business_type(
-        company.business_type if company else "custom",
-        company.enabled_modules if company else None,
-        plan_code,
-    )
+    enabled_modules = get_enabled_modules_for_company(company.code) if company else []
     operational_roles = segment_operational_roles(
         company.business_type if company else "custom"
     )
@@ -473,11 +465,7 @@ def login(login_in: LoginRequest) -> TokenResponse:
 
     company = get_company_by_code(company_code)
     plan_code = (company.plan or "start") if company else "start"
-    enabled_modules = modules_for_business_type(
-        company.business_type if company else "custom",
-        company.enabled_modules if company else None,
-        plan_code,
-    )
+    enabled_modules = get_enabled_modules_for_company(company.code) if company else []
     operational_roles = segment_operational_roles(
         company.business_type if company else "custom"
     )
@@ -869,11 +857,7 @@ def read_current_user(
         ) from exc
     _ensure_company_active(company_code)
     plan_code = company.plan if company else "start"
-    enabled_modules = modules_for_business_type(
-        company.business_type if company else "custom",
-        company.enabled_modules if company else None,
-        plan_code,
-    )
+    enabled_modules = get_enabled_modules_for_company(company.code) if company else []
     try:
         user_id = int(subject)
     except ValueError as exc:

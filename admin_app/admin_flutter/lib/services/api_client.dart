@@ -479,10 +479,19 @@ class ApiClient {
   Future<SubscriptionPlan> updateMasterPlan(
     String token,
     String code,
-    SubscriptionPlan plan,
-  ) async {
+    SubscriptionPlan plan, {
+    bool? applyToExistingCompanies,
+  }) async {
+    final uri = Uri.parse('$baseUrl/master/plans/$code');
     final response = await http.put(
-      Uri.parse('$baseUrl/master/plans/$code'),
+      applyToExistingCompanies == null
+          ? uri
+          : uri.replace(
+              queryParameters: {
+                'apply_to_existing_companies': applyToExistingCompanies
+                    .toString(),
+              },
+            ),
       headers: _authHeaders(token),
       body: jsonEncode(plan.toUpdateJson()),
     );
@@ -533,10 +542,19 @@ class ApiClient {
   Future<BusinessSegment> updateMasterSegment(
     String token,
     String code,
-    BusinessSegment segment,
-  ) async {
+    BusinessSegment segment, {
+    bool? applyToExistingCompanies,
+  }) async {
+    final uri = Uri.parse('$baseUrl/master/segments/$code');
     final response = await http.put(
-      Uri.parse('$baseUrl/master/segments/$code'),
+      applyToExistingCompanies == null
+          ? uri
+          : uri.replace(
+              queryParameters: {
+                'apply_to_existing_companies': applyToExistingCompanies
+                    .toString(),
+              },
+            ),
       headers: _authHeaders(token),
       body: jsonEncode(segment.toUpdateJson()),
     );

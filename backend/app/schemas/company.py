@@ -66,6 +66,7 @@ class CompanyRead(BaseModel):
     plan: str
     plan_overrides: dict | None
     enabled_modules: list[str]
+    module_access_source: str = "custom"
     monthly_price: str | None
     billing_day: str | None
     payment_method: str | None

@@ -110,8 +110,19 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
       builder: (context) => _PlanDialog(plan: plan),
     );
     if (updated == null) return;
+    final applyToExistingCompanies = await _confirmAccessPropagation(
+      scope: 'plano',
+      name: plan.name,
+      changed: !_sameModules(plan.defaultModules, updated.defaultModules),
+    );
+    if (!mounted || applyToExistingCompanies == null) return;
     try {
-      await _api.updateMasterPlan(widget.session.token, plan.code, updated);
+      await _api.updateMasterPlan(
+        widget.session.token,
+        plan.code,
+        updated,
+        applyToExistingCompanies: applyToExistingCompanies,
+      );
       await _load();
     } on ApiException catch (error) {
       setState(() => _error = error.message);
@@ -162,11 +173,18 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
       builder: (context) => _SegmentDialog(segment: segment),
     );
     if (updated == null) return;
+    final applyToExistingCompanies = await _confirmAccessPropagation(
+      scope: 'segmento',
+      name: segment.name,
+      changed: !_sameModules(segment.defaultModules, updated.defaultModules),
+    );
+    if (!mounted || applyToExistingCompanies == null) return;
     try {
       await _api.updateMasterSegment(
         widget.session.token,
         segment.code,
         updated,
+        applyToExistingCompanies: applyToExistingCompanies,
       );
       await _load();
     } on ApiException catch (error) {
@@ -255,6 +273,49 @@ class _MasterPlansScreenState extends State<MasterPlansScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  bool _sameModules(List<String> first, List<String> second) {
+    return first.toSet().length == second.toSet().length &&
+        first.toSet().containsAll(second);
+  }
+
+  Future<bool?> _confirmAccessPropagation({
+    required String scope,
+    required String name,
+    required bool changed,
+  }) {
+    if (!changed) return Future<bool?>.value(true);
+    return showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: Text('Aplicar alteração do $scope?'),
+        content: Text(
+          'Você alterou os módulos liberados de "$name". '
+          'Como deseja tratar as empresas que já usam esta configuração?\n\n'
+          'Aplicar alteração: empresas que herdam do $scope passam a seguir '
+          'a nova configuração. Concessões personalizadas por empresa são '
+          'preservadas.\n\n'
+          'Manter acessos atuais: congela o acesso atual das empresas existentes; '
+          'novas empresas seguirão a configuração nova.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancelar'),
+          ),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Manter acessos atuais'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Aplicar alteração'),
+          ),
+        ],
       ),
     );
   }

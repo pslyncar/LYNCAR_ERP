@@ -83,6 +83,7 @@ COMPANY_COLUMNS = [
     ("digital_certificate_expires_at", "VARCHAR(30)"),
     ("digital_certificate_notes", "TEXT"),
     ("enabled_modules", "JSON NOT NULL DEFAULT '[]'"),
+    ("module_access_source", "VARCHAR(20) NOT NULL DEFAULT 'custom'"),
     ("xml_email_token", "VARCHAR(40)"),
     ("xml_email_enabled", "BOOLEAN NOT NULL DEFAULT true"),
     ("business_day_cutoff_minutes", "INTEGER NOT NULL DEFAULT 180"),
@@ -338,7 +339,7 @@ def normalize_existing_company_modules() -> None:
                 changed = True
             normalized_modules = modules_for_business_type(
                 company.business_type,
-                sorted(modules),
+                None if getattr(company, "module_access_source", "custom") == "inherited" else sorted(modules),
                 plan,
             )
             if normalized_modules != (company.enabled_modules or []):

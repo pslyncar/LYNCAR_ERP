@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.api.dependencies import require_master_permission
@@ -10,7 +10,7 @@ from app.schemas.business_segment import (
     BusinessSegmentRead,
     BusinessSegmentUpdate,
 )
-from app.services.company_modules import normalize_modules
+from app.services.company_modules import modules_for_business_type, normalize_modules
 
 router = APIRouter()
 
@@ -69,6 +69,10 @@ def create_segment(
 def update_segment(
     segment_code: str,
     segment_in: BusinessSegmentUpdate,
+    apply_to_existing_companies: bool = Query(
+        True,
+        description="Atualiza empresas que herdaram o segmento; concessões personalizadas são preservadas.",
+    ),
     _: dict = Depends(require_master_permission("master:billing")),
 ) -> BusinessSegment:
     with MasterSessionLocal() as db:
@@ -78,6 +82,18 @@ def update_segment(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Segmento nao encontrado.",
             )
+        companies = list(
+            db.scalars(select(Company).where(Company.business_type == segment.code)).all()
+        )
+        if not apply_to_existing_companies:
+            for company in companies:
+                if getattr(company, "module_access_source", "custom") == "inherited":
+                    company.enabled_modules = modules_for_business_type(
+                        company.business_type,
+                        None,
+                        company.plan,
+                    )
+                    company.module_access_source = "custom"
         segment.name = segment_in.name.strip()
         segment.description = segment_in.description
         segment.max_users = segment_in.max_users

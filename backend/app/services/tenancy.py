@@ -97,9 +97,10 @@ def get_enabled_modules_for_company(company_code: str) -> list[str]:
     if company is None:
         # Falha de resolução de tenant nunca pode virar acesso total.
         return []
-    # None significa que a empresa ainda usa os padrões de plano/segmento.
-    # Lista vazia é uma decisão explícita do master e deve continuar vazia.
-    if company.enabled_modules is None:
+    # Empresas novas sem seleção própria herdam dinamicamente do plano e do
+    # segmento. Empresas personalizadas mantêm exatamente a concessão do
+    # master, mesmo quando o plano/segmento muda depois.
+    if getattr(company, "module_access_source", "custom") == "inherited":
         return modules_for_business_type(
             company.business_type,
             None,
