@@ -238,6 +238,12 @@ def register_pdv_terminal(
         )
         db.add(terminal)
 
+    if terminal.activation_status == "revoked":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Terminal PDV revogado. Gere um novo código de ativação.",
+        )
+
     # O numero do caixa identifica fisicamente o terminal. Depois que um
     # computador vira Caixa 01, ele continua sendo Caixa 01; nao trocamos esse
     # numero por reenvio local, reinstalacao parcial ou preferencia corrompida.
@@ -267,6 +273,14 @@ def heartbeat_pdv_terminal(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Terminal PDV nao cadastrado.",
+        )
+    if terminal.activation_status == "revoked":
+        terminal.current_status = "revoked"
+        terminal.active = False
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Terminal PDV revogado. Gere um novo código de ativação.",
         )
     now = _utc_now()
     terminal.app_version = payload.app_version or terminal.app_version

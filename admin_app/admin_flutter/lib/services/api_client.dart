@@ -7,6 +7,7 @@ import 'package:http_parser/http_parser.dart';
 import '../models/client.dart';
 import '../models/cash_closing.dart';
 import '../models/company.dart';
+import '../models/plan_change.dart';
 import '../models/business_segment.dart';
 import '../models/company_billing.dart';
 import '../models/dashboard_summary.dart';
@@ -396,6 +397,61 @@ class ApiClient {
       body: jsonEncode(input.toUpdateJson()),
     );
     return Company.fromJson(_decodeResponse(response));
+  }
+
+  Future<Company> updateCompanyPreservingEntitlements(
+    String token,
+    int companyId,
+    CompanyInput input,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/master/companies/$companyId'),
+      headers: _authHeaders(token),
+      body: jsonEncode(
+        input.toUpdateJson(includePlan: false, includeEnabledModules: false),
+      ),
+    );
+    return Company.fromJson(_decodeResponse(response));
+  }
+
+  Future<PlanChangePreview> previewCompanyPlanChange(
+    String token,
+    int companyId, {
+    required String targetPlan,
+    String? targetBusinessType,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/master/companies/$companyId/plan-change/preview'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'target_plan': targetPlan,
+        if (targetBusinessType != null)
+          'target_business_type': targetBusinessType,
+      }),
+    );
+    return PlanChangePreview.fromJson(_decodeResponse(response));
+  }
+
+  Future<PlanChangeResult> applyCompanyPlanChange(
+    String token,
+    int companyId, {
+    required String targetPlan,
+    String? targetBusinessType,
+    required List<int> userIds,
+    required List<int> terminalIds,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/master/companies/$companyId/plan-change'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'target_plan': targetPlan,
+        if (targetBusinessType != null)
+          'target_business_type': targetBusinessType,
+        'user_ids': userIds,
+        'terminal_ids': terminalIds,
+      }),
+    );
+    return PlanChangeResult.fromJson(_decodeResponse(response));
   }
 
   Future<CompanyTaxProfileLookup> lookupCompanyTaxProfile(

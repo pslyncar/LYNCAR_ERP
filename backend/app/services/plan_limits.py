@@ -223,8 +223,13 @@ def plan_defaults(plan_code: str | None) -> PlanLimits:
     )
 
 
-def effective_plan_limits(company: Company | None) -> dict[str, Any]:
-    base = plan_defaults(company.plan if company else "enterprise")
+def effective_plan_limits_for(
+    company: Company | None,
+    plan_code: str | None = None,
+    business_type: str | None = None,
+) -> dict[str, Any]:
+    """Resolve limits for the current company or a prospective plan change."""
+    base = plan_defaults(plan_code if plan_code is not None else (company.plan if company else "enterprise"))
     result: dict[str, Any] = {
         "plan": base.code,
         "plan_name": base.name,
@@ -243,7 +248,9 @@ def effective_plan_limits(company: Company | None) -> dict[str, Any]:
     if company is not None:
         with MasterSessionLocal() as db:
             segment = db.scalar(
-                select(BusinessSegment).where(BusinessSegment.code == company.business_type)
+                select(BusinessSegment).where(
+                    BusinessSegment.code == (business_type or company.business_type)
+                )
             )
     overrides = company.plan_overrides if company else None
     if isinstance(overrides, dict):
@@ -263,7 +270,13 @@ def effective_plan_limits(company: Company | None) -> dict[str, Any]:
         if isinstance(overrides, dict):
             candidates.append(overrides.get(key))
         result[key] = maximum_configured_limit(*candidates)
+    if plan_code is not None and "pdv_windows" not in base.default_modules:
+        result["max_pdv_terminals"] = 0
     return result
+
+
+def effective_plan_limits(company: Company | None) -> dict[str, Any]:
+    return effective_plan_limits_for(company)
 
 
 def company_plan_limits(company_code: str) -> dict[str, Any]:

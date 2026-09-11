@@ -8,6 +8,7 @@ import '../models/business_segment.dart';
 import '../models/session.dart';
 import '../models/subscription_plan.dart';
 import '../services/api_client.dart';
+import 'plan_change_dialog.dart';
 import '../services/cep_service.dart';
 import '../utils/input_formatters.dart';
 import '../widgets/app_card.dart';
@@ -21,6 +22,8 @@ const _businessTypeLabels = {
   'loja': 'Loja',
   'custom': 'Personalizado',
 };
+
+class _PlanChangeCancelled implements Exception {}
 
 const _moduleLabels = {
   'dashboard': 'Dashboard',
@@ -495,7 +498,37 @@ class _CompaniesScreenState extends State<CompaniesScreen> {
           if (company == null) {
             await _api.createCompany(widget.session.token, input);
           } else {
-            await _api.updateCompany(widget.session.token, company.id, input);
+            final planChanged = input.plan != company.plan;
+            final segmentChanged = input.businessType != company.businessType;
+            if (planChanged || segmentChanged) {
+              final preview = await _api.previewCompanyPlanChange(
+                widget.session.token,
+                company.id,
+                targetPlan: input.plan,
+                targetBusinessType: input.businessType,
+              );
+              if (!context.mounted) return;
+              final selection = await showDialog<PlanChangeSelection>(
+                context: context,
+                builder: (context) => PlanChangePreviewDialog(preview: preview),
+              );
+              if (selection == null) throw _PlanChangeCancelled();
+              await _api.applyCompanyPlanChange(
+                widget.session.token,
+                company.id,
+                targetPlan: input.plan,
+                targetBusinessType: input.businessType,
+                userIds: selection.userIds,
+                terminalIds: selection.terminalIds,
+              );
+              await _api.updateCompanyPreservingEntitlements(
+                widget.session.token,
+                company.id,
+                input,
+              );
+            } else {
+              await _api.updateCompany(widget.session.token, company.id, input);
+            }
           }
         },
       ),
@@ -1318,6 +1351,8 @@ class _CompanyFormDialogState extends State<_CompanyFormDialog> {
         ),
       );
       if (mounted) Navigator.of(context).pop(true);
+    } on _PlanChangeCancelled {
+      if (mounted) setState(() => _saving = false);
     } on ApiException catch (error) {
       if (await _showDuplicateEmailBlock(error)) return;
       setState(() => _error = error.message);

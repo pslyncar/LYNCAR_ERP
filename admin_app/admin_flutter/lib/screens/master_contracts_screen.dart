@@ -62,7 +62,14 @@ class _MasterContractsScreenState extends State<MasterContractsScreen> {
           _ContractDialog(session: widget.session, api: _api, company: company),
     );
     if (updated == null) return;
-    await _api.updateCompany(widget.session.token, company.id, updated);
+    // This form edits contract metadata only. Preserve the current plan and
+    // entitlement state so a stale form cannot overwrite a plan change made
+    // through the dedicated downgrade flow.
+    await _api.updateCompanyPreservingEntitlements(
+      widget.session.token,
+      company.id,
+      updated,
+    );
     await _load();
   }
 

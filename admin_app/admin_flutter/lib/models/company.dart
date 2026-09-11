@@ -316,7 +316,10 @@ class CompanyInput {
     };
   }
 
-  Map<String, dynamic> toUpdateJson() {
+  Map<String, dynamic> toUpdateJson({
+    bool includePlan = true,
+    bool includeEnabledModules = true,
+  }) {
     return {
       'name': name,
       'business_type': businessType,
@@ -340,9 +343,9 @@ class CompanyInput {
       'tax_regime': taxRegime,
       'crt': crt,
       if (databaseUrl.trim().isNotEmpty) 'database_url': databaseUrl,
-      'plan': plan,
-      'plan_overrides': planOverrides,
-      'enabled_modules': enabledModules,
+      if (includePlan) 'plan': plan,
+      if (includePlan) 'plan_overrides': planOverrides,
+      if (includeEnabledModules) 'enabled_modules': enabledModules,
       'monthly_price': monthlyPrice,
       'billing_day': billingDay,
       'payment_method': paymentMethod,
