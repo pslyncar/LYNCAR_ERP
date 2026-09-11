@@ -312,6 +312,14 @@ def get_dashboard_billing_payment(
         if billing is None:
             raise HTTPException(status_code=404, detail="Cobrança não encontrada.")
         _ = billing.company
+        # Nunca reutiliza um Pix vencido sem antes recalcular os encargos do
+        # dia. Se o total mudou, a rotina invalida o pagamento/QR anterior e
+        # create_pix_for_billing gera um novo QR com o valor atualizado.
+        apply_overdue_charges_for_company_in_session(
+            master_db,
+            billing.company,
+            today=date.today(),
+        )
         create_pix_for_billing(master_db, billing)
         master_db.commit()
         master_db.refresh(billing)

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -17,6 +17,7 @@ from app.schemas.company_billing import (
 )
 from app.services.company_billing import (
     AUTO_BILLING_NOTE,
+    apply_overdue_charges_for_company_in_session,
     ensure_due_billings_for_all_companies,
     is_automatic_billing,
 )
@@ -133,6 +134,13 @@ def generate_billing_pix(
         billing = db.get(CompanyBilling, billing_id)
         if billing is None:
             raise HTTPException(status_code=404, detail="Cobranca nao encontrada.")
+        # Recalcula os encargos antes de gerar/reutilizar o Pix. Assim, a cada
+        # novo dia de atraso, o valor e o QR refletem a política vigente.
+        apply_overdue_charges_for_company_in_session(
+            db,
+            billing.company,
+            today=date.today(),
+        )
         create_pix_for_billing(db, billing)
         db.commit()
         db.refresh(billing)
@@ -148,6 +156,11 @@ def sync_billing_payment(
         billing = db.get(CompanyBilling, billing_id)
         if billing is None:
             raise HTTPException(status_code=404, detail="Cobranca nao encontrada.")
+        apply_overdue_charges_for_company_in_session(
+            db,
+            billing.company,
+            today=date.today(),
+        )
         if not billing.mercado_pago_payment_id:
             raise HTTPException(
                 status_code=400,
