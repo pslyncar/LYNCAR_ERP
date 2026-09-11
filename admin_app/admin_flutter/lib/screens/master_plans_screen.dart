@@ -655,19 +655,9 @@ class _PlanDialogState extends State<_PlanDialog> {
   late final _sortOrder = TextEditingController(
     text: widget.plan?.sortOrder.toString() ?? '0',
   );
-  late final _lateGraceDays = TextEditingController(
-    text: widget.plan?.lateGraceDays.toString() ?? '0',
-  );
-  late final _lateFeePercent = TextEditingController(
-    text: widget.plan?.lateFeePercent.toString() ?? '0',
-  );
-  late final _lateInterestDailyPercent = TextEditingController(
-    text: widget.plan?.lateInterestDailyPercent.toString() ?? '0',
-  );
   late bool _api = widget.plan?.apiEnabled ?? false;
   late bool _support = widget.plan?.prioritySupport ?? false;
   late bool _active = widget.plan?.active ?? true;
-  late bool _lateChargesEnabled = widget.plan?.lateChargesEnabled ?? false;
   late final Set<String> _modules =
       widget.plan?.defaultModules.toSet() ?? <String>{};
 
@@ -686,9 +676,6 @@ class _PlanDialogState extends State<_PlanDialog> {
     _multiCompany.dispose();
     _marketplaceListingLimit.dispose();
     _sortOrder.dispose();
-    _lateGraceDays.dispose();
-    _lateFeePercent.dispose();
-    _lateInterestDailyPercent.dispose();
     super.dispose();
   }
 
@@ -700,16 +687,6 @@ class _PlanDialogState extends State<_PlanDialog> {
   int _requiredInt(TextEditingController controller, int fallback) {
     final value = int.tryParse(controller.text.trim());
     return value == null || value <= 0 ? fallback : value;
-  }
-
-  int _nonNegativeInt(TextEditingController controller) {
-    final value = int.tryParse(controller.text.trim());
-    return value == null || value < 0 ? 0 : value;
-  }
-
-  double _nonNegativeDouble(TextEditingController controller) {
-    final value = double.tryParse(controller.text.trim().replaceAll(',', '.'));
-    return value == null || value < 0 ? 0 : value;
   }
 
   String? _emptyToNull(TextEditingController controller) {
@@ -847,71 +824,6 @@ class _PlanDialogState extends State<_PlanDialog> {
                 ],
               ),
               const Divider(height: 28),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Juros e multa do plano',
-                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Defina quais planos oferecem carência e encargos por atraso.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ),
-              SwitchListTile(
-                value: _lateChargesEnabled,
-                onChanged: (value) =>
-                    setState(() => _lateChargesEnabled = value),
-                title: const Text('Aplicar juros e multa neste plano'),
-                subtitle: const Text(
-                  'Desative no Start se esse benefício não fizer parte do plano.',
-                ),
-                contentPadding: EdgeInsets.zero,
-              ),
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _lateGraceDays,
-                      enabled: _lateChargesEnabled,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Carência (dias)',
-                        helperText: '0 = sem carência',
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _lateFeePercent,
-                      enabled: _lateChargesEnabled,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(labelText: 'Multa (%)'),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: TextField(
-                      controller: _lateInterestDailyPercent,
-                      enabled: _lateChargesEnabled,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Juros ao dia (%)',
-                      ),
-                    ),
-                  ),
-                ],
-              ),
               SwitchListTile(
                 value: _api,
                 onChanged: (value) => setState(() => _api = value),
@@ -979,12 +891,13 @@ class _PlanDialogState extends State<_PlanDialog> {
                 marketplaceListingLimit: _intOrNull(_marketplaceListingLimit),
                 apiEnabled: _api,
                 prioritySupport: _support,
-                lateChargesEnabled: _lateChargesEnabled,
-                lateFeePercent: _nonNegativeDouble(_lateFeePercent),
-                lateInterestDailyPercent: _nonNegativeDouble(
-                  _lateInterestDailyPercent,
-                ),
-                lateGraceDays: _nonNegativeInt(_lateGraceDays),
+                // Encargos são configurados em Financeiro > Política de
+                // cobrança. Preserve os valores atuais ao editar o plano.
+                lateChargesEnabled: widget.plan?.lateChargesEnabled ?? false,
+                lateFeePercent: widget.plan?.lateFeePercent ?? 0,
+                lateInterestDailyPercent:
+                    widget.plan?.lateInterestDailyPercent ?? 0,
+                lateGraceDays: widget.plan?.lateGraceDays ?? 0,
                 defaultModules: _modules.toList()..sort(),
                 active: _active,
                 sortOrder:
