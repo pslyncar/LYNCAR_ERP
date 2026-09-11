@@ -334,6 +334,19 @@ def modules_for_business_type(
     return normalize_modules(sorted(segment_modules & plan_modules))
 
 
+def resolve_effective_modules(
+    business_type: str | None,
+    plan_code: str | None,
+    manual_grants: list[str] | None = None,
+    manual_revocations: list[str] | None = None,
+) -> list[str]:
+    """Resolve inherited plan/segment access plus explicit company overrides."""
+    inherited = set(modules_for_business_type(business_type or "custom", None, plan_code))
+    grants = set(normalize_modules(manual_grants))
+    revocations = set(normalize_modules(manual_revocations))
+    return sorted((inherited | grants) - revocations)
+
+
 def permission_allowed_by_modules(permission_code: str, enabled_modules: list[str]) -> bool:
     module = PERMISSION_MODULES.get(permission_code)
     return module is None or module in enabled_modules

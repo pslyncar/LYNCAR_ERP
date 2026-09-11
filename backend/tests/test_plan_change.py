@@ -11,9 +11,15 @@ def test_plan_change_preserves_manual_grants_and_revocations():
         manual_module_revocations=["stock"],
     )
 
-    with patch(
-        "app.services.plan_change.modules_for_business_type",
-        return_value=["dashboard", "stock"],
+    with (
+        patch(
+            "app.services.company_modules.segment_default_modules",
+            return_value=["dashboard", "stock"],
+        ),
+        patch(
+            "app.services.company_modules.plan_default_modules",
+            return_value=["dashboard", "stock"],
+        ),
     ):
         modules = _modules_for(company, "start", "padaria")
 

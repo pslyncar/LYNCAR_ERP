@@ -8,22 +8,18 @@ from app.core.master_database import MasterSessionLocal
 from app.models.company import Company
 from app.models.pdv_terminal import PdvTerminal
 from app.models.user import User
-from app.services.company_modules import modules_for_business_type, normalize_modules
+from app.services.company_modules import resolve_effective_modules
 from app.services.plan_limits import effective_plan_limits_for, normalize_plan_code
 from app.services.tenancy import session_for_company
 
 
 def _modules_for(company: Company, plan: str, business_type: str | None) -> list[str]:
-    base = set(
-        modules_for_business_type(
-            business_type or company.business_type,
-            None,
-            plan,
-        )
+    return resolve_effective_modules(
+        business_type or company.business_type,
+        plan,
+        company.manual_module_grants,
+        company.manual_module_revocations,
     )
-    grants = set(normalize_modules(company.manual_module_grants or []))
-    revocations = set(normalize_modules(company.manual_module_revocations or []))
-    return sorted((base | grants) - revocations)
 
 
 def _tenant_resources(company: Company) -> tuple[list[User], list[PdvTerminal]]:

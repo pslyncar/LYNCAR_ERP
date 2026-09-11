@@ -13,7 +13,7 @@ from app.models import master_permission as _master_permission  # noqa: F401
 from app.models import master_support as _master_support  # noqa: F401
 from app.models.master_user import MasterUser
 from app.models.master_user_index import MasterUserIndex
-from app.services.company_modules import normalize_modules, modules_for_business_type
+from app.services.company_modules import resolve_effective_modules
 
 
 def normalize_company_code(value: str) -> str:
@@ -99,12 +99,12 @@ def get_enabled_modules_for_company(company_code: str) -> list[str]:
         return []
     # A empresa herda sempre o conjunto atual do plano/segmento. Somente
     # concessões e revogações explícitas por módulo ficam fora da herança.
-    base_modules = set(
-        modules_for_business_type(company.business_type, None, company.plan)
+    return resolve_effective_modules(
+        company.business_type,
+        company.plan,
+        company.manual_module_grants,
+        company.manual_module_revocations,
     )
-    grants = set(normalize_modules(company.manual_module_grants or []))
-    revocations = set(normalize_modules(company.manual_module_revocations or []))
-    return sorted((base_modules | grants) - revocations)
 
 
 @lru_cache(maxsize=128)
