@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from pydantic import BaseModel, Field
 
 
@@ -15,6 +17,10 @@ class SubscriptionPlanRead(BaseModel):
     marketplace_listing_limit: int | None
     api_enabled: bool
     priority_support: bool
+    late_charges_enabled: bool
+    late_fee_percent: Decimal
+    late_interest_daily_percent: Decimal
+    late_grace_days: int
     default_modules: list[str] = []
     active: bool
     sort_order: int
@@ -34,6 +40,10 @@ class SubscriptionPlanUpdate(BaseModel):
     marketplace_listing_limit: int | None = Field(default=None, ge=0)
     api_enabled: bool
     priority_support: bool
+    late_charges_enabled: bool = False
+    late_fee_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    late_interest_daily_percent: Decimal = Field(default=Decimal("0"), ge=0, le=100)
+    late_grace_days: int = Field(default=0, ge=0, le=3650)
     default_modules: list[str] = []
     active: bool = True
     sort_order: int = 0

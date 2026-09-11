@@ -133,6 +133,10 @@ SUBSCRIPTION_PLAN_COLUMNS = [
     ("default_modules", "JSON NOT NULL DEFAULT '[]'"),
     ("marketplace_listing_limit", "INTEGER"),
     ("max_pdv_terminals", "INTEGER"),
+    ("late_charges_enabled", "BOOLEAN NOT NULL DEFAULT false"),
+    ("late_fee_percent", "NUMERIC(5, 2) NOT NULL DEFAULT 0"),
+    ("late_interest_daily_percent", "NUMERIC(7, 4) NOT NULL DEFAULT 0"),
+    ("late_grace_days", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 BUSINESS_SEGMENT_COLUMNS = [

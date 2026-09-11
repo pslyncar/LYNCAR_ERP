@@ -1,4 +1,6 @@
-from sqlalchemy import Boolean, Integer, JSON, String
+from decimal import Decimal
+
+from sqlalchemy import Boolean, Integer, JSON, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.master_database import MasterBase
@@ -20,6 +22,17 @@ class SubscriptionPlan(MasterBase):
     marketplace_listing_limit: Mapped[int | None] = mapped_column(Integer)
     api_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     priority_support: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Late-payment policy is owned by the plan. A disabled policy means that
+    # companies on the plan never receive grace-period, fee, or interest rules
+    # from the global Master finance settings.
+    late_charges_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    late_fee_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2), default=Decimal("0"), nullable=False
+    )
+    late_interest_daily_percent: Mapped[Decimal] = mapped_column(
+        Numeric(7, 4), default=Decimal("0"), nullable=False
+    )
+    late_grace_days: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     default_modules: Mapped[list[str]] = mapped_column(JSON, default=list)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)

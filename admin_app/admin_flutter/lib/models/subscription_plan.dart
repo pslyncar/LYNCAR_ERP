@@ -13,6 +13,10 @@ class SubscriptionPlan {
     this.marketplaceListingLimit,
     required this.apiEnabled,
     required this.prioritySupport,
+    this.lateChargesEnabled = false,
+    this.lateFeePercent = 0,
+    this.lateInterestDailyPercent = 0,
+    this.lateGraceDays = 0,
     required this.defaultModules,
     required this.active,
     required this.sortOrder,
@@ -31,6 +35,10 @@ class SubscriptionPlan {
   final int? marketplaceListingLimit;
   final bool apiEnabled;
   final bool prioritySupport;
+  final bool lateChargesEnabled;
+  final double lateFeePercent;
+  final double lateInterestDailyPercent;
+  final int lateGraceDays;
   final List<String> defaultModules;
   final bool active;
   final int sortOrder;
@@ -50,6 +58,10 @@ class SubscriptionPlan {
       marketplaceListingLimit: json['marketplace_listing_limit'] as int?,
       apiEnabled: json['api_enabled'] as bool? ?? false,
       prioritySupport: json['priority_support'] as bool? ?? false,
+      lateChargesEnabled: json['late_charges_enabled'] as bool? ?? false,
+      lateFeePercent: _asDouble(json['late_fee_percent']),
+      lateInterestDailyPercent: _asDouble(json['late_interest_daily_percent']),
+      lateGraceDays: json['late_grace_days'] as int? ?? 0,
       defaultModules: (json['default_modules'] as List<dynamic>? ?? const [])
           .map((item) => item.toString())
           .toList(growable: false),
@@ -71,6 +83,10 @@ class SubscriptionPlan {
       'marketplace_listing_limit': marketplaceListingLimit,
       'api_enabled': apiEnabled,
       'priority_support': prioritySupport,
+      'late_charges_enabled': lateChargesEnabled,
+      'late_fee_percent': lateFeePercent,
+      'late_interest_daily_percent': lateInterestDailyPercent,
+      'late_grace_days': lateGraceDays,
       'default_modules': defaultModules,
       'active': active,
       'sort_order': sortOrder,
@@ -80,4 +96,9 @@ class SubscriptionPlan {
   Map<String, dynamic> toCreateJson() {
     return {'code': code, ...toUpdateJson()};
   }
+}
+
+double _asDouble(Object? value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString().replaceAll(',', '.') ?? '') ?? 0;
 }

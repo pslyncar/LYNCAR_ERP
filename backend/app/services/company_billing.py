@@ -4,13 +4,14 @@ from calendar import monthrange
 from datetime import date, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.master_database import MasterSessionLocal
 from app.models.company import Company
 from app.models.company_billing import CompanyBilling
 from app.models.master_finance_setting import MasterFinanceSetting
+from app.models.subscription_plan import SubscriptionPlan
 from app.services.master_holidays import next_business_day
 from app.services.economic_indexes import accumulated_ipca, sync_latest_ipca
 
@@ -114,12 +115,29 @@ def apply_overdue_charges_for_company_in_session(
     )).all())
     changed: list[CompanyBilling] = []
     policy = db.scalar(select(MasterFinanceSetting).where(MasterFinanceSetting.id == 1))
-    # Global Master policy is the default; company-specific legacy settings remain
-    # available until an explicit per-company override is introduced.
-    enabled = bool(policy.late_charges_enabled) if policy is not None else bool(company.late_charges_enabled)
-    fee_percent = policy.late_fee_percent if policy is not None else company.late_fee_percent
-    daily_percent = policy.late_interest_daily_percent if policy is not None else company.late_interest_daily_percent
-    grace_days = policy.late_grace_days if policy is not None else company.late_grace_days
+    plan_code = (company.plan or "").strip().lower()
+    plan = None
+    if plan_code:
+        plan = db.scalar(
+            select(SubscriptionPlan).where(
+                func.lower(SubscriptionPlan.code) == plan_code,
+                SubscriptionPlan.active.is_(True),
+            )
+        )
+    if plan is not None:
+        # A valid active plan is authoritative. This prevents the global Master
+        # policy from accidentally granting Start (or another plan) a benefit
+        # that was not enabled for that plan.
+        enabled = bool(plan.late_charges_enabled)
+        fee_percent = plan.late_fee_percent
+        daily_percent = plan.late_interest_daily_percent
+        grace_days = plan.late_grace_days
+    else:
+        # Compatibility fallback for legacy companies without a matching plan.
+        enabled = bool(policy.late_charges_enabled) if policy is not None else bool(company.late_charges_enabled)
+        fee_percent = policy.late_fee_percent if policy is not None else company.late_fee_percent
+        daily_percent = policy.late_interest_daily_percent if policy is not None else company.late_interest_daily_percent
+        grace_days = policy.late_grace_days if policy is not None else company.late_grace_days
     monetary_enabled = bool(policy.monetary_correction_enabled) if policy is not None else False
     for row in rows:
         overdue_days = max((current - row.due_date).days - max(grace_days or 0, 0), 0)
