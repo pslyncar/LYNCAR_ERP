@@ -9,6 +9,7 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.services.tenancy import seed_default_company
 from app.services.fiscal_queue import fiscal_queue_worker
+from app.services.billing_automation import billing_automation_worker
 
 settings = get_settings()
 
@@ -48,10 +49,12 @@ def startup_seed_master_company() -> None:
     _validate_production_configuration()
     seed_default_company()
     fiscal_queue_worker.start()
+    billing_automation_worker.start()
 
 
 @app.on_event("shutdown")
 def shutdown_fiscal_queue_worker() -> None:
+    billing_automation_worker.stop()
     fiscal_queue_worker.stop()
 
 app.add_middleware(

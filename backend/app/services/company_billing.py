@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -21,6 +22,18 @@ LEGACY_AUTO_BILLING_NOTES = {
     AUTO_BILLING_NOTE,
     "CobranÃ§a mensal gerada automaticamente pelo sistema.",
 }
+
+try:
+    BRAZIL_TIMEZONE = ZoneInfo("America/Sao_Paulo")
+except ZoneInfoNotFoundError:
+    BRAZIL_TIMEZONE = None
+
+
+def billing_today() -> date:
+    """Return the billing date in Brazil, independently of the host timezone."""
+    if BRAZIL_TIMEZONE is not None:
+        return datetime.now(BRAZIL_TIMEZONE).date()
+    return datetime.now(timezone.utc).astimezone().date()
 
 
 def billing_amount(company: Company) -> Decimal:
@@ -107,7 +120,7 @@ def apply_overdue_charges_for_company_in_session(
     A multa é aplicada uma vez e os juros são simples, proporcionais aos dias
     em atraso após a carência. O principal nunca é alterado.
     """
-    current = today or date.today()
+    current = today or billing_today()
     rows = list(db.scalars(select(CompanyBilling).where(
         CompanyBilling.company_id == company.id,
         CompanyBilling.status == "pending",
@@ -177,7 +190,7 @@ def ensure_due_billings_for_company_in_session(
     *,
     today: date | None = None,
 ) -> list[CompanyBilling]:
-    current_day = today or date.today()
+    current_day = today or billing_today()
     if not company_can_be_billed(company):
         return []
 
@@ -269,7 +282,7 @@ def ensure_due_billings_for_all_companies(
 
 
 def pending_billing_for_dashboard(company_code: str) -> CompanyBilling | None:
-    today = date.today()
+    today = billing_today()
     ensure_due_billings_for_company(company_code, today=today)
     with MasterSessionLocal() as db:
         company = db.scalar(select(Company).where(Company.code == company_code))
