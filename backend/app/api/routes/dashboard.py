@@ -352,8 +352,9 @@ def sync_dashboard_billing_payment(
         # Recalculate charges on every polling cycle so an open Pix dialog
         # also updates when the due date or grace period is crossed.
         apply_overdue_charges_for_company_in_session(master_db, company)
-        if not billing.mercado_pago_payment_id or not billing.pix_qr_code:
-            create_pix_for_billing(master_db, billing)
+        # This helper is idempotent: it reuses a valid pending charge and
+        # replaces cancelled, expired or outdated charges immediately.
+        create_pix_for_billing(master_db, billing)
         if billing.mercado_pago_payment_id:
             payment = get_payment(billing.mercado_pago_payment_id)
             apply_payment_status(master_db, payment)

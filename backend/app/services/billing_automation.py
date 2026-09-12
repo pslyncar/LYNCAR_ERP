@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 from sqlalchemy import select
 
@@ -17,6 +18,7 @@ from app.services.mercado_pago import create_pix_for_billing
 logger = logging.getLogger(__name__)
 
 BILLING_AUTOMATION_INTERVAL_SECONDS = 30.0
+BILLING_PAYMENT_RECONCILE_INTERVAL_SECONDS = 300.0
 
 
 class BillingAutomationWorker:
@@ -26,6 +28,7 @@ class BillingAutomationWorker:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._last_processed_date = None
+        self._last_payment_reconciliation_at = 0.0
         self._retry_ids: set[int] = set()
 
     def start(self) -> None:
@@ -62,6 +65,7 @@ class BillingAutomationWorker:
         company_id: int,
         today,
         apply_policy: bool,
+        reconcile_payments: bool,
         retry_ids: set[int],
     ) -> tuple[set[int], bool]:
         billing_ids = set(retry_ids)
@@ -80,6 +84,17 @@ class BillingAutomationWorker:
                     )
                     billing_ids.update(
                         row.id for row in changed if row.id is not None
+                    )
+
+                if reconcile_payments:
+                    billing_ids.update(
+                        db.scalars(
+                            select(CompanyBilling.id).where(
+                                CompanyBilling.company_id == company_id,
+                                CompanyBilling.status != "paid",
+                                CompanyBilling.mercado_pago_payment_id.is_not(None),
+                            )
+                        ).all()
                     )
 
                 if billing_ids:
@@ -120,6 +135,11 @@ class BillingAutomationWorker:
             try:
                 today = billing_today()
                 apply_policy = self._last_processed_date != today
+                now = time.monotonic()
+                reconcile_payments = (
+                    now - self._last_payment_reconciliation_at
+                    >= BILLING_PAYMENT_RECONCILE_INTERVAL_SECONDS
+                )
                 company_ids = self._active_company_ids()
                 next_retry_ids: set[int] = set()
                 all_ok = True
@@ -129,6 +149,7 @@ class BillingAutomationWorker:
                         company_id,
                         today,
                         apply_policy,
+                        reconcile_payments,
                         self._retry_ids,
                     )
                     next_retry_ids.update(failed)
@@ -137,6 +158,8 @@ class BillingAutomationWorker:
                 self._retry_ids = next_retry_ids
                 if all_ok:
                     self._last_processed_date = today
+                    if reconcile_payments:
+                        self._last_payment_reconciliation_at = now
             except Exception:
                 logger.exception("Billing automation cycle failed")
 

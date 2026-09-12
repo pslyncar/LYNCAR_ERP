@@ -161,6 +161,10 @@ def sync_billing_payment(
             billing.company,
             today=date.today(),
         )
+        # Reconcile the current charge before reading its payment status. If
+        # Mercado Pago cancelled/expired the previous charge, this creates a
+        # fresh QR with the current amount and applicable charges.
+        create_pix_for_billing(db, billing)
         if not billing.mercado_pago_payment_id:
             raise HTTPException(
                 status_code=400,

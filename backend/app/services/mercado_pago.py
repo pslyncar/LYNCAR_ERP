@@ -18,6 +18,8 @@ from app.models.company_billing import CompanyBilling
 from app.models.payment_setting import PaymentSetting
 
 API_BASE_URL = "https://api.mercadopago.com"
+INVALID_PAYMENT_STATUSES = frozenset({"cancelled", "canceled", "rejected", "expired"})
+MONEY_QUANTUM = Decimal("0.01")
 
 
 def configured_setting() -> tuple[str | None, str | None, str | None, str]:
@@ -68,7 +70,11 @@ def _request(method: str, path: str, *, body: dict | None = None, idempotency_ke
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
+            status_code=(
+                status.HTTP_404_NOT_FOUND
+                if exc.code == 404
+                else status.HTTP_502_BAD_GATEWAY
+            ),
             detail=f"Mercado Pago retornou erro: {detail}",
         ) from exc
     except urllib.error.URLError as exc:
@@ -87,23 +93,86 @@ def payer_email(company: Company) -> str:
     return email or "teste@lyncar.com.br"
 
 
-def create_pix_for_billing(db: Session, billing: CompanyBilling) -> CompanyBilling:
-    if billing.status == "paid":
-        return billing
-    if billing.mercado_pago_payment_id and billing.pix_qr_code:
-        return billing
-
-    company = billing.company
-    idempotency_key = billing.mercado_pago_idempotency_key or str(uuid4())
-    _, _, configured_webhook_url, _ = configured_setting()
-    webhook_url = (configured_webhook_url or "").strip() or None
-    total_due = (
+def _billing_total_due(billing: CompanyBilling) -> Decimal:
+    return (
         Decimal(str(billing.amount))
         + Decimal(str(getattr(billing, "interest_amount", 0) or 0))
         + Decimal(str(getattr(billing, "late_fee_amount", 0) or 0))
         + Decimal(str(getattr(billing, "monetary_correction_amount", 0) or 0))
         - Decimal(str(getattr(billing, "waived_amount", 0) or 0))
-    ).quantize(Decimal("0.01"))
+    ).quantize(MONEY_QUANTUM)
+
+
+def _append_billing_note(billing: CompanyBilling, note: str) -> None:
+    billing.notes = f"{billing.notes}\n{note}" if billing.notes else note
+
+
+def _clear_pix_payment_link(billing: CompanyBilling, reason: str) -> None:
+    old_payment_id = billing.mercado_pago_payment_id
+    if old_payment_id:
+        _append_billing_note(
+            billing,
+            f"QR Mercado Pago descartado ({reason}). Pagamento {old_payment_id}.",
+        )
+    billing.mercado_pago_payment_id = None
+    billing.mercado_pago_status = None
+    billing.mercado_pago_external_reference = None
+    billing.mercado_pago_idempotency_key = None
+    billing.pix_qr_code = None
+    billing.pix_qr_code_base64 = None
+    billing.pix_ticket_url = None
+    billing.mercado_pago_payer_name = None
+    billing.mercado_pago_payer_email = None
+    billing.mercado_pago_payer_document = None
+
+
+def create_pix_for_billing(db: Session, billing: CompanyBilling) -> CompanyBilling:
+    if billing.status == "paid":
+        return billing
+
+    total_due = _billing_total_due(billing)
+    if billing.mercado_pago_payment_id:
+        try:
+            current_payment = get_payment(billing.mercado_pago_payment_id)
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_404_NOT_FOUND:
+                _clear_pix_payment_link(billing, "pagamento não encontrado no Mercado Pago")
+            else:
+                raise
+        else:
+            remote_status = str(current_payment.get("status") or "").lower()
+            remote_amount = Decimal(
+                str(current_payment.get("transaction_amount") or "0")
+            ).quantize(MONEY_QUANTUM)
+            billing.mercado_pago_status = remote_status or billing.mercado_pago_status
+            if remote_status == "approved":
+                apply_payment_status(db, current_payment)
+                return billing
+            if remote_status in INVALID_PAYMENT_STATUSES:
+                _clear_pix_payment_link(billing, f"status Mercado Pago: {remote_status}")
+            elif remote_amount != total_due:
+                _clear_pix_payment_link(
+                    billing,
+                    f"valor atualizado de R$ {total_due} diferente do QR anterior",
+                )
+            elif billing.pix_qr_code:
+                return billing
+            else:
+                _clear_pix_payment_link(billing, "QR ausente para pagamento pendente")
+    elif any(
+        value
+        for value in (
+            billing.pix_qr_code,
+            billing.pix_qr_code_base64,
+            billing.pix_ticket_url,
+        )
+    ):
+        _clear_pix_payment_link(billing, "vínculo incompleto")
+
+    company = billing.company
+    idempotency_key = str(uuid4())
+    _, _, configured_webhook_url, _ = configured_setting()
+    webhook_url = (configured_webhook_url or "").strip() or None
     payload = {
         "transaction_amount": float(total_due),
         "description": f"Mensalidade Lyncar {billing.reference_month} - {company.name}",
@@ -179,6 +248,15 @@ def apply_payment_status(db: Session, payment: dict) -> CompanyBilling | None:
         )
     if billing is None:
         return None
+
+    # A regenerated QR creates a new payment. Ignore late webhooks from the
+    # previous payment so an old approval cannot mark the new charge as paid.
+    if (
+        payment_id
+        and billing.mercado_pago_payment_id
+        and str(billing.mercado_pago_payment_id) != payment_id
+    ):
+        return billing
 
     billing.mercado_pago_payment_id = payment_id or billing.mercado_pago_payment_id
     billing.mercado_pago_status = payment.get("status")
