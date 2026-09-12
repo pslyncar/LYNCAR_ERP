@@ -219,6 +219,12 @@ class _MasterPdvTerminalsScreenState extends State<MasterPdvTerminalsScreen> {
     }
   }
 
+  Future<void> _generateCodeForTerminal(PdvTerminal terminal) async {
+    _cashNumber.text = terminal.cashRegisterNumber;
+    _label.text = terminal.deviceLabel ?? '';
+    await _generateCode();
+  }
+
   String? _normalizeCashRegisterNumber(String? value) {
     final digits = (value ?? '').replaceAll(RegExp(r'\D'), '');
     if (digits.isEmpty) return null;
@@ -542,6 +548,7 @@ class _MasterPdvTerminalsScreenState extends State<MasterPdvTerminalsScreen> {
                       quota: _quota,
                       loadingTerminals: _loadingTerminals,
                       onGenerate: _generateCode,
+                      onGenerateForTerminal: _generateCodeForTerminal,
                       onRefreshTerminals: selected == null
                           ? null
                           : () => _loadTerminals(selected),
@@ -816,6 +823,7 @@ class _ActivationPanel extends StatelessWidget {
     required this.quota,
     required this.loadingTerminals,
     required this.onGenerate,
+    required this.onGenerateForTerminal,
     required this.onRefreshTerminals,
     required this.onChangeNumber,
     required this.onDelete,
@@ -835,6 +843,7 @@ class _ActivationPanel extends StatelessWidget {
   final CompanyResourceQuota? quota;
   final bool loadingTerminals;
   final VoidCallback onGenerate;
+  final ValueChanged<PdvTerminal> onGenerateForTerminal;
   final VoidCallback? onRefreshTerminals;
   final ValueChanged<PdvTerminal> onChangeNumber;
   final ValueChanged<PdvTerminal> onDelete;
@@ -1063,6 +1072,7 @@ class _ActivationPanel extends StatelessWidget {
                       padding: const EdgeInsets.only(bottom: 10),
                       child: _MasterTerminalCard(
                         terminal: terminal,
+                        onGenerateCode: () => onGenerateForTerminal(terminal),
                         onChangeNumber: () => onChangeNumber(terminal),
                         onDelete: () => onDelete(terminal),
                         onSendCommand: (action) =>
@@ -1084,6 +1094,7 @@ class _ActivationPanel extends StatelessWidget {
 class _MasterTerminalCard extends StatelessWidget {
   const _MasterTerminalCard({
     required this.terminal,
+    required this.onGenerateCode,
     required this.onChangeNumber,
     required this.onDelete,
     required this.onSendCommand,
@@ -1092,6 +1103,7 @@ class _MasterTerminalCard extends StatelessWidget {
   });
 
   final PdvTerminal terminal;
+  final VoidCallback onGenerateCode;
   final VoidCallback onChangeNumber;
   final VoidCallback onDelete;
   final ValueChanged<String> onSendCommand;
@@ -1100,13 +1112,30 @@ class _MasterTerminalCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isRevoked = terminal.activationStatus == 'revoked';
+    final isPending = terminal.activationStatus == 'pending';
     final online = _isRecentlyOnline(terminal.lastSeenAt);
-    final status = online ? _statusLabel(terminal.currentStatus) : 'Offline';
+    final status = isRevoked
+        ? 'Revogado'
+        : isPending
+        ? 'Aguardando ativação'
+        : online
+        ? _statusLabel(terminal.currentStatus)
+        : 'Offline';
+    final statusColor = isRevoked
+        ? const Color(0xFFB91C1C)
+        : isPending
+        ? const Color(0xFFB45309)
+        : online
+        ? const Color(0xFF166534)
+        : const Color(0xFF475569);
     return DecoratedBox(
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
+        border: Border.all(
+          color: isRevoked ? const Color(0xFFFCA5A5) : const Color(0xFFE2E8F0),
+        ),
       ),
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1116,10 +1145,16 @@ class _MasterTerminalCard extends StatelessWidget {
             Row(
               children: [
                 CircleAvatar(
-                  backgroundColor: online
+                  backgroundColor: isRevoked
+                      ? const Color(0xFFFEE2E2)
+                      : isPending
+                      ? const Color(0xFFFFEDD5)
+                      : online
                       ? const Color(0xFFDCFCE7)
                       : const Color(0xFFE2E8F0),
-                  foregroundColor: online
+                  foregroundColor: isRevoked || isPending
+                      ? statusColor
+                      : online
                       ? const Color(0xFF166534)
                       : const Color(0xFF475569),
                   child: Text(terminal.cashRegisterNumber),
@@ -1131,7 +1166,10 @@ class _MasterTerminalCard extends StatelessWidget {
                     children: [
                       Text(
                         'Caixa ${terminal.cashRegisterNumber} - $status',
-                        style: const TextStyle(fontWeight: FontWeight.w900),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: isRevoked ? statusColor : null,
+                        ),
                       ),
                       const Gap(3),
                       Text(
@@ -1216,6 +1254,40 @@ class _MasterTerminalCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (isRevoked) ...[
+              const Gap(10),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Color(0xFFFFF1F2),
+                  borderRadius: BorderRadius.all(Radius.circular(10)),
+                  border: Border.fromBorderSide(
+                    BorderSide(color: Color(0xFFFECACA)),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(10),
+                  child: Wrap(
+                    spacing: 12,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text(
+                        'Ativação antiga revogada. Vendas e histórico foram preservados.',
+                        style: TextStyle(
+                          color: Color(0xFF991B1B),
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: onGenerateCode,
+                        icon: const Icon(Icons.vpn_key_outlined, size: 18),
+                        label: const Text('Gerar novo código'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
             const Gap(10),
             Wrap(
               spacing: 8,

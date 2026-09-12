@@ -31,7 +31,7 @@ from app.schemas.pdv_terminal import (
 )
 from app.services.business_day import company_cutoff_minutes, crossed_business_day
 from app.services.plan_limits import enforce_pdv_terminal_limit, lock_pdv_terminal_quota
-from app.services.tenancy import company_code_from_token_claims
+from app.services.tenancy import company_code_from_token_claims, get_enabled_modules_for_company
 
 router = APIRouter()
 LOCAL_TIMEZONE = ZoneInfo("America/Sao_Paulo")
@@ -141,6 +141,14 @@ def create_pdv_terminal_activation_code(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
 ) -> PdvTerminalActivationCodeRead:
     company_code = _tenant_company_code(credentials)
+    if "pdv_windows" not in get_enabled_modules_for_company(company_code):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Esta empresa nao possui PDV Windows liberado no plano, segmento "
+                "ou como excecao individual."
+            ),
+        )
     lock_pdv_terminal_quota(db, company_code)
     terminal = db.scalar(
         select(PdvTerminal).where(
@@ -168,6 +176,15 @@ def create_pdv_terminal_activation_code(
                 created_at=now,
             )
             db.add(terminal)
+    elif terminal.activation_status == "revoked":
+        # Keep the terminal row and all sales history, but invalidate the old
+        # device link before issuing a replacement activation code.
+        terminal.terminal_key = f"pending:{secrets.token_urlsafe(24)}"
+        terminal.active = False
+        terminal.current_status = "pending"
+        terminal.current_operator_name = None
+        terminal.cash_opened_at = None
+        terminal.current_session_total_amount = None
     code = _new_activation_code()
     expires_at = now + timedelta(hours=payload.expires_hours)
     terminal.activation_code_hash = hash_password(code)
