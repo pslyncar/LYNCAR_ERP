@@ -5,6 +5,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../data/catalog_api_service.dart';
 import '../data/catalog_repository.dart';
 import '../domain/catalog_models.dart';
 import '../domain/customer_profile.dart';
@@ -84,13 +85,21 @@ class StorefrontViewModel extends ChangeNotifier {
       await _restoreCustomerProfile();
     } catch (exception) {
       if (generation != _loadGeneration) return;
-      error = exception.toString();
+      error = _friendlyLoadError(exception);
     } finally {
       if (generation == _loadGeneration) {
         loading = false;
         notifyListeners();
       }
     }
+  }
+
+  String _friendlyLoadError(Object exception) {
+    if (exception is CatalogRequestException &&
+        (exception.statusCode == 404 || exception.statusCode == 410)) {
+      return 'Esta loja não está disponível no momento. Tente novamente mais tarde.';
+    }
+    return exception.toString();
   }
 
   void setSearch(String value) {
