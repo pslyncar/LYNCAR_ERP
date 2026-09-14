@@ -36,7 +36,8 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
   );
 
   Widget _storefrontFor(GoRouterState state) {
-    final slug = _slugFromPage(state.uri);
+    // GoRouter's route URI may be path-only; use the browser URI to retain the store subdomain.
+    final slug = _slugFromPage(Uri.base);
     if (slug == null) return const _AddressRequiredScreen();
     return StorefrontScreen(
       slug: slug,
