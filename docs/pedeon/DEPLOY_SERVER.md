@@ -13,11 +13,11 @@ faz parte do pacote do servidor.
 4. Executar as migrações do backend antes de iniciar a nova API.
 5. Reiniciar a API FastAPI.
 6. Gerar o build Web do Admin e publicar os arquivos estáticos.
-7. Publicar o build Web do cardápio público que acompanha esta branch em um
-   host com DNS curinga `*.lyncar.com.br` e HTTPS.
-8. Configurar o proxy para `https://<slug>.lyncar.com.br/cardapio` e para as
-   rotas `https://<slug>.lyncar.com.br/cardapio/salao...`, sempre retornando
-   `index.html` nas rotas do Flutter.
+7. Publicar o build Web do cardápio público em uma porta separada da porta
+   5000 do ERP (a configuração local usa a porta 5101).
+8. No Cloudflare Tunnel, encaminhar somente `*.lyncar.com.br/cardapio*` para
+   essa porta do PedeOn e manter o wildcard geral no ERP/porta 5000. O salão
+   não deve ser publicado no Cloudflare.
 9. Instalar o Edge separadamente nos computadores autorizados, quando
    aplicável.
 
@@ -49,7 +49,7 @@ catálogo, pagamentos, entrega, estações e terminais.
 - empresa liberada consegue abrir o Admin PedeOn;
 - empresa não liberada recebe bloqueio;
 - cardápio público abre em `https://<slug>.lyncar.com.br/cardapio`;
-- salão abre em `https://<slug>.lyncar.com.br/cardapio/salao`;
+- salão permanece local no Edge, sem rota pública no Cloudflare;
 - pedido público chega à Central de Pedidos;
 - pedido de salão chega à cozinha;
 - caixa vincula o recebimento ao usuário logado;

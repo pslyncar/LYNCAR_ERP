@@ -22,25 +22,8 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
       widget.repository ?? HttpCatalogRepository(CatalogApiService());
   late final GoRouter _router = GoRouter(
     routes: [
-      GoRoute(path: '/', builder: (_, _) => const _AddressRequiredScreen()),
+      GoRoute(path: '/', builder: (_, state) => _storefrontFor(state)),
       GoRoute(path: '/cardapio', builder: (_, state) => _storefrontFor(state)),
-      GoRoute(path: '/cardapio/salao', builder: (_, state) => _salonFor(state)),
-      GoRoute(
-        path: '/cardapio/salao/:accountType/:accountNumber',
-        builder: (_, state) {
-          final accountNumber = int.tryParse(
-            state.pathParameters['accountNumber'] ?? '',
-          );
-          if (accountNumber == null || accountNumber < 1) {
-            return const _AddressRequiredScreen();
-          }
-          return _salonFor(
-            state,
-            accountType: state.pathParameters['accountType'],
-            accountNumber: accountNumber,
-          );
-        },
-      ),
       GoRoute(
         path: '/:slug/salao',
         builder: (_, state) =>
@@ -86,20 +69,6 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
         state.uri.queryParameters['produto'] ?? '',
       ),
       initialSocialCode: state.uri.queryParameters['social_code'],
-    );
-  }
-
-  Widget _salonFor(
-    GoRouterState state, {
-    String? accountType,
-    int? accountNumber,
-  }) {
-    final slug = _slugFromPage(state.uri);
-    if (slug == null) return const _AddressRequiredScreen();
-    return _SalonLoginScreen(
-      slug: slug,
-      accountType: accountType,
-      accountNumber: accountNumber,
     );
   }
 

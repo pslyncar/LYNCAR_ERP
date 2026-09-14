@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = "C:\Lynkar\ERP-PAPEZZOSYNC"
 $BackendRoot = Join-Path $ProjectRoot "backend"
 $WebRoot = Join-Path $ProjectRoot "admin_app\admin_flutter\build\web"
+$PedeOnWebRoot = Join-Path $ProjectRoot "pedeon_public_flutter\build\web"
 $PublicSiteRoot = "C:\Lynkar\SITE-LYNCAR-COM-BR\build\web"
 $PublicSiteFavicon = Join-Path $ProjectRoot "deploy\site-public\favicon.ico"
 $UpdatesRoot = "C:\Lynkar\updates"
@@ -11,7 +12,7 @@ $Logs = "C:\Lynkar\logs"
 
 New-Item -ItemType Directory -Force -Path $Logs | Out-Null
 
-foreach ($port in @(5000, 5100, 5200, 8000)) {
+foreach ($port in @(5000, 5100, 5101, 5200, 8000)) {
     Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue |
         Select-Object -ExpandProperty OwningProcess -Unique |
         ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
@@ -54,6 +55,18 @@ if (Test-Path (Join-Path $PublicSiteRoot "index.html")) {
     Write-Host "Site publico nao encontrado em $PublicSiteRoot."
 }
 
+if (Test-Path (Join-Path $PedeOnWebRoot "index.html")) {
+    Start-Process `
+        -FilePath $Python `
+        -ArgumentList (Join-Path $ProjectRoot "deploy\windows\spa_server.py"), "--port", "5101", "--bind", "0.0.0.0", "--base-path", "/cardapio" `
+        -WorkingDirectory $PedeOnWebRoot `
+        -RedirectStandardOutput (Join-Path $Logs "pedeon-cardapio.out.log") `
+        -RedirectStandardError (Join-Path $Logs "pedeon-cardapio.err.log") `
+        -WindowStyle Hidden
+} else {
+    Write-Host "Build publico PedeOn nao encontrado em $PedeOnWebRoot."
+}
+
 if (Test-Path (Join-Path $UpdatesRoot "pdv\windows")) {
     Start-Process `
         -FilePath $Python `
@@ -75,9 +88,12 @@ if (Test-Path (Join-Path $WebRoot "index.html")) {
 if (Test-Path (Join-Path $PublicSiteRoot "index.html")) {
     Write-Host "Site publico local: http://127.0.0.1:5100"
 }
+if (Test-Path (Join-Path $PedeOnWebRoot "index.html")) {
+    Write-Host "Cardapio PedeOn local: http://127.0.0.1:5101/cardapio"
+}
 if (Test-Path (Join-Path $UpdatesRoot "pdv\windows")) {
     Write-Host "Updates local: http://127.0.0.1:5200"
 }
 Write-Host "API local: http://127.0.0.1:8000/docs"
-Get-NetTCPConnection -LocalPort 5000,5100,5200,8000 -State Listen -ErrorAction SilentlyContinue |
+Get-NetTCPConnection -LocalPort 5000,5100,5101,5200,8000 -State Listen -ErrorAction SilentlyContinue |
     Select-Object LocalAddress,LocalPort,OwningProcess

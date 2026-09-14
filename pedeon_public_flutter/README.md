@@ -19,8 +19,9 @@ flutter build web --release `
   --dart-define=PEDEON_API_URL=https://api.lyncar.com.br
 ```
 
-O servidor de produção precisa encaminhar `/{cardapio,salao}` e as demais rotas
-sem extensão para `index.html`, preservando arquivos estáticos normalmente.
+O servidor de produção precisa encaminhar `/cardapio` e as demais rotas do
+Flutter para `index.html`, preservando arquivos estáticos normalmente. O salão
+usa o Edge local e não é servido por este endereço público.
 O DNS deve apontar `*.lyncar.com.br` para o proxy que hospeda este build, com
 HTTPS e certificado curinga. O slug é validado no índice global
 `pedeon_public_stores` do banco master; os dados operacionais continuam no

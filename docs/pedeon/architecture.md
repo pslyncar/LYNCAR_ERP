@@ -136,7 +136,10 @@ produtos publicados e resolve o preco na seguinte ordem: preco online
 especifico, oferta canonica vigente quando habilitada, preco normal.
 # Enderecamento publico
 
-O cardapio usa `https://pedeon.lyncar.com.br/{public_slug}`. A tabela
+O cardápio usa `https://{public_slug}.lyncar.com.br/cardapio`. A tabela
 `pedeon_public_stores` pertence ao banco Master e possui unicidade global tanto
 para empresa quanto para slug. Os dados completos da loja continuam isolados
-no tenant; o indice Master serve para reservar e rotear o endereco.
+no tenant; o índice Master serve para reservar e rotear o endereço.
+
+O salão não é um site público. O celular usa o Edge na rede local; o Edge
+distribui os pedidos ao PDV PedeOn e ao ERP.
