@@ -402,25 +402,28 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
                 children: [
                   for (final station
                       in _viewModel.settings!.fulfillmentStations) ...[
-                    ListTile(
-                      contentPadding: EdgeInsets.zero,
-                      leading: CircleAvatar(
-                        child: Icon(
-                          station.stationType == 'picking'
-                              ? Icons.inventory_2_outlined
-                              : station.stationType == 'expedition'
-                              ? Icons.local_shipping_outlined
-                              : Icons.soup_kitchen_outlined,
+                    Material(
+                      type: MaterialType.transparency,
+                      child: ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: CircleAvatar(
+                          child: Icon(
+                            station.stationType == 'picking'
+                                ? Icons.inventory_2_outlined
+                                : station.stationType == 'expedition'
+                                ? Icons.local_shipping_outlined
+                                : Icons.soup_kitchen_outlined,
+                          ),
                         ),
-                      ),
-                      title: Text(station.name),
-                      subtitle: Text(
-                        '${station.code} • ${_stationTypeLabel(station.stationType)}${station.active ? '' : ' • Inativa'}',
-                      ),
-                      trailing: IconButton(
-                        tooltip: 'Editar estação',
-                        onPressed: () => _showStationEditor(station),
-                        icon: const Icon(Icons.edit_outlined),
+                        title: Text(station.name),
+                        subtitle: Text(
+                          '${station.code} • ${_stationTypeLabel(station.stationType)}${station.active ? '' : ' • Inativa'}',
+                        ),
+                        trailing: IconButton(
+                          tooltip: 'Editar estação',
+                          onPressed: () => _showStationEditor(station),
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
                       ),
                     ),
                     const Divider(height: 1),
@@ -648,23 +651,28 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
                   ('credit_card', 'Cartão de crédito'),
                   ('debit_card', 'Cartão de débito'),
                 ])
-                  CheckboxListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(option.$2),
-                    value: _pickupPaymentDraft!.acceptedMethods.contains(
-                      option.$1,
+                  Material(
+                    type: MaterialType.transparency,
+                    child: CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(option.$2),
+                      value: _pickupPaymentDraft!.acceptedMethods.contains(
+                        option.$1,
+                      ),
+                      onChanged: (value) => setState(() {
+                        final methods = {
+                          ..._pickupPaymentDraft!.acceptedMethods,
+                        };
+                        if (value == true) {
+                          methods.add(option.$1);
+                        } else if (methods.length > 1) {
+                          methods.remove(option.$1);
+                        }
+                        _pickupPaymentDraft = _pickupPaymentDraft!.copyWith(
+                          acceptedMethods: methods.toList(),
+                        );
+                      }),
                     ),
-                    onChanged: (value) => setState(() {
-                      final methods = {..._pickupPaymentDraft!.acceptedMethods};
-                      if (value == true) {
-                        methods.add(option.$1);
-                      } else if (methods.length > 1) {
-                        methods.remove(option.$1);
-                      }
-                      _pickupPaymentDraft = _pickupPaymentDraft!.copyWith(
-                        acceptedMethods: methods.toList(),
-                      );
-                    }),
                   ),
                 const SizedBox(height: 18),
                 Align(
@@ -1245,9 +1253,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
       searchProducts: _viewModel.searchCatalogProducts,
     );
     if (edited != null) {
-      await _viewModel.saveModifierGroup(
-        edited.copyWith(channel: 'shared'),
-      );
+      await _viewModel.saveModifierGroup(edited.copyWith(channel: 'shared'));
     }
   }
 
@@ -2131,14 +2137,19 @@ class _CatalogProductCard extends StatelessWidget {
                           label: 'Online',
                           value: product.publishedChannels.isEmpty
                               ? product.published
-                              : product.publishedChannels.contains('pedeon_online'),
+                              : product.publishedChannels.contains(
+                                  'pedeon_online',
+                                ),
                           onChanged: saving
                               ? null
-                              : (value) => onToggleChannel('pedeon_online', value),
+                              : (value) =>
+                                    onToggleChannel('pedeon_online', value),
                         ),
                         _ChannelSwitch(
                           label: 'Salão',
-                          value: product.publishedChannels.contains('onsite_qr'),
+                          value: product.publishedChannels.contains(
+                            'onsite_qr',
+                          ),
                           onChanged: saving
                               ? null
                               : (value) => onToggleChannel('onsite_qr', value),
@@ -2224,7 +2235,11 @@ class _CatalogProductCard extends StatelessWidget {
 }
 
 class _ChannelSwitch extends StatelessWidget {
-  const _ChannelSwitch({required this.label, required this.value, required this.onChanged});
+  const _ChannelSwitch({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
   final String label;
   final bool value;
   final ValueChanged<bool>? onChanged;
@@ -2233,8 +2248,15 @@ class _ChannelSwitch extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-      Switch(value: value, onChanged: onChanged, materialTapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      Text(
+        label,
+        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+      ),
+      Switch(
+        value: value,
+        onChanged: onChanged,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
     ],
   );
 }
