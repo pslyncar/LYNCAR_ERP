@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import bearer_scheme, require_permission
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.master_database import MasterSessionLocal
 from app.core.security import decode_access_token, hash_password, verify_password
@@ -97,7 +98,7 @@ router = APIRouter()
 
 _SOCIAL_STATE_TTL_SECONDS = 600
 _SOCIAL_CODE_TTL_SECONDS = 120
-_SOCIAL_STATES: dict[str, tuple[str, float]] = {}
+_SOCIAL_STATES: dict[str, tuple[str, float, str]] = {}
 _SOCIAL_CODES: dict[str, tuple[str, int, str, float]] = {}
 
 
@@ -448,7 +449,7 @@ def current_public_customer(slug: str, request: Request) -> dict:
 
 
 @router.get("/public/{slug}/auth/{provider}/start")
-def start_public_social_login(slug: str, provider: str) -> dict:
+def start_public_social_login(slug: str, provider: str, request: Request) -> dict:
     if provider not in {"google", "facebook", "apple"}:
         raise HTTPException(status_code=404, detail="Provedor de acesso não suportado.")
     if provider != "google":
@@ -469,7 +470,14 @@ def start_public_social_login(slug: str, provider: str) -> dict:
     now = time.time()
     _SOCIAL_STATES.clear()
     state = secrets.token_urlsafe(32)
-    _SOCIAL_STATES[state] = (slug, now + _SOCIAL_STATE_TTL_SECONDS)
+    origin = request.headers.get("origin") or request.headers.get("referer")
+    if origin:
+        origin = origin.rstrip("/")
+        if "/" in origin[8:]:
+            origin = origin.rsplit("/", 1)[0]
+    else:
+        origin = get_settings().pedeon_public_base_url.rstrip("/")
+    _SOCIAL_STATES[state] = (slug, now + _SOCIAL_STATE_TTL_SECONDS, origin)
     return {
         "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth?"
         + urlencode(
@@ -494,7 +502,7 @@ def public_google_callback(
     state_data = _SOCIAL_STATES.pop(state or "", None)
     if state_data is None or state_data[1] < time.time():
         raise HTTPException(status_code=400, detail="Sessão OAuth expirada ou inválida.")
-    slug = state_data[0]
+    slug, _expires_at, public_origin = state_data
     if error or not code:
         raise HTTPException(status_code=400, detail="O login Google foi cancelado.")
     with MasterSessionLocal() as master_db:
@@ -504,27 +512,39 @@ def public_google_callback(
         )
     if config is None or not config.enabled or not config.configured:
         raise HTTPException(status_code=503, detail="Login Google não configurado.")
-    token_response = requests.post(
-        "https://oauth2.googleapis.com/token",
-        data={
-            "code": code,
-            "client_id": config.client_id,
-            "client_secret": config.client_secret,
-            "redirect_uri": config.redirect_uri,
-            "grant_type": "authorization_code",
-        },
-        timeout=15,
-    )
+    try:
+        token_response = requests.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": config.client_id,
+                "client_secret": config.client_secret,
+                "redirect_uri": config.redirect_uri,
+                "grant_type": "authorization_code",
+            },
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível comunicar com o Google durante o login.",
+        ) from exc
     if not token_response.ok:
         raise HTTPException(status_code=400, detail="O Google não autorizou este login.")
     id_token = token_response.json().get("id_token")
     if not id_token:
         raise HTTPException(status_code=400, detail="Resposta OAuth do Google sem identidade.")
-    profile_response = requests.get(
-        "https://oauth2.googleapis.com/tokeninfo",
-        params={"id_token": id_token},
-        timeout=15,
-    )
+    try:
+        profile_response = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": id_token},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(
+            status_code=502,
+            detail="Não foi possível validar a conta Google neste momento.",
+        ) from exc
     if not profile_response.ok:
         raise HTTPException(status_code=400, detail="Não foi possível validar a conta Google.")
     profile = profile_response.json()
@@ -566,7 +586,7 @@ def public_google_callback(
             time.time() + _SOCIAL_CODE_TTL_SECONDS,
         )
     return RedirectResponse(
-        url=f"http://127.0.0.1:5001/{slug}?social_code={handoff_code}",
+        url=f"{public_origin}/{slug}?social_code={handoff_code}",
         status_code=303,
     )
 

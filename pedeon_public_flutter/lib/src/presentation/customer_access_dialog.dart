@@ -73,7 +73,11 @@ class _CustomerAccessDialogState extends State<_CustomerAccessDialog> {
     setState(() => _error = null);
     try {
       final url = await widget.viewModel.startGoogleLogin();
-      await launchUrl(Uri.parse(url), mode: LaunchMode.platformDefault);
+      await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.platformDefault,
+        webOnlyWindowName: '_self',
+      );
     } catch (exception) {
       if (mounted) setState(() => _error = exception.toString());
     }
