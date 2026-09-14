@@ -193,8 +193,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
                 controller: _slug,
                 decoration: const InputDecoration(
                   labelText: 'Subdomínio público',
-                  helperText:
-                      'Exemplo: drikapadaria.lyncar.com.br/cardapio. Use letras minúsculas, números e hífen.',
+                  suffixText: '.lyncar.com.br/cardapio',
                 ),
               ),
               const SizedBox(height: 16),
