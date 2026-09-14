@@ -98939,7 +98939,7 @@ gVT(){var s,r,q=this,p=q.d
 if(p===$){q.a.toString
 s=new A.ut(A.b([],t.W))
 s.a=!0
-r=new A.ab8(new A.a56(s,A.b7o("")))
+r=new A.ab8(new A.a56(s,A.b7o("https://api.lyncar.com.br")))
 q.d!==$&&A.ae()
 p=q.d=r}return p},
 gao0(){var s,r,q=this,p=null,o=q.e
