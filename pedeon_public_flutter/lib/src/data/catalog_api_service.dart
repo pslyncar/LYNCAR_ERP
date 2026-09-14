@@ -103,6 +103,25 @@ class CatalogApiService {
   Future<Map<String, dynamic>> exchangeGoogleCode(String slug, String code) =>
       _authRequest(slug, 'google/exchange', {'code': code});
 
+  Future<Map<String, dynamic>> updateCustomerProfile(
+    String slug, {
+    required String token,
+    String? document,
+    DeliveryAddress? deliveryAddress,
+  }) async => _decode(
+    await _client.put(
+      Uri.parse('$_baseUrl/pedeon/public/$slug/auth/profile'),
+      headers: {
+        'Content-Type': 'application/json; charset=UTF-8',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode({
+        'document': document,
+        'delivery_address': deliveryAddress?.toJson(),
+      }),
+    ),
+  );
+
   Future<Map<String, dynamic>> _authRequest(
     String slug,
     String action,

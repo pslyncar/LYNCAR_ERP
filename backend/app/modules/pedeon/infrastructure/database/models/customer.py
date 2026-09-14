@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Integer, JSON, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.database import Base
@@ -23,6 +23,8 @@ class PedeOnCustomer(Base):
     name: Mapped[str] = mapped_column(String(180), nullable=False)
     email: Mapped[str] = mapped_column(String(180), nullable=False, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))
+    document_number: Mapped[str | None] = mapped_column(String(30))
+    delivery_address: Mapped[dict | None] = mapped_column(JSON)
     password_hash: Mapped[str | None] = mapped_column(String(255))
     provider: Mapped[str] = mapped_column(String(20), nullable=False, default="pedeon")
     provider_subject: Mapped[str | None] = mapped_column(String(255))

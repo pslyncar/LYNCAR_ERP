@@ -76,5 +76,7 @@ def public_customer(customer: PedeOnCustomer, token: str) -> dict:
             "name": customer.name,
             "email": customer.email,
             "phone": customer.phone,
+            "document": customer.document_number,
+            "delivery_address": customer.delivery_address,
         },
     }

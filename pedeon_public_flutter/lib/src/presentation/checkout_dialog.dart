@@ -551,34 +551,18 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
     final document = _nullable(_document.text);
     final saved = widget.viewModel.customerProfile;
     final documentChanged = document != saved?.document;
-    final addressChanged = !_sameAddress(deliveryAddress, saved?.deliveryAddress);
+    final addressChanged = !_sameAddress(
+      deliveryAddress,
+      saved?.deliveryAddress,
+    );
     if (!documentChanged && !addressChanged) return;
 
-    final shouldSave = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Salvar dados para a próxima compra?'),
-        content: const Text(
-          'Podemos salvar seu CPF/CNPJ e endereço neste navegador para preencher automaticamente os próximos pedidos. A forma de pagamento não será salva.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Agora não'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Salvar dados'),
-          ),
-        ],
-      ),
+    // O cliente já confirmou o pedido. CPF/CNPJ e endereço fazem parte do
+    // cadastro do cliente; a forma de pagamento nunca é persistida.
+    await widget.viewModel.saveCustomerProfile(
+      document: document,
+      deliveryAddress: deliveryAddress,
     );
-    if (shouldSave == true) {
-      await widget.viewModel.saveCustomerProfile(
-        document: document,
-        deliveryAddress: deliveryAddress,
-      );
-    }
   }
 
   bool _sameAddress(DeliveryAddress? first, DeliveryAddress? second) {

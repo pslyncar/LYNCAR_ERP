@@ -25,13 +25,6 @@ class PublicCustomerAuthInput(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
 
 
-class PublicCustomerRead(BaseModel):
-    id: int
-    name: str
-    email: str
-    phone: str | None = None
-
-
 class PublicCustomerAuthRead(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -139,6 +132,20 @@ class DeliveryAddressInput(BaseModel):
     city: str = Field(min_length=2, max_length=120)
     state: str = Field(min_length=2, max_length=2)
     reference: str | None = Field(default=None, max_length=240)
+
+
+class PublicCustomerProfileUpdate(BaseModel):
+    document: str | None = Field(default=None, max_length=30)
+    delivery_address: DeliveryAddressInput | None = None
+
+
+class PublicCustomerRead(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str | None = None
+    document: str | None = None
+    delivery_address: DeliveryAddressInput | None = None
 
 
 class CartQuoteRequest(BaseModel):

@@ -829,6 +829,21 @@ class _FakeRepository implements CatalogRepository {
       );
 
   @override
+  Future<CustomerSession> updateCustomerProfile(
+    String slug, {
+    required String token,
+    String? document,
+    DeliveryAddress? deliveryAddress,
+  }) async => CustomerSession(
+    token: token,
+    id: 1,
+    name: 'Cliente teste',
+    email: 'cliente@example.com',
+    document: document,
+    deliveryAddress: deliveryAddress,
+  );
+
+  @override
   Future<CatalogPage> load(
     String slug, {
     String search = '',

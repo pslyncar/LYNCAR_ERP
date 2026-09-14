@@ -280,6 +280,10 @@ class StorefrontViewModel extends ChangeNotifier {
         phone: phone,
       );
       customer = session;
+      customerProfile = CustomerProfile(
+        document: session.document,
+        deliveryAddress: session.deliveryAddress,
+      );
       await _persistCustomer();
       await _restoreCustomerProfile();
       return session;
@@ -306,6 +310,10 @@ class StorefrontViewModel extends ChangeNotifier {
         password: password,
       );
       customer = session;
+      customerProfile = CustomerProfile(
+        document: session.document,
+        deliveryAddress: session.deliveryAddress,
+      );
       await _persistCustomer();
       await _restoreCustomerProfile();
       return session;
@@ -326,6 +334,10 @@ class StorefrontViewModel extends ChangeNotifier {
     notifyListeners();
     try {
       customer = await repository.exchangeGoogleCode(slug, code);
+      customerProfile = CustomerProfile(
+        document: customer!.document,
+        deliveryAddress: customer!.deliveryAddress,
+      );
       await _persistCustomer();
       await _restoreCustomerProfile();
     } catch (exception) {
@@ -338,10 +350,12 @@ class StorefrontViewModel extends ChangeNotifier {
   }
 
   Future<void> logoutCustomer() async {
+    final profileStorageKey = _customerProfileStorageKey;
     customer = null;
     customerProfile = null;
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove(_customerStorageKey);
+    await preferences.remove(profileStorageKey);
     notifyListeners();
   }
 
@@ -357,7 +371,15 @@ class StorefrontViewModel extends ChangeNotifier {
           : normalizedDocument ?? customerProfile?.document,
       deliveryAddress: deliveryAddress ?? customerProfile?.deliveryAddress,
     );
+    final session = await repository.updateCustomerProfile(
+      slug,
+      token: customer!.token,
+      document: customerProfile!.document,
+      deliveryAddress: customerProfile!.deliveryAddress,
+    );
+    customer = session;
     await _persistCustomerProfile();
+    await _persistCustomer();
     notifyListeners();
   }
 
@@ -374,6 +396,12 @@ class StorefrontViewModel extends ChangeNotifier {
         name: saved['name'] as String,
         email: saved['email'] as String,
         phone: saved['phone'] as String?,
+        document: saved['document'] as String?,
+        deliveryAddress: saved['delivery_address'] is Map
+            ? DeliveryAddress.fromJson(
+                Map<String, dynamic>.from(saved['delivery_address'] as Map),
+              )
+            : null,
       );
     } on Object {
       await preferences.remove(_customerStorageKey);
@@ -391,6 +419,8 @@ class StorefrontViewModel extends ChangeNotifier {
         'name': customer!.name,
         'email': customer!.email,
         'phone': customer!.phone,
+        'document': customer!.document,
+        'delivery_address': customer!.deliveryAddress?.toJson(),
       }),
     );
   }

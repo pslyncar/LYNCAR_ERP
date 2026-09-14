@@ -1,3 +1,5 @@
+import 'catalog_models.dart';
+
 class CustomerSession {
   const CustomerSession({
     required this.token,
@@ -5,6 +7,8 @@ class CustomerSession {
     required this.name,
     required this.email,
     this.phone,
+    this.document,
+    this.deliveryAddress,
   });
 
   factory CustomerSession.fromJson(Map<String, dynamic> json) {
@@ -15,6 +19,12 @@ class CustomerSession {
       name: customer['name'] as String,
       email: customer['email'] as String,
       phone: customer['phone'] as String?,
+      document: customer['document'] as String?,
+      deliveryAddress: customer['delivery_address'] is Map
+          ? DeliveryAddress.fromJson(
+              Map<String, dynamic>.from(customer['delivery_address'] as Map),
+            )
+          : null,
     );
   }
 
@@ -23,4 +33,6 @@ class CustomerSession {
   final String name;
   final String email;
   final String? phone;
+  final String? document;
+  final DeliveryAddress? deliveryAddress;
 }

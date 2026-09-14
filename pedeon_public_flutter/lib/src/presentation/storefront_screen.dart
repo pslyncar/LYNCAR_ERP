@@ -179,9 +179,7 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const CircleAvatar(
-                child: Icon(Icons.person_outline),
-              ),
+              leading: const CircleAvatar(child: Icon(Icons.person_outline)),
               title: Text(customerDisplayName(customer.name)),
               subtitle: Text(customer.email),
             ),
@@ -189,7 +187,8 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
             ListTile(
               leading: const Icon(Icons.logout_rounded),
               title: const Text('Sair'),
-              onTap: () => Navigator.of(context).pop(_CustomerMenuAction.logout),
+              onTap: () =>
+                  Navigator.of(context).pop(_CustomerMenuAction.logout),
             ),
           ],
         ),
@@ -197,6 +196,8 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
     );
     if (action == _CustomerMenuAction.logout) {
       await viewModel.logoutCustomer();
+      if (!context.mounted) return;
+      GoRouter.of(context).go('/${widget.slug}');
     }
   }
 
@@ -713,9 +714,7 @@ class _CustomerAccessButton extends StatelessWidget {
           horizontal: compact ? 10 : 14,
           vertical: 12,
         ),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(999),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
       icon: const Icon(Icons.person_outline, size: 20),
       label: Text(

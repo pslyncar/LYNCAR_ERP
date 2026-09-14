@@ -36,6 +36,12 @@ abstract interface class CatalogRepository {
   });
   Future<String> startGoogleLogin(String slug);
   Future<CustomerSession> exchangeGoogleCode(String slug, String code);
+  Future<CustomerSession> updateCustomerProfile(
+    String slug, {
+    required String token,
+    String? document,
+    DeliveryAddress? deliveryAddress,
+  });
   Future<PublicOrder> trackOrder(String slug, String trackingToken);
   String imageUrl(String? value);
 }
@@ -132,6 +138,21 @@ class HttpCatalogRepository implements CatalogRepository {
   @override
   Future<CustomerSession> exchangeGoogleCode(String slug, String code) async =>
       CustomerSession.fromJson(await _service.exchangeGoogleCode(slug, code));
+
+  @override
+  Future<CustomerSession> updateCustomerProfile(
+    String slug, {
+    required String token,
+    String? document,
+    DeliveryAddress? deliveryAddress,
+  }) async => CustomerSession.fromJson(
+    await _service.updateCustomerProfile(
+      slug,
+      token: token,
+      document: document,
+      deliveryAddress: deliveryAddress,
+    ),
+  );
 
   @override
   String imageUrl(String? value) => _service.resolveImage(value);

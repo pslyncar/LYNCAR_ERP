@@ -317,6 +317,11 @@ PEDEON_DELIVERY_ZONE_COLUMNS = [
     ("radius_km", "NUMERIC(8, 2)"),
 ]
 
+PEDEON_CUSTOMER_COLUMNS = [
+    ("document_number", "VARCHAR(30)"),
+    ("delivery_address", "JSON"),
+]
+
 
 def column_exists(table_name: str, column_name: str, bind_engine=engine) -> bool:
     with bind_engine.connect() as connection:
@@ -1048,6 +1053,17 @@ def add_pedeon_order_columns(bind_engine=engine) -> None:
         )
 
 
+def add_pedeon_customer_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in PEDEON_CUSTOMER_COLUMNS:
+            if not column_exists_in_connection(connection, "pedeon_customers", column_name):
+                connection.execute(
+                    text(
+                        f"ALTER TABLE pedeon_customers ADD COLUMN {column_name} {column_type}"
+                    )
+                )
+
+
 def add_pedeon_experience_columns(bind_engine=engine) -> None:
     with bind_engine.begin() as connection:
         for table_name, columns in (
@@ -1281,6 +1297,7 @@ def migrate_registered_tenants() -> None:
             add_fiscal_setting_columns(tenant_engine)
             add_receivable_columns(tenant_engine)
             add_pedeon_order_columns(tenant_engine)
+            add_pedeon_customer_columns(tenant_engine)
             add_pedeon_experience_columns(tenant_engine)
             add_pedeon_catalog_channel_columns(tenant_engine)
             with tenant_engine.begin() as connection:
@@ -1391,6 +1408,7 @@ def main() -> None:
     add_receivable_columns()
     add_production_order_columns()
     add_pedeon_order_columns()
+    add_pedeon_customer_columns()
     add_pedeon_experience_columns()
     add_pedeon_catalog_channel_columns()
     backfill_product_batches()

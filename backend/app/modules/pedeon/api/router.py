@@ -55,6 +55,7 @@ from app.modules.pedeon.application.public_schemas import (
     PublicOrderRead,
     PublicCustomerAuthInput,
     PublicCustomerAuthRead,
+    PublicCustomerProfileUpdate,
 )
 from app.modules.pedeon.application.customer_auth import (
     normalize_email,
@@ -385,6 +386,11 @@ def create_public_order(
             payload.customer_email = customer.email
             if customer.phone:
                 payload.customer_phone = customer.phone
+            if payload.customer_document is not None:
+                customer.document_number = payload.customer_document.strip() or None
+            if payload.delivery_address is not None:
+                customer.delivery_address = payload.delivery_address.model_dump()
+            customer_db.commit()
         return PedeOnPublicOrderService.create(slug, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -445,6 +451,27 @@ def current_public_customer(slug: str, request: Request) -> dict:
         if store is None:
             raise HTTPException(status_code=404, detail="Loja PedeOn não encontrada.")
         customer = read_customer(request, db, store)
+        return public_customer(customer, token_for(customer, slug))
+
+
+@router.put("/public/{slug}/auth/profile", response_model=PublicCustomerAuthRead)
+def update_public_customer_profile(
+    slug: str, payload: PublicCustomerProfileUpdate, request: Request
+) -> dict:
+    registry = PedeOnPublicCatalogService._registry(slug)
+    with session_for_company(registry.company_code) as db:
+        store = db.get(PedeOnStore, registry.tenant_store_id)
+        if store is None:
+            raise HTTPException(status_code=404, detail="Loja PedeOn não encontrada.")
+        customer = read_customer(request, db, store)
+        customer.document_number = (payload.document or "").strip() or None
+        customer.delivery_address = (
+            payload.delivery_address.model_dump()
+            if payload.delivery_address is not None
+            else None
+        )
+        db.commit()
+        db.refresh(customer)
         return public_customer(customer, token_for(customer, slug))
 
 
