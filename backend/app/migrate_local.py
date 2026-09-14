@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from app.core.database import Base, engine
 from app.core.master_database import MasterSessionLocal
+from app.modules.pedeon.infrastructure.database import models as pedeon_models  # noqa: F401
 from app.models.company import Company
 from app.models import access_control, cash_closing, client, company, equipment, equipment_status, fiscal, fiscal_assistant, marketplace, monitoring, payable, pdv_cash_session, pdv_operator, pdv_sync_event, pdv_terminal, product, product_batch, product_composition, production_order, receivable, sale, service_contract, service_order, stock_entry, stock_movement, supplier, ticket, user, xml_inbox  # noqa: F401
 from app.services.access_control import seed_default_access_control
