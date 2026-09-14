@@ -2,7 +2,7 @@
 # Deve ficar antes do wildcard geral que entrega o ERP na porta 5000.
 ingress:
   - hostname: "*.lyncar.com.br"
-    path: "/cardapio.*"
+    path: "/cardapio*"
     service: "http://127.0.0.1:5101"
   - hostname: "*.lyncar.com.br"
     service: "http://127.0.0.1:5000"
