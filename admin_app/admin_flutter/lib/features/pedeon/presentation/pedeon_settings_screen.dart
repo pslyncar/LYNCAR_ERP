@@ -1000,6 +1000,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
                 final product = _viewModel.catalog!.items[index];
                 return _CatalogProductCard(
                   product: product,
+                  imageBaseUrl: widget.session.apiBaseUrl,
                   saving: _viewModel.saving,
                   onEdit: () => _showProductEditor(product),
                   onToggleChannel: (channel, value) =>
@@ -2059,11 +2060,13 @@ class _CategoryStrip extends StatelessWidget {
 class _CatalogProductCard extends StatelessWidget {
   const _CatalogProductCard({
     required this.product,
+    required this.imageBaseUrl,
     required this.saving,
     required this.onEdit,
     required this.onToggleChannel,
   });
   final PedeOnCatalogProduct product;
+  final String imageBaseUrl;
   final bool saving;
   final VoidCallback onEdit;
   final void Function(String channel, bool value) onToggleChannel;
@@ -2103,7 +2106,7 @@ class _CatalogProductCard extends StatelessWidget {
                   ),
                 )
               : Image.network(
-                  product.effectiveImage,
+                  _pedeOnImageUrl(imageBaseUrl, product.effectiveImage),
                   fit: BoxFit.cover,
                   errorBuilder: (_, _, _) => const ColoredBox(
                     color: Color(0xFFEAF2F8),
@@ -2231,6 +2234,17 @@ class _CatalogProductCard extends StatelessWidget {
       ],
     ),
   );
+}
+
+String _pedeOnImageUrl(String apiBaseUrl, String value) {
+  final trimmed = value.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  final base = apiBaseUrl.endsWith('/')
+      ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
+      : apiBaseUrl;
+  return '$base${trimmed.startsWith('/') ? '' : '/'}$trimmed';
 }
 
 class _ChannelSwitch extends StatelessWidget {
