@@ -23,6 +23,24 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
   late final GoRouter _router = GoRouter(
     routes: [
       GoRoute(path: '/', builder: (_, _) => const _AddressRequiredScreen()),
+      GoRoute(path: '/cardapio', builder: (_, state) => _storefrontFor(state)),
+      GoRoute(path: '/cardapio/salao', builder: (_, state) => _salonFor(state)),
+      GoRoute(
+        path: '/cardapio/salao/:accountType/:accountNumber',
+        builder: (_, state) {
+          final accountNumber = int.tryParse(
+            state.pathParameters['accountNumber'] ?? '',
+          );
+          if (accountNumber == null || accountNumber < 1) {
+            return const _AddressRequiredScreen();
+          }
+          return _salonFor(
+            state,
+            accountType: state.pathParameters['accountType'],
+            accountNumber: accountNumber,
+          );
+        },
+      ),
       GoRoute(
         path: '/:slug/salao',
         builder: (_, state) =>
@@ -58,6 +76,33 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
     ],
   );
 
+  Widget _storefrontFor(GoRouterState state) {
+    final slug = _slugFromPage(state.uri);
+    if (slug == null) return const _AddressRequiredScreen();
+    return StorefrontScreen(
+      slug: slug,
+      repository: _repository,
+      initialProductId: int.tryParse(
+        state.uri.queryParameters['produto'] ?? '',
+      ),
+      initialSocialCode: state.uri.queryParameters['social_code'],
+    );
+  }
+
+  Widget _salonFor(
+    GoRouterState state, {
+    String? accountType,
+    int? accountNumber,
+  }) {
+    final slug = _slugFromPage(state.uri);
+    if (slug == null) return const _AddressRequiredScreen();
+    return _SalonLoginScreen(
+      slug: slug,
+      accountType: accountType,
+      accountNumber: accountNumber,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final base = ThemeData(
@@ -84,6 +129,24 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
       ),
     );
   }
+}
+
+String? _slugFromPage(Uri uri) {
+  const suffix = '.lyncar.com.br';
+  final host = uri.host.toLowerCase();
+  if (host.endsWith(suffix)) {
+    final subdomain = host.substring(0, host.length - suffix.length);
+    if (subdomain.isNotEmpty &&
+        !subdomain.contains('.') &&
+        !{'www', 'api', 'pedeon'}.contains(subdomain)) {
+      return subdomain;
+    }
+  }
+  final pathSlug = uri.pathSegments.isNotEmpty ? uri.pathSegments.first : null;
+  if (pathSlug == null || pathSlug == 'cardapio' || pathSlug == 'salao') {
+    return null;
+  }
+  return pathSlug;
 }
 
 class _SalonLoginScreen extends StatefulWidget {

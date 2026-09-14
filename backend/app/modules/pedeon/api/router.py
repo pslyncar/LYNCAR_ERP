@@ -1,6 +1,6 @@
 import secrets
 import time
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 import requests
 from datetime import datetime, timezone
@@ -46,6 +46,7 @@ from app.modules.pedeon.application.schemas import (
 from app.modules.pedeon.application.catalog_service import PedeOnCatalogService
 from app.modules.pedeon.application.settings_service import PedeOnSettingsService
 from app.modules.pedeon.application.public_catalog_service import PedeOnPublicCatalogService
+from app.modules.pedeon.application.public_url import public_store_path, public_store_url
 from app.modules.pedeon.application.public_schemas import (
     CartQuoteRead,
     CartQuoteRequest,
@@ -499,11 +500,15 @@ def start_public_social_login(slug: str, provider: str, request: Request) -> dic
     state = secrets.token_urlsafe(32)
     origin = request.headers.get("origin") or request.headers.get("referer")
     if origin:
-        origin = origin.rstrip("/")
-        if "/" in origin[8:]:
-            origin = origin.rsplit("/", 1)[0]
+        parsed_origin = urlparse(origin)
+        if parsed_origin.scheme and parsed_origin.netloc:
+            origin = f"{parsed_origin.scheme}://{parsed_origin.netloc}"
+        else:
+            origin = origin.rstrip("/")
     else:
-        origin = get_settings().pedeon_public_base_url.rstrip("/")
+        origin = public_store_url(slug, get_settings().pedeon_public_base_url)
+        if origin.endswith("/cardapio"):
+            origin = origin.removesuffix("/cardapio")
     _SOCIAL_STATES[state] = (slug, now + _SOCIAL_STATE_TTL_SECONDS, origin)
     return {
         "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth?"
@@ -613,7 +618,7 @@ def public_google_callback(
             time.time() + _SOCIAL_CODE_TTL_SECONDS,
         )
     return RedirectResponse(
-        url=f"{public_origin}/{slug}?social_code={handoff_code}",
+        url=f"{public_origin}{public_store_path(public_origin, slug)}?social_code={handoff_code}",
         status_code=303,
     )
 

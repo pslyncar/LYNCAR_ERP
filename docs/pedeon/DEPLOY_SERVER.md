@@ -13,9 +13,11 @@ faz parte do pacote do servidor.
 4. Executar as migrações do backend antes de iniciar a nova API.
 5. Reiniciar a API FastAPI.
 6. Gerar o build Web do Admin e publicar os arquivos estáticos.
-7. Gerar o build Web do cardápio público e publicar os arquivos estáticos.
-8. Confirmar que a rota `/{slug}/salao` também retorna o `index.html` do
-   cardápio público.
+7. Publicar o build Web do cardápio público que acompanha esta branch em um
+   host com DNS curinga `*.lyncar.com.br` e HTTPS.
+8. Configurar o proxy para `https://<slug>.lyncar.com.br/cardapio` e para as
+   rotas `https://<slug>.lyncar.com.br/cardapio/salao...`, sempre retornando
+   `index.html` nas rotas do Flutter.
 9. Instalar o Edge separadamente nos computadores autorizados, quando
    aplicável.
 
@@ -46,13 +48,21 @@ catálogo, pagamentos, entrega, estações e terminais.
 - API responde em `/health` e expõe a documentação protegida;
 - empresa liberada consegue abrir o Admin PedeOn;
 - empresa não liberada recebe bloqueio;
-- cardápio público abre por slug;
-- salão abre em `/{slug}/salao` na rede local;
+- cardápio público abre em `https://<slug>.lyncar.com.br/cardapio`;
+- salão abre em `https://<slug>.lyncar.com.br/cardapio/salao`;
 - pedido público chega à Central de Pedidos;
 - pedido de salão chega à cozinha;
 - caixa vincula o recebimento ao usuário logado;
 - Pix manual permanece aguardando conferência;
 - Edge registra heartbeat e sincroniza após uma interrupção de rede.
 
-Não publicar banco local, `uploads`, logs, arquivos `.env`, `.venv`, builds
-temporários ou o aplicativo operacional do PDV PedeOn neste pacote.
+Não publicar banco local, `uploads`, logs, arquivos `.env`, `.venv` ou o
+aplicativo operacional do PDV PedeOn neste pacote. O build público versionado
+em `pedeon_public_flutter/build/web` é a exceção: ele acompanha esta branch
+para permitir a publicação imediata no servidor.
+
+O campo configurado pela empresa é somente o subdomínio (`drikapadaria`). O
+domínio e o caminho `/cardapio` são fixos da Lyncar. A tabela master
+`pedeon_public_stores` possui índice único global em `public_slug`, portanto a
+validação impede que duas empresas usem o mesmo subdomínio mesmo com bancos
+operacionais separados.

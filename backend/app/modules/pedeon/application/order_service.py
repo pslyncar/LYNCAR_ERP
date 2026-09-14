@@ -28,6 +28,7 @@ from app.modules.pedeon.application.public_catalog_service import (
     PedeOnPublicCatalogService,
     ResolvedCartLine,
 )
+from app.modules.pedeon.application.public_url import public_store_url
 from app.modules.pedeon.application.public_schemas import (
     PublicOrderCreate,
     PublicOrderRead,
@@ -561,7 +562,9 @@ class PedeOnPublicOrderService:
         # caso o checkout continua válido, só não há retorno automático local.
         public_base = settings.pedeon_public_base_url.rstrip("/")
         if cls._is_public_https_url(public_base):
-            body["redirect_url"] = f"{public_base}/{slug}?pedido={order.tracking_token}"
+            body["redirect_url"] = (
+                f"{public_store_url(slug, public_base)}?pedido={order.tracking_token}"
+            )
 
         api_base = settings.pedeon_api_public_url.rstrip("/")
         if cls._is_public_https_url(api_base):

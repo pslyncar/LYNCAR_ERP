@@ -35,7 +35,7 @@ void main() {
     expect(find.text('Cardápio / Alimentação'), findsOneWidget);
     expect(find.text('Loja online'), findsOneWidget);
     expect(find.textContaining('Híbr'), findsNothing);
-    expect(find.text('pedeon.lyncar.com.br/'), findsOneWidget);
+    expect(find.textContaining('drikapadaria.lyncar.com.br/cardapio'), findsOneWidget);
     expect(find.text('PDVs autorizados'), findsOneWidget);
     expect(find.text('Estações operacionais'), findsOneWidget);
 

@@ -192,9 +192,9 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
               TextField(
                 controller: _slug,
                 decoration: const InputDecoration(
-                  labelText: 'Endereço público',
-                  prefixText: 'pedeon.lyncar.com.br/',
-                  helperText: 'Use letras minúsculas, números e hífen.',
+                  labelText: 'Subdomínio público',
+                  helperText:
+                      'Exemplo: drikapadaria.lyncar.com.br/cardapio. Use letras minúsculas, números e hífen.',
                 ),
               ),
               const SizedBox(height: 16),

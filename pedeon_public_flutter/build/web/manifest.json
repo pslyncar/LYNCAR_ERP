@@ -1,0 +1,34 @@
+{
+    "name": "PedeOn by Lyncar",
+    "short_name": "PedeOn",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#F8F5F0",
+    "theme_color": "#075E6F",
+    "description": "Cardápio público e pedidos online PedeOn by Lyncar.",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
