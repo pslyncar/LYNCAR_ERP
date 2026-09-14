@@ -7,9 +7,16 @@ import '../widgets/app_card.dart';
 import '../widgets/error_panel.dart';
 
 class PdvOperatorsScreen extends StatefulWidget {
-  const PdvOperatorsScreen({super.key, required this.session});
+  const PdvOperatorsScreen({
+    super.key,
+    required this.session,
+    this.waitersOnly = false,
+    this.pedeonOnly = false,
+  });
 
   final Session session;
+  final bool waitersOnly;
+  final bool pedeonOnly;
 
   @override
   State<PdvOperatorsScreen> createState() => _PdvOperatorsScreenState();
@@ -37,7 +44,17 @@ class _PdvOperatorsScreenState extends State<PdvOperatorsScreen> {
         widget.session.token,
         activeOnly: false,
       );
-      setState(() => _operators = operators);
+      setState(
+        () => _operators = operators
+            .where(
+              (item) => widget.waitersOnly
+                  ? item.role == 'waiter'
+                  : widget.pedeonOnly
+                  ? item.role == 'pedeon_operator'
+                  : item.role != 'waiter' && item.role != 'pedeon_operator',
+            )
+            .toList(),
+      );
     } on ApiException catch (error) {
       setState(() => _error = error.message);
     } catch (_) {
@@ -54,6 +71,8 @@ class _PdvOperatorsScreenState extends State<PdvOperatorsScreen> {
         api: _api,
         token: widget.session.token,
         operator: operator,
+        waiterOnly: widget.waitersOnly,
+        pedeonOnly: widget.pedeonOnly,
       ),
     );
     if (changed == true) await _load();
@@ -102,21 +121,26 @@ class _PdvOperatorsScreenState extends State<PdvOperatorsScreen> {
           children: [
             Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Operadores PDV',
-                        style: TextStyle(
+                        widget.pedeonOnly ? 'Operadores do PedeOn' :
+                            (widget.waitersOnly ? 'Garçons PedeOn' : 'Operadores PDV'),
+                        style: const TextStyle(
                           fontSize: 28,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
                       SizedBox(height: 4),
                       Text(
-                        'Códigos de caixa e fiscais para autorizações',
-                        style: TextStyle(color: Color(0xFF64748B)),
+                        widget.pedeonOnly
+                            ? 'Acessos exclusivos do aplicativo PedeOn'
+                            : (widget.waitersOnly
+                                ? 'Acessos móveis para lançamento de pedidos'
+                                : 'Operadores do PDV legado'),
+                        style: const TextStyle(color: Color(0xFF64748B)),
                       ),
                     ],
                   ),
@@ -158,7 +182,9 @@ class _PdvOperatorsScreenState extends State<PdvOperatorsScreen> {
                               ),
                               title: Text(operator.name),
                               subtitle: Text(
-                                'Código ${operator.code} | ${operator.isFiscal ? 'Fiscal' : 'Operador'}',
+                                widget.pedeonOnly
+                                    ? 'Usuário ${operator.code} | ${operator.active ? 'Ativo' : 'Inativo'}'
+                                    : 'Código ${operator.code} | ${operator.isFiscal ? 'Fiscal' : 'Operador'}',
                               ),
                               trailing: Row(
                                 mainAxisSize: MainAxisSize.min,
@@ -209,11 +235,15 @@ class _OperatorDialog extends StatefulWidget {
     required this.api,
     required this.token,
     this.operator,
+    this.waiterOnly = false,
+    this.pedeonOnly = false,
   });
 
   final ApiClient api;
   final String token;
   final PdvOperator? operator;
+  final bool waiterOnly;
+  final bool pedeonOnly;
 
   @override
   State<_OperatorDialog> createState() => _OperatorDialogState();
@@ -225,9 +255,10 @@ class _OperatorDialogState extends State<_OperatorDialog> {
   late final _code = TextEditingController(text: widget.operator?.code ?? '');
   final _pin = TextEditingController();
   late final _notes = TextEditingController(text: widget.operator?.notes ?? '');
-  late String _role = widget.operator?.role ?? 'operator';
+  late String _role =
+      widget.operator?.role ?? (widget.waiterOnly ? 'waiter' : (widget.pedeonOnly ? 'pedeon_operator' : 'operator'));
   late bool _active = widget.operator?.active ?? true;
-  late bool _openCash = widget.operator?.canOpenCash ?? true;
+  late bool _openCash = widget.operator?.canOpenCash ?? !widget.waiterOnly;
   late bool _withdrawal = widget.operator?.canAuthorizeWithdrawal ?? false;
   late bool _cancel = widget.operator?.canAuthorizeCancel ?? false;
   late bool _discount = widget.operator?.canAuthorizeDiscount ?? false;
@@ -251,6 +282,16 @@ class _OperatorDialogState extends State<_OperatorDialog> {
         _withdrawal = true;
         _cancel = true;
         _discount = true;
+      } else if (role == 'waiter') {
+        _openCash = false;
+        _withdrawal = false;
+        _cancel = false;
+        _discount = false;
+      } else if (role == 'pedeon_operator') {
+        _openCash = true;
+        _withdrawal = false;
+        _cancel = false;
+        _discount = false;
       } else {
         _openCash = true;
         _withdrawal = false;
@@ -302,7 +343,13 @@ class _OperatorDialogState extends State<_OperatorDialog> {
   Widget build(BuildContext context) {
     final creating = widget.operator == null;
     return AlertDialog(
-      title: Text(creating ? 'Novo operador PDV' : 'Editar operador PDV'),
+        title: Text(
+              widget.waiterOnly
+              ? (creating ? 'Novo garçom PedeOn' : 'Editar garçom PedeOn')
+              : widget.pedeonOnly
+              ? (creating ? 'Novo operador PedeOn' : 'Editar operador PedeOn')
+              : (creating ? 'Novo operador PDV' : 'Editar operador PDV'),
+        ),
       content: SizedBox(
         width: 560,
         child: Form(
@@ -334,9 +381,9 @@ class _OperatorDialogState extends State<_OperatorDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _code,
-                        decoration: const InputDecoration(
-                          labelText: 'Código',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          labelText: widget.pedeonOnly ? 'Usuário' : 'Código',
+                          border: const OutlineInputBorder(),
                         ),
                         validator: (value) =>
                             value == null || value.trim().length < 2
@@ -350,7 +397,9 @@ class _OperatorDialogState extends State<_OperatorDialog> {
                         controller: _pin,
                         obscureText: true,
                         decoration: InputDecoration(
-                          labelText: creating ? 'Senha/PIN' : 'Nova senha/PIN',
+                          labelText: widget.pedeonOnly
+                              ? (creating ? 'Senha' : 'Nova senha')
+                              : (creating ? 'Senha/PIN' : 'Nova senha/PIN'),
                           border: const OutlineInputBorder(),
                         ),
                         validator: (value) {
@@ -370,7 +419,8 @@ class _OperatorDialogState extends State<_OperatorDialog> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
+                if (!widget.waiterOnly && !widget.pedeonOnly)
+                  DropdownButtonFormField<String>(
                   initialValue: _role,
                   decoration: const InputDecoration(
                     labelText: 'Tipo',
@@ -394,25 +444,29 @@ class _OperatorDialogState extends State<_OperatorDialog> {
                   onChanged: (value) => setState(() => _active = value),
                   title: const Text('Ativo'),
                 ),
-                CheckboxListTile(
+                if (!widget.waiterOnly)
+                  CheckboxListTile(
                   value: _openCash,
                   onChanged: (value) =>
                       setState(() => _openCash = value ?? true),
                   title: const Text('Pode abrir caixa'),
                 ),
-                CheckboxListTile(
+                if (!widget.waiterOnly && !widget.pedeonOnly)
+                  CheckboxListTile(
                   value: _withdrawal,
                   onChanged: (value) =>
                       setState(() => _withdrawal = value ?? false),
                   title: const Text('Pode autorizar sangria'),
                 ),
-                CheckboxListTile(
+                if (!widget.waiterOnly && !widget.pedeonOnly)
+                  CheckboxListTile(
                   value: _cancel,
                   onChanged: (value) =>
                       setState(() => _cancel = value ?? false),
                   title: const Text('Pode autorizar cancelamentos'),
                 ),
-                CheckboxListTile(
+                if (!widget.waiterOnly && !widget.pedeonOnly)
+                  CheckboxListTile(
                   value: _discount,
                   onChanged: (value) =>
                       setState(() => _discount = value ?? false),

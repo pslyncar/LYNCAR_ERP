@@ -10,6 +10,7 @@ from app.models.dashboard_content import DashboardContent  # noqa: F401
 from app.models.company_presence import CompanyPresence  # noqa: F401
 from app.models.master_user import MasterUser  # noqa: F401
 from app.models.master_integration_setting import MasterIntegrationSetting  # noqa: F401
+from app.models.master_pedeon_social_setting import MasterPedeonSocialSetting  # noqa: F401
 from app.models.master_email_setting import MasterEmailSetting  # noqa: F401
 from app.models.master_support import MasterSupportTicket, MasterSupportMessage  # noqa: F401
 from app.models.master_user_index import MasterUserIndex  # noqa: F401
@@ -34,6 +35,7 @@ from app.models.pdv_update import (  # noqa: F401
 from app.models.subscription_plan import SubscriptionPlan  # noqa: F401
 from app.models.website_contact_request import WebsiteContactRequest  # noqa: F401
 from app.models.auth_session import AuthSession, SecurityAuditLog  # noqa: F401
+from app.models.pedeon_public_store import PedeOnPublicStore  # noqa: F401
 from app.services.company_modules import (
     modules_for_business_type,
     normalize_modules,

@@ -180,11 +180,28 @@ def _is_pdv_client_type(value: str | None) -> bool:
     return normalized in {"pdv", "pdv_windows", "windows_pdv", "pdv_desktop"}
 
 
+def _is_pedeon_client_type(value: str | None) -> bool:
+    normalized = (value or "").strip().lower().replace("-", "_")
+    return normalized in {"pedeon", "pedeon_pos", "pedeon_windows"}
+
+
+def _is_operational_client_type(value: str | None) -> bool:
+    return _is_pdv_client_type(value) or _is_pedeon_client_type(value)
+
+
 def _ensure_pdv_windows_enabled(company_code: str) -> None:
     if "pdv_windows" not in get_enabled_modules_for_company(company_code):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="PDV Windows nao liberado para esta empresa. Procure a Lyncar.",
+        )
+
+
+def _ensure_pedeon_enabled(company_code: str) -> None:
+    if "pedeon" not in get_enabled_modules_for_company(company_code):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="PedeOn nao liberado para esta empresa. Procure a Lyncar.",
         )
 
 
@@ -228,11 +245,10 @@ def _token_response_for_tenant_user(
     operational_roles = segment_operational_roles(
         company.business_type if company else "custom"
     )
-    if _is_pdv_client_type(client_type) and "pdv_windows" not in enabled_modules:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="PDV Windows nao liberado para esta empresa. Procure a Lyncar.",
-        )
+    if _is_pdv_client_type(client_type):
+        _ensure_pdv_windows_enabled(company_code)
+    elif _is_pedeon_client_type(client_type):
+        _ensure_pedeon_enabled(company_code)
     with session_for_company(company_code) as db:
         current = db.get(User, user.id)
         if current is None or not current.active:
@@ -259,7 +275,7 @@ def _token_response_for_tenant_user(
                 "client_type": client_type or "web",
             },
             expires_minutes=PDV_ACCESS_TOKEN_EXPIRE_MINUTES
-            if _is_pdv_client_type(client_type)
+            if _is_operational_client_type(client_type)
             else None,
         )
         return TokenResponse(
@@ -657,7 +673,7 @@ def refresh_pdv_token(
             detail="Sessao do PDV invalida. Entre novamente.",
         ) from exc
 
-    if not _is_pdv_client_type(str(payload.get("client_type") or "")):
+    if not _is_operational_client_type(str(payload.get("client_type") or "")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Sessao nao pertence ao PDV Windows.",
@@ -685,7 +701,10 @@ def refresh_pdv_token(
             "A empresa desta sessao do PDV nao pode ser validada. Entre novamente.",
         ) from exc
     _ensure_company_active(company_code)
-    _ensure_pdv_windows_enabled(company_code)
+    if _is_pedeon_client_type(str(payload.get("client_type") or "")):
+        _ensure_pedeon_enabled(company_code)
+    else:
+        _ensure_pdv_windows_enabled(company_code)
 
     try:
         user_id = int(str(payload.get("sub") or ""))
@@ -704,7 +723,7 @@ def refresh_pdv_token(
         response = _token_response_for_tenant_user(
             company_code,
             user,
-            client_type="pdv_windows",
+            client_type=str(payload.get("client_type") or "pdv_windows"),
         )
         if "sales:create" not in response.permissions:
             raise HTTPException(
@@ -758,6 +777,26 @@ def automatic_login(login_in: AutomaticLoginRequest) -> TokenResponse:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Usuario sem acesso ao PDV.",
+            )
+    elif _is_pedeon_client_type(login_in.client_type):
+        payload = decode_access_token(response.access_token)
+        user_id = int(str(payload.get("sub") or "0"))
+        with session_for_company(response.company_code) as db:
+            user = db.get(User, user_id)
+            if user is None or not user.active:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Usuario inativo ou nao encontrado.",
+                )
+            response = _token_response_for_tenant_user(
+                response.company_code,
+                user,
+                client_type="pedeon_pos",
+            )
+        if "sales:create" not in response.permissions:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Usuario sem acesso ao PedeOn.",
             )
     return response
 

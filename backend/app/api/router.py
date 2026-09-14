@@ -15,6 +15,7 @@ from app.api.routes import (
     master_contact_requests,
     master_access,
     master_integrations,
+    master_pedeon_social,
     master_email,
     master_plans,
     master_companies,
@@ -45,6 +46,7 @@ from app.api.routes import (
     uploads,
     xml_inbox,
 )
+from app.modules.pedeon.api import router as pedeon
 
 api_router = APIRouter()
 api_router.include_router(health.router, tags=["health"])
@@ -58,6 +60,7 @@ api_router.include_router(master_billing.router, prefix="/master", tags=["master
 api_router.include_router(master_contact_requests.router, prefix="/master", tags=["master"])
 api_router.include_router(master_access.router, prefix="/master", tags=["master"])
 api_router.include_router(master_integrations.router, prefix="/master", tags=["master"])
+api_router.include_router(master_pedeon_social.router, prefix="/master", tags=["master"])
 api_router.include_router(master_email.router, prefix="/master", tags=["master"])
 api_router.include_router(master_plans.router, prefix="/master", tags=["master"])
 api_router.include_router(master_segments.router, prefix="/master", tags=["master"])
@@ -97,6 +100,7 @@ api_router.include_router(
 )
 api_router.include_router(receivables.router, prefix="/receivables", tags=["receivables"])
 api_router.include_router(payables.router, prefix="/payables", tags=["payables"])
+api_router.include_router(pedeon.router, prefix="/pedeon", tags=["pedeon"])
 api_router.include_router(
     service_orders.router,
     prefix="/service-orders",

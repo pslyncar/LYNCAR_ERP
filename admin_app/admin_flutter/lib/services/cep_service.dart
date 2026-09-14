@@ -9,6 +9,8 @@ class CepAddress {
     required this.city,
     required this.state,
     this.cityCode,
+    this.latitude,
+    this.longitude,
   });
 
   final String street;
@@ -16,6 +18,8 @@ class CepAddress {
   final String city;
   final String state;
   final String? cityCode;
+  final double? latitude;
+  final double? longitude;
 }
 
 class CepService {
@@ -27,21 +31,26 @@ class CepService {
       throw const CepLookupException('Informe um CEP com 8 digitos.');
     }
     final response = await http.get(
-      Uri.parse('https://viacep.com.br/ws/$digits/json/'),
+      Uri.parse('https://brasilapi.com.br/api/cep/v2/$digits'),
     );
     if (response.statusCode != 200) {
       throw const CepLookupException('Nao foi possivel consultar o CEP.');
     }
     final data = jsonDecode(utf8.decode(response.bodyBytes));
-    if (data is! Map<String, dynamic> || data['erro'] == true) {
+    if (data is! Map<String, dynamic> || data['errors'] != null) {
       throw const CepLookupException('CEP nao encontrado.');
     }
+    final location = (data['location'] as Map?)?.cast<String, dynamic>();
+    final coordinates = (location?['coordinates'] as Map?)
+        ?.cast<String, dynamic>();
     return CepAddress(
-      street: data['logradouro'] as String? ?? '',
-      neighborhood: data['bairro'] as String? ?? '',
-      city: data['localidade'] as String? ?? '',
-      state: data['uf'] as String? ?? '',
-      cityCode: data['ibge'] as String?,
+      street: data['street'] as String? ?? '',
+      neighborhood: data['neighborhood'] as String? ?? '',
+      city: data['city'] as String? ?? '',
+      state: data['state'] as String? ?? '',
+      cityCode: (data['ibge'] as Map?)?['city']?.toString(),
+      latitude: double.tryParse('${coordinates?['latitude'] ?? ''}'),
+      longitude: double.tryParse('${coordinates?['longitude'] ?? ''}'),
     );
   }
 }

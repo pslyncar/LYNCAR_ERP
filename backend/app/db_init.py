@@ -12,6 +12,7 @@ from app.models import sale  # noqa: F401
 from app.models import service_order  # noqa: F401
 from app.models import ticket  # noqa: F401
 from app.models import user  # noqa: F401
+from app.modules.pedeon.infrastructure.database import models as pedeon_models  # noqa: F401
 
 
 def main() -> None:

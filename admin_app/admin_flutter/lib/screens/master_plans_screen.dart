@@ -31,6 +31,7 @@ const _planModuleLabels = {
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
   'marketplaces': 'Marketplaces',
+  'pedeon': 'PedeOn',
   'support': 'Suporte',
   'settings': 'Configuracoes',
   'users': 'Usuarios',

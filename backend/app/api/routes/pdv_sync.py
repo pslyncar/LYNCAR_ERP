@@ -11,6 +11,7 @@ from app.api.dependencies import require_any_permission
 from app.core.database import get_db
 from app.core.security import decode_access_token
 from app.models.client import Client
+from app.models.pdv_operator import PdvOperator
 from app.models.pdv_sync_event import PdvSyncEvent
 from app.models.product import Product
 from app.models.user import User
@@ -37,12 +38,43 @@ def _client_json(client: Client) -> dict:
     return ClientRead.model_validate(client).model_dump(mode="json")
 
 
+def _operator_json(operator: PdvOperator) -> dict:
+    """Return the minimum credential material required by a paired Edge.
+
+    The Edge must verify waiter PINs while offline, so it needs the password
+    hash. The endpoint is protected by the existing PDV sync permissions and
+    the hash is never returned by the public/operator-management endpoints.
+    """
+    return {
+        "id": operator.id,
+        "name": operator.name,
+        "code": operator.code,
+        "pin_hash": operator.pin_hash,
+        "role": operator.role,
+        "can_open_cash": operator.can_open_cash,
+        "can_authorize_withdrawal": operator.can_authorize_withdrawal,
+        "can_authorize_cancel": operator.can_authorize_cancel,
+        "can_authorize_discount": operator.can_authorize_discount,
+        "active": operator.active,
+        "notes": operator.notes,
+    }
+
+
+def _is_legacy_pdv_operator(operator: PdvOperator) -> bool:
+    """Keep PedeOn identities out of the legacy PDV synchronization feed."""
+    return operator.role not in {"waiter", "pedeon_operator"}
+
+
 def _empty_batch(cursor: int, *, reset_required: bool = False) -> dict:
     return {
         "cursor": cursor,
         "server_time": datetime.now(timezone.utc).isoformat(),
         "products": [],
         "clients": [],
+        "operators": [],
+        "pedeon_waiters": [],
+        "pedeon_operators": [],
+        "legacy_deleted_operator_ids": [],
         "deleted_product_ids": [],
         "deleted_client_ids": [],
         "reset_required": reset_required,
@@ -64,9 +96,34 @@ def pdv_sync_snapshot(
         ).all()
     )
     clients = list(db.scalars(select(Client).order_by(Client.name)).all())
+    operators = list(
+        db.scalars(
+            select(PdvOperator)
+            .where(PdvOperator.active.is_(True))
+            .order_by(PdvOperator.name)
+        ).all()
+    )
     result = _empty_batch(_current_cursor(db))
     result["products"] = [_product_json(product) for product in products]
     result["clients"] = [_client_json(client) for client in clients]
+    result["operators"] = [
+        _operator_json(operator)
+        for operator in operators
+        if _is_legacy_pdv_operator(operator)
+    ]
+    result["pedeon_waiters"] = [
+        _operator_json(operator) for operator in operators if operator.role == "waiter"
+    ]
+    result["pedeon_operators"] = [
+        _operator_json(operator)
+        for operator in operators
+        if operator.role == "pedeon_operator"
+    ]
+    result["legacy_deleted_operator_ids"] = [
+        operator.id
+        for operator in operators
+        if not _is_legacy_pdv_operator(operator)
+    ]
     return result
 
 
@@ -122,6 +179,22 @@ def pdv_sync_changes(
         if upserts["client"]
         else []
     )
+    operators = (
+        list(
+            db.scalars(
+                select(PdvOperator).where(PdvOperator.id.in_(upserts["operator"]))
+            ).all()
+        )
+        if upserts["operator"]
+        else []
+    )
+    deleted_operator_ids = list(deletes["operator"])
+    active_operators: list[PdvOperator] = []
+    for operator in operators:
+        if operator.active:
+            active_operators.append(operator)
+        else:
+            deleted_operator_ids.append(operator.id)
     deleted_product_ids = list(deletes["product"])
     active_products: list[Product] = []
     for product in products:
@@ -134,8 +207,29 @@ def pdv_sync_changes(
     result["has_more"] = events[-1].id < current_cursor
     result["products"] = [_product_json(product) for product in active_products]
     result["clients"] = [_client_json(client) for client in clients]
+    result["operators"] = [
+        _operator_json(operator)
+        for operator in active_operators
+        if _is_legacy_pdv_operator(operator)
+    ]
+    result["pedeon_waiters"] = [
+        _operator_json(operator)
+        for operator in active_operators
+        if operator.role == "waiter"
+    ]
+    result["pedeon_operators"] = [
+        _operator_json(operator)
+        for operator in active_operators
+        if operator.role == "pedeon_operator"
+    ]
+    result["legacy_deleted_operator_ids"] = [
+        operator.id
+        for operator in active_operators
+        if not _is_legacy_pdv_operator(operator)
+    ]
     result["deleted_product_ids"] = sorted(set(deleted_product_ids))
     result["deleted_client_ids"] = sorted(set(deletes["client"]))
+    result["deleted_operator_ids"] = sorted(set(deleted_operator_ids))
     return result
 
 

@@ -161,6 +161,12 @@ PERMISSIONS = [
     PermissionDefinition("marketplaces:view", "Ver marketplaces", "marketplaces", "Visualizar integracoes de marketplace."),
     PermissionDefinition("marketplaces:connect", "Conectar marketplace", "marketplaces", "Autorizar contas externas como Mercado Livre."),
     PermissionDefinition("marketplaces:products", "Gerenciar produtos no marketplace", "marketplaces", "Escolher produtos e sincronizacao com marketplace."),
+    PermissionDefinition("pedeon:view", "Ver PedeOn", "pedeon", "Visualizar a Central de pedidos e o acompanhamento operacional."),
+    PermissionDefinition("pedeon:orders", "Operar pedidos PedeOn", "pedeon", "Aceitar, preparar e acompanhar pedidos PedeOn."),
+    PermissionDefinition("pedeon:catalog", "Gerenciar cardapio PedeOn", "pedeon", "Gerenciar produtos, categorias e adicionais do cardapio PedeOn."),
+    PermissionDefinition("pedeon:payments", "Conferir pagamentos PedeOn", "pedeon", "Conferir pagamentos dos pedidos PedeOn."),
+    PermissionDefinition("pedeon:terminals", "Configurar terminais PedeOn", "pedeon", "Escolher quais terminais participam da operação PedeOn."),
+    PermissionDefinition("pedeon:settings", "Configurar PedeOn", "pedeon", "Alterar loja, operação, entrega e políticas do PedeOn."),
     PermissionDefinition("users:manage", "Administrar usuários", "users", "Criar e alterar usuários."),
     PermissionDefinition("permissions:manage", "Administrar permissões", "permissions", "Gerenciar permissões."),
 ]

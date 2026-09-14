@@ -48,6 +48,7 @@ const _moduleLabels = {
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
   'marketplaces': 'Marketplaces',
+  'pedeon': 'PedeOn',
   'support': 'Suporte',
   'settings': 'Configurações',
   'users': 'Usuários',

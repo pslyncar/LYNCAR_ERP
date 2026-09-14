@@ -43,6 +43,7 @@ import 'stock_withdrawals_screen.dart';
 import 'support_screen.dart';
 import 'suppliers_screen.dart';
 import 'users_screen.dart';
+import '../features/pedeon/presentation/pedeon_settings_screen.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -438,6 +439,39 @@ class _AppShellState extends State<AppShell> {
             icon: Icons.sell_outlined,
             selectedIcon: Icons.sell,
             screen: PromotionsScreen(session: widget.session),
+          ),
+        if (widget.session.hasModule('pedeon') &&
+            widget.session.can('pedeon:view'))
+          _Destination(
+            category: AppNavigationSection.management,
+            label: 'PedeOn',
+            icon: Icons.shopping_bag_outlined,
+            selectedIcon: Icons.shopping_bag,
+            screen: PedeOnSettingsScreen(session: widget.session),
+          ),
+        if (widget.session.hasModule('pedeon') &&
+            widget.session.can('pdv_operators:manage'))
+          _Destination(
+            category: AppNavigationSection.management,
+            label: 'Operadores PedeOn',
+            icon: Icons.point_of_sale_outlined,
+            selectedIcon: Icons.point_of_sale,
+            screen: PdvOperatorsScreen(
+              session: widget.session,
+              pedeonOnly: true,
+            ),
+          ),
+        if (widget.session.hasModule('pedeon') &&
+            widget.session.can('pdv_operators:manage'))
+          _Destination(
+            category: AppNavigationSection.management,
+            label: 'Garçons PedeOn',
+            icon: Icons.room_service_outlined,
+            selectedIcon: Icons.room_service,
+            screen: PdvOperatorsScreen(
+              session: widget.session,
+              waitersOnly: true,
+            ),
           ),
         if (widget.session.hasModule('marketplaces') &&
             widget.session.can('marketplaces:view'))

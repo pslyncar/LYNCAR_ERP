@@ -1,0 +1,221 @@
+from datetime import datetime
+from decimal import Decimal
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class PublicStoreRead(BaseModel):
+    slug: str
+    display_name: str
+    description: str | None = None
+    logo_url: str | None = None
+    cover_url: str | None = None
+    accepting_orders: bool
+    experience_mode: Literal["food_service", "retail"]
+    fulfillment_options: list[str]
+    minimum_order_amount: Decimal
+    payment_methods: list["PublicPaymentMethodRead"] = Field(default_factory=list)
+
+
+class PublicCustomerAuthInput(BaseModel):
+    email: str = Field(min_length=5, max_length=180)
+    password: str = Field(min_length=8, max_length=128)
+    name: str | None = Field(default=None, min_length=2, max_length=180)
+    phone: str | None = Field(default=None, max_length=40)
+
+
+class PublicCustomerRead(BaseModel):
+    id: int
+    name: str
+    email: str
+    phone: str | None = None
+
+
+class PublicCustomerAuthRead(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    customer: PublicCustomerRead
+
+
+class PublicPaymentMethodRead(BaseModel):
+    method: Literal[
+        "manual_pix",
+        "infinitepay_pix",
+        "credit_card_on_delivery",
+        "debit_card_on_delivery",
+        "pay_at_pickup",
+    ]
+    display_name: str
+    fulfillment_types: list[Literal["pickup", "delivery"]] = Field(
+        default_factory=list
+    )
+    local_methods: list[str] = Field(default_factory=list)
+
+
+class PublicCategoryRead(BaseModel):
+    id: int
+    name: str
+    slug: str
+    description: str | None = None
+    image_url: str | None = None
+
+
+class PublicModifierOptionRead(BaseModel):
+    id: int
+    name: str
+    price_delta: Decimal
+    available_quantity: int | None = None
+    minimum_quantity: int = 1
+    maximum_quantity: int | None = 1
+
+
+class PublicModifierGroupRead(BaseModel):
+    id: int
+    name: str
+    description: str | None = None
+    minimum_selections: int
+    maximum_selections: int | None
+    options: list[PublicModifierOptionRead]
+    kind: Literal["observation", "complement", "product"] = "complement"
+
+
+class PublicProductRead(BaseModel):
+    product_id: int
+    category_id: int | None = None
+    name: str
+    description: str | None = None
+    image_url: str | None = None
+    price: Decimal
+    normal_price: Decimal
+    on_offer: bool
+    available: bool
+    unit: str
+    modifier_groups: list[PublicModifierGroupRead] = Field(default_factory=list)
+
+
+class PublicCatalogPageRead(BaseModel):
+    store: PublicStoreRead
+    categories: list[PublicCategoryRead]
+    items: list[PublicProductRead]
+    page: int
+    page_size: int
+    total: int
+    total_pages: int
+
+
+class EdgeCatalogProductRead(PublicProductRead):
+    enabled_channels: list[
+        Literal["onsite_qr", "onsite_waiter", "pdv_counter"]
+    ] = Field(default_factory=list)
+
+
+class EdgeCatalogRead(BaseModel):
+    revision: int = 0
+    store: PublicStoreRead
+    categories: list[PublicCategoryRead]
+    items: list[EdgeCatalogProductRead]
+
+
+class CartModifierSelection(BaseModel):
+    option_id: int
+    quantity: Decimal = Field(default=Decimal("1"), gt=0, le=50)
+
+
+class CartQuoteItem(BaseModel):
+    line_id: str | None = Field(default=None, max_length=80)
+    product_id: int
+    quantity: Decimal = Field(gt=0, max_digits=12, decimal_places=3)
+    customer_notes: str | None = Field(default=None, max_length=500)
+    modifiers: list[CartModifierSelection] = Field(default_factory=list, max_length=100)
+
+
+class DeliveryAddressInput(BaseModel):
+    postal_code: str = Field(min_length=8, max_length=12)
+    street: str = Field(min_length=2, max_length=180)
+    number: str = Field(min_length=1, max_length=30)
+    complement: str | None = Field(default=None, max_length=120)
+    neighborhood: str = Field(min_length=2, max_length=120)
+    city: str = Field(min_length=2, max_length=120)
+    state: str = Field(min_length=2, max_length=2)
+    reference: str | None = Field(default=None, max_length=240)
+
+
+class CartQuoteRequest(BaseModel):
+    items: list[CartQuoteItem] = Field(min_length=1, max_length=100)
+    fulfillment_type: Literal["pickup", "delivery"] = "pickup"
+    delivery_address: DeliveryAddressInput | None = None
+
+
+class CartQuoteLineRead(BaseModel):
+    line_id: str | None = None
+    product_id: int
+    name: str
+    quantity: Decimal
+    unit_price: Decimal
+    total: Decimal
+    image_url: str | None = None
+    modifiers: list[str] = Field(default_factory=list)
+
+
+class CartQuoteRead(BaseModel):
+    store_slug: str
+    lines: list[CartQuoteLineRead]
+    subtotal: Decimal
+    minimum_order_amount: Decimal
+    minimum_order_reached: bool
+    delivery_fee: Decimal = Decimal("0")
+    total: Decimal
+    delivery_zone_name: str | None = None
+    estimated_minutes_min: int | None = None
+    estimated_minutes_max: int | None = None
+
+
+class PublicOrderCreate(BaseModel):
+    idempotency_key: str = Field(min_length=16, max_length=100)
+    items: list[CartQuoteItem] = Field(min_length=1, max_length=100)
+    customer_name: str = Field(min_length=2, max_length=180)
+    customer_phone: str = Field(min_length=8, max_length=40)
+    customer_email: str | None = Field(default=None, max_length=180)
+    customer_document: str | None = Field(default=None, max_length=30)
+    fulfillment_type: Literal["pickup", "delivery"]
+    delivery_address: DeliveryAddressInput | None = None
+    payment_method: Literal[
+        "manual_pix",
+        "infinitepay_pix",
+        "credit_card_on_delivery",
+        "debit_card_on_delivery",
+        "pay_at_pickup",
+    ]
+    local_payment_method: Literal["cash", "pix", "credit_card", "debit_card"] | None = None
+    cash_change_for: Decimal | None = Field(default=None, gt=0)
+    customer_notes: str | None = Field(default=None, max_length=1000)
+
+
+class PublicPaymentRead(BaseModel):
+    method: str
+    status: str
+    display_name: str
+    checkout_url: str | None = None
+    pix_key: str | None = None
+    pix_key_type: str | None = None
+    recipient_name: str | None = None
+    instructions: str | None = None
+
+
+class PublicOrderRead(BaseModel):
+    order_id: str
+    tracking_token: str
+    display_number: str
+    status: str
+    payment_status: str
+    fulfillment_type: str
+    customer_name: str
+    subtotal: Decimal
+    delivery_fee: Decimal
+    total: Decimal
+    delivery_zone_name: str | None = None
+    estimated_minutes_min: int | None = None
+    estimated_minutes_max: int | None = None
+    created_at: datetime
+    payment: PublicPaymentRead

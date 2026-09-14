@@ -18,6 +18,7 @@ import '../models/fiscal_assistant.dart';
 import '../models/master_access_status.dart';
 import '../models/master_staff.dart';
 import '../models/marketplace.dart';
+import '../models/pedeon_social.dart';
 import '../models/monitoring_snapshot.dart';
 import '../models/payable.dart';
 import '../models/payment_setting.dart';
@@ -1157,6 +1158,34 @@ class ApiClient {
       body: jsonEncode(input.toJson()),
     );
     return MercadoLivreAppConfig.fromJson(_decodeResponse(response));
+  }
+
+  Future<List<PedeOnSocialProvider>> getMasterPedeOnSocial(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/master/integrations/pedeon-social'),
+      headers: _authHeaders(token),
+    );
+    return (_decodeResponse(response) as List<dynamic>)
+        .map(
+          (item) => PedeOnSocialProvider.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  Future<List<PedeOnSocialProvider>> updateMasterPedeOnSocial(
+    String token,
+    PedeOnSocialProviderInput input,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/master/integrations/pedeon-social'),
+      headers: _authHeaders(token),
+      body: jsonEncode(input.toJson()),
+    );
+    return (_decodeResponse(response) as List<dynamic>)
+        .map(
+          (item) => PedeOnSocialProvider.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
   }
 
   Future<List<MarketplaceProduct>> listMercadoLivreProducts(

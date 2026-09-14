@@ -36,6 +36,7 @@ const _moduleLabels = {
   'finance': 'Financeiro',
   'fiscal': 'Fiscal',
   'marketplaces': 'Marketplaces',
+  'pedeon': 'PedeOn',
   'support': 'Suporte',
   'settings': 'Configuracoes',
   'users': 'Usuários',
@@ -58,6 +59,8 @@ const _moduleDescriptions = {
   'fiscal': 'Certificado, NFC-e/NF-e e documentos fiscais.',
   'marketplaces':
       'Mercado Livre e outros canais de venda integrados ao estoque.',
+  'pedeon':
+      'Cardápio, pedidos online, pagamentos, preparo e terminais autorizados.',
   'support': 'Abertura e acompanhamento de chamados com o suporte.',
   'settings': 'Configuracoes',
   'dashboard': 'Tela inicial, avisos e indicadores.',
@@ -89,6 +92,8 @@ const _moduleQuickGuides = {
       'Libera configurações fiscais, certificados e documentos NFC-e/NF-e quando contratado.',
   'marketplaces':
       'Libera Mercado Livre e escolha dos produtos sincronizados com estoque.',
+  'pedeon':
+      'Libera o PedeOn. As ações continuam separadas por usuário e por terminal.',
   'users':
       'Libera criar e alterar usuários. Normalmente fica só para dono/gerente.',
   'permissions':
@@ -163,6 +168,13 @@ const _permissionUsageHints = {
       'Permite conectar ou reconectar a conta do Mercado Livre.',
   'marketplaces:products':
       'Permite importar anúncios e escolher quais produtos sincronizam estoque e preço.',
+  'pedeon:view': 'Mostra a Central de pedidos PedeOn.',
+  'pedeon:orders': 'Permite operar e acompanhar pedidos PedeOn.',
+  'pedeon:catalog': 'Permite gerenciar o cardápio e os adicionais PedeOn.',
+  'pedeon:payments': 'Permite conferir pagamentos PedeOn.',
+  'pedeon:terminals':
+      'Permite escolher quais terminais participam da operação PedeOn.',
+  'pedeon:settings': 'Permite configurar loja, entrega e políticas PedeOn.',
   'reports:view': 'Mostra Relatórios.',
   'users:manage': 'Mostra Usuários e permite criar/alterar usuários.',
   'permissions:manage': 'Permite criar e alterar perfis de acesso.',

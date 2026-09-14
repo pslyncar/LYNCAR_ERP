@@ -6,6 +6,7 @@ from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from app.core.database import Base
 from app.models.client import Client
+from app.models.pdv_operator import PdvOperator
 from app.models.product import Product
 
 
@@ -47,7 +48,7 @@ def _register_entity_events(model: type, entity_type: str) -> None:
     def after_insert(
         mapper: Mapper,
         connection: Connection,
-        target: Product | Client,
+        target: Product | Client | PdvOperator,
     ) -> None:
         del mapper
         _record_event(
@@ -61,7 +62,7 @@ def _register_entity_events(model: type, entity_type: str) -> None:
     def after_update(
         mapper: Mapper,
         connection: Connection,
-        target: Product | Client,
+        target: Product | Client | PdvOperator,
     ) -> None:
         del mapper
         _record_event(
@@ -75,7 +76,7 @@ def _register_entity_events(model: type, entity_type: str) -> None:
     def after_delete(
         mapper: Mapper,
         connection: Connection,
-        target: Product | Client,
+        target: Product | Client | PdvOperator,
     ) -> None:
         del mapper
         _record_event(
@@ -88,3 +89,4 @@ def _register_entity_events(model: type, entity_type: str) -> None:
 
 _register_entity_events(Product, "product")
 _register_entity_events(Client, "client")
+_register_entity_events(PdvOperator, "operator")

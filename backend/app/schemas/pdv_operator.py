@@ -3,7 +3,10 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-PdvOperatorRole = Literal["operator", "fiscal"]
+# ``pedeon_operator`` is deliberately kept in the operator table rather than
+# the ERP user table: it is a PedeOn-only credential. ``waiter`` is the
+# existing mobile credential and remains compatible with the ERP waiter flow.
+PdvOperatorRole = Literal["operator", "fiscal", "waiter", "pedeon_operator"]
 PdvAuthorizationAction = Literal[
     "authorize_open_cash",
     "authorize_close_cash",

@@ -290,6 +290,32 @@ PRODUCTION_ORDER_COLUMNS = [
     ("canceled_at", "TIMESTAMP WITH TIME ZONE"),
 ]
 
+PEDEON_ORDER_COLUMNS = [
+    ("source_channel", "VARCHAR(40) NOT NULL DEFAULT 'pedeon'"),
+    ("external_order_id", "VARCHAR(120)"),
+    ("source_metadata", "JSON NOT NULL DEFAULT '{}'"),
+    ("preparation_started_at", "TIMESTAMP WITH TIME ZONE"),
+    ("out_for_delivery_at", "TIMESTAMP WITH TIME ZONE"),
+]
+
+PEDEON_STORE_COLUMNS = [
+    ("experience_mode", "VARCHAR(20) NOT NULL DEFAULT 'food_service'"),
+    ("business_segment", "VARCHAR(40) NOT NULL DEFAULT 'other'"),
+    ("default_fulfillment_mode", "VARCHAR(20) NOT NULL DEFAULT 'preparation'"),
+    ("production_print_policy", "VARCHAR(20) NOT NULL DEFAULT 'manual'"),
+]
+
+PEDEON_PUBLICATION_COLUMNS = [
+    ("fulfillment_mode", "VARCHAR(20) NOT NULL DEFAULT 'inherit'"),
+    ("print_policy", "VARCHAR(20) NOT NULL DEFAULT 'inherit'"),
+]
+
+PEDEON_DELIVERY_ZONE_COLUMNS = [
+    ("center_latitude", "NUMERIC(10, 7)"),
+    ("center_longitude", "NUMERIC(10, 7)"),
+    ("radius_km", "NUMERIC(8, 2)"),
+]
+
 
 def column_exists(table_name: str, column_name: str, bind_engine=engine) -> bool:
     with bind_engine.connect() as connection:
@@ -990,6 +1016,57 @@ def add_production_order_columns(bind_engine=engine) -> None:
                 """
             )
         )
+
+
+def add_pedeon_order_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in PEDEON_ORDER_COLUMNS:
+            if not column_exists_in_connection(connection, "pedeon_orders", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE pedeon_orders ADD COLUMN {column_name} {column_type}")
+                )
+        connection.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_pedeon_orders_source_channel "
+                "ON pedeon_orders(source_channel)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_pedeon_order_source_external "
+                "ON pedeon_orders(store_id, source_channel, external_order_id) "
+                "WHERE external_order_id IS NOT NULL"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS uq_pedeon_task_item_station "
+                "ON pedeon_fulfillment_tasks(order_item_id, station_id) "
+                "WHERE order_item_id IS NOT NULL"
+            )
+        )
+
+
+def add_pedeon_experience_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for table_name, columns in (
+            ("pedeon_stores", PEDEON_STORE_COLUMNS),
+            ("pedeon_product_publications", PEDEON_PUBLICATION_COLUMNS),
+        ):
+            for column_name, column_type in columns:
+                if not column_exists_in_connection(connection, table_name, column_name):
+                    connection.execute(
+                        text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+                    )
+        for column_name, column_type in PEDEON_DELIVERY_ZONE_COLUMNS:
+            if not column_exists_in_connection(
+                connection, "pedeon_delivery_zones", column_name
+            ):
+                connection.execute(
+                    text(
+                        f"ALTER TABLE pedeon_delivery_zones ADD COLUMN {column_name} {column_type}"
+                    )
+                )
         connection.execute(
             text(
                 """
@@ -999,6 +1076,30 @@ def add_production_order_columns(bind_engine=engine) -> None:
                 """
             )
         )
+
+
+def add_pedeon_catalog_channel_columns(bind_engine=engine) -> None:
+    """Adds channel ownership while preserving legacy records as shared."""
+    with bind_engine.begin() as connection:
+        for table_name in ("pedeon_categories", "pedeon_modifier_groups"):
+            if not column_exists_in_connection(connection, table_name, "channel"):
+                connection.execute(
+                    text(
+                        f"ALTER TABLE {table_name} ADD COLUMN channel VARCHAR(20) "
+                        "NOT NULL DEFAULT 'shared'"
+                    )
+                )
+
+        additions = (
+            ("pedeon_modifier_groups", "kind", "VARCHAR(20) NOT NULL DEFAULT 'complement'"),
+            ("pedeon_modifier_options", "minimum_quantity", "INTEGER NOT NULL DEFAULT 1"),
+            ("pedeon_modifier_options", "maximum_quantity", "INTEGER"),
+        )
+        for table_name, column_name, column_type in additions:
+            if not column_exists_in_connection(connection, table_name, column_name):
+                connection.execute(
+                    text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_type}")
+                )
 
 
 def backfill_product_batches(bind_engine=engine) -> None:
@@ -1178,6 +1279,9 @@ def migrate_registered_tenants() -> None:
             add_service_order_columns(tenant_engine)
             add_fiscal_setting_columns(tenant_engine)
             add_receivable_columns(tenant_engine)
+            add_pedeon_order_columns(tenant_engine)
+            add_pedeon_experience_columns(tenant_engine)
+            add_pedeon_catalog_channel_columns(tenant_engine)
             with tenant_engine.begin() as connection:
                 connection.execute(
                     text(
@@ -1285,6 +1389,9 @@ def main() -> None:
     add_fiscal_setting_columns()
     add_receivable_columns()
     add_production_order_columns()
+    add_pedeon_order_columns()
+    add_pedeon_experience_columns()
+    add_pedeon_catalog_channel_columns()
     backfill_product_batches()
     cleanup_orphan_product_images("tenant")
     from app.core.database import SessionLocal

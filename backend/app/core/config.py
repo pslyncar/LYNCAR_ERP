@@ -38,6 +38,10 @@ class Settings(BaseSettings):
     cors_origin_regex: str | None = (
         r"https://(([a-z0-9-]+\.)?erp\.)?lyncar\.com\.br|http://(localhost|127\.0\.0\.1|192\.168\.\d{1,3}\.\d{1,3})(:\d+)?"
     )
+    pedeon_public_base_url: str = "https://pedeon.lyncar.com.br"
+    pedeon_api_public_url: str = "https://api.lyncar.com.br"
+    pedeon_payment_timeout_seconds: int = 15
+    pedeon_stock_reservation_minutes: int = 30
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

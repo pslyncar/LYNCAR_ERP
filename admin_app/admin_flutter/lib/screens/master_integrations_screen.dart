@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/marketplace.dart';
 import '../models/master_email_setting.dart';
+import '../models/pedeon_social.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../widgets/app_card.dart';
@@ -21,6 +22,7 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
   late final _api = ApiClient(widget.session.apiBaseUrl);
   MercadoLivreAppConfig? _mercadoLivreConfig;
   MasterEmailSetting? _emailConfig;
+  List<PedeOnSocialProvider> _socialConfigs = const [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -37,20 +39,34 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
       _error = null;
     });
     try {
-      final config = await _api.getMasterMercadoLivreConfig(
-        widget.session.token,
-      );
-      final emailConfig = await _api.getMasterEmailSetting(
-        widget.session.token,
-      );
-      if (mounted) {
-        setState(() {
-          _mercadoLivreConfig = config;
-          _emailConfig = emailConfig;
-        });
+      // Load each section independently. A failure in an older integration
+      // must not hide the PedeOn provider status from the Master screen.
+      try {
+        final socialConfigs = await _api.getMasterPedeOnSocial(
+          widget.session.token,
+        );
+        if (mounted) setState(() => _socialConfigs = socialConfigs);
+      } on ApiException catch (error) {
+        if (mounted) setState(() => _error = error.message);
       }
-    } on ApiException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+
+      try {
+        final config = await _api.getMasterMercadoLivreConfig(
+          widget.session.token,
+        );
+        if (mounted) setState(() => _mercadoLivreConfig = config);
+      } on ApiException catch (error) {
+        if (mounted) setState(() => _error = error.message);
+      }
+
+      try {
+        final emailConfig = await _api.getMasterEmailSetting(
+          widget.session.token,
+        );
+        if (mounted) setState(() => _emailConfig = emailConfig);
+      } on ApiException catch (error) {
+        if (mounted) setState(() => _error = error.message);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -104,6 +120,40 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Configuração de e-mail salva.')),
       );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _openSocialConfig(String provider) async {
+    final current = _socialConfigs
+        .where((item) => item.provider == provider)
+        .firstOrNull;
+    final input = await showDialog<PedeOnSocialProviderInput>(
+      context: context,
+      builder: (context) =>
+          _PedeOnSocialDialog(provider: provider, config: current),
+    );
+    if (input == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      final updated = await _api.updateMasterPedeOnSocial(
+        widget.session.token,
+        input,
+      );
+      if (mounted) setState(() => _socialConfigs = updated);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Credenciais sociais do PedeOn salvas.'),
+          ),
+        );
+      }
     } on ApiException catch (error) {
       if (mounted) setState(() => _error = error.message);
     } finally {
@@ -173,6 +223,19 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
                       ),
                       const SizedBox(height: 10),
                       _emailPanel(),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Login social do PedeOn',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Credenciais dos aplicativos usados pelos clientes no cardápio online. Os segredos ficam protegidos no servidor e não são devolvidos à tela.',
+                      ),
+                      const SizedBox(height: 10),
+                      ...['google', 'facebook', 'apple'].map(_socialPanel),
                     ],
                   ),
           ),
@@ -360,6 +423,182 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
           );
         },
       ),
+    );
+  }
+
+  Widget _socialPanel(String provider) {
+    final config = _socialConfigs
+        .where((item) => item.provider == provider)
+        .firstOrNull;
+    final name = provider[0].toUpperCase() + provider.substring(1);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: AppCard(
+        child: ListTile(
+          leading: Icon(
+            provider == 'google'
+                ? Icons.g_mobiledata
+                : provider == 'apple'
+                ? Icons.apple
+                : Icons.facebook,
+          ),
+          title: Text(
+            'Login com $name',
+            style: const TextStyle(fontWeight: FontWeight.w800),
+          ),
+          subtitle: Text(
+            config?.configured == true
+                ? 'Configurado e pronto para ativação.'
+                : 'Credenciais oficiais ainda não configuradas.',
+          ),
+          trailing: FilledButton.icon(
+            onPressed: _saving ? null : () => _openSocialConfig(provider),
+            icon: const Icon(Icons.settings_outlined),
+            label: const Text('Configurar'),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PedeOnSocialDialog extends StatefulWidget {
+  const _PedeOnSocialDialog({required this.provider, this.config});
+  final String provider;
+  final PedeOnSocialProvider? config;
+  @override
+  State<_PedeOnSocialDialog> createState() => _PedeOnSocialDialogState();
+}
+
+class _PedeOnSocialDialogState extends State<_PedeOnSocialDialog> {
+  late final _clientId = TextEditingController(
+    text: widget.config?.clientId ?? '',
+  );
+  late final _redirect = TextEditingController(
+    text: widget.config?.redirectUri ?? '',
+  );
+  final _secret = TextEditingController();
+  final _team = TextEditingController();
+  final _key = TextEditingController();
+  final _privateKey = TextEditingController();
+  late bool _enabled = widget.config?.enabled ?? false;
+  @override
+  void dispose() {
+    for (final c in [_clientId, _redirect, _secret, _team, _key, _privateKey]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  String? _value(TextEditingController c) =>
+      c.text.trim().isEmpty ? null : c.text.trim();
+  @override
+  Widget build(BuildContext context) {
+    final apple = widget.provider == 'apple';
+    final name =
+        widget.provider[0].toUpperCase() + widget.provider.substring(1);
+    return AlertDialog(
+      title: Text('Login $name do PedeOn'),
+      content: SizedBox(
+        width: 640,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Use somente credenciais do aplicativo oficial. Não cole esses valores no código ou no Git.',
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _clientId,
+                decoration: InputDecoration(
+                  labelText: apple
+                      ? 'Services ID'
+                      : widget.provider == 'facebook'
+                      ? 'App ID'
+                      : 'Client ID OAuth 2.0',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _secret,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: apple
+                      ? 'Client secret/JWT (opcional)'
+                      : 'Client Secret/App Secret',
+                  helperText: widget.config?.clientSecretConfigured == true
+                      ? 'Deixe vazio para manter o atual.'
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _redirect,
+                decoration: const InputDecoration(
+                  labelText: 'URI de redirecionamento',
+                ),
+              ),
+              if (apple) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _team,
+                  decoration: const InputDecoration(labelText: 'Apple Team ID'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _key,
+                  decoration: const InputDecoration(labelText: 'Apple Key ID'),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _privateKey,
+                  obscureText: true,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    labelText: 'Chave privada .p8',
+                    helperText: widget.config?.extraConfigured == true
+                        ? 'Deixe vazio para manter a atual.'
+                        : null,
+                  ),
+                ),
+              ],
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: _enabled,
+                onChanged: (value) => setState(() => _enabled = value),
+                title: const Text('Habilitar este provedor'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(
+            context,
+            PedeOnSocialProviderInput(
+              provider: widget.provider,
+              clientId: _value(_clientId),
+              clientSecret: _value(_secret),
+              redirectUri: _value(_redirect),
+              enabled: _enabled,
+              extra: {
+                'team_id': _value(_team),
+                'key_id': _value(_key),
+                'private_key': _value(_privateKey),
+              },
+            ),
+          ),
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('Salvar'),
+        ),
+      ],
     );
   }
 }

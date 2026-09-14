@@ -26,6 +26,7 @@ ALL_MODULES = [
     "finance",
     "fiscal",
     "marketplaces",
+    "pedeon",
     "support",
     "settings",
     "users",
