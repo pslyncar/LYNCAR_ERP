@@ -59,9 +59,11 @@ from app.modules.pedeon.application.public_schemas import (
     PublicCustomerProfileUpdate,
 )
 from app.modules.pedeon.application.customer_auth import (
+    clear_customer_cookie,
     normalize_email,
     public_customer,
     read_customer,
+    set_customer_cookie,
     token_for,
 )
 from app.modules.pedeon.infrastructure.database.models import PedeOnCustomer, PedeOnStore
@@ -400,7 +402,9 @@ def create_public_order(
 
 
 @router.post("/public/{slug}/auth/register", response_model=PublicCustomerAuthRead)
-def register_public_customer(slug: str, payload: PublicCustomerAuthInput) -> dict:
+def register_public_customer(
+    slug: str, payload: PublicCustomerAuthInput, request: Request, response: Response
+) -> dict:
     registry = PedeOnPublicCatalogService._registry(slug)
     email = normalize_email(payload.email)
     if payload.name is None:
@@ -425,11 +429,15 @@ def register_public_customer(slug: str, payload: PublicCustomerAuthInput) -> dic
         db.add(customer)
         db.commit()
         db.refresh(customer)
-        return public_customer(customer, token_for(customer, slug))
+        token = token_for(customer, slug)
+        set_customer_cookie(response, request, token)
+        return public_customer(customer, token)
 
 
 @router.post("/public/{slug}/auth/login", response_model=PublicCustomerAuthRead)
-def login_public_customer(slug: str, payload: PublicCustomerAuthInput) -> dict:
+def login_public_customer(
+    slug: str, payload: PublicCustomerAuthInput, request: Request, response: Response
+) -> dict:
     registry = PedeOnPublicCatalogService._registry(slug)
     email = normalize_email(payload.email)
     with session_for_company(registry.company_code) as db:
@@ -441,23 +449,27 @@ def login_public_customer(slug: str, payload: PublicCustomerAuthInput) -> dict:
         ))
         if customer is None or not customer.password_hash or not verify_password(payload.password, customer.password_hash):
             raise HTTPException(status_code=401, detail="E-mail ou senha inválidos.")
-        return public_customer(customer, token_for(customer, slug))
+        token = token_for(customer, slug)
+        set_customer_cookie(response, request, token)
+        return public_customer(customer, token)
 
 
 @router.get("/public/{slug}/auth/me", response_model=PublicCustomerAuthRead)
-def current_public_customer(slug: str, request: Request) -> dict:
+def current_public_customer(slug: str, request: Request, response: Response) -> dict:
     registry = PedeOnPublicCatalogService._registry(slug)
     with session_for_company(registry.company_code) as db:
         store = db.get(PedeOnStore, registry.tenant_store_id)
         if store is None:
             raise HTTPException(status_code=404, detail="Loja PedeOn não encontrada.")
         customer = read_customer(request, db, store)
-        return public_customer(customer, token_for(customer, slug))
+        token = token_for(customer, slug)
+        set_customer_cookie(response, request, token)
+        return public_customer(customer, token)
 
 
 @router.put("/public/{slug}/auth/profile", response_model=PublicCustomerAuthRead)
 def update_public_customer_profile(
-    slug: str, payload: PublicCustomerProfileUpdate, request: Request
+    slug: str, payload: PublicCustomerProfileUpdate, request: Request, response: Response
 ) -> dict:
     registry = PedeOnPublicCatalogService._registry(slug)
     with session_for_company(registry.company_code) as db:
@@ -473,7 +485,15 @@ def update_public_customer_profile(
         )
         db.commit()
         db.refresh(customer)
-        return public_customer(customer, token_for(customer, slug))
+        token = token_for(customer, slug)
+        set_customer_cookie(response, request, token)
+        return public_customer(customer, token)
+
+
+@router.post("/public/{slug}/auth/logout")
+def logout_public_customer(slug: str, request: Request, response: Response) -> dict:
+    clear_customer_cookie(response, request)
+    return {"ok": True}
 
 
 @router.get("/public/{slug}/auth/{provider}/start")
@@ -624,7 +644,9 @@ def public_google_callback(
 
 
 @router.post("/public/{slug}/auth/google/exchange", response_model=PublicCustomerAuthRead)
-def exchange_public_google_code(slug: str, payload: dict) -> dict:
+def exchange_public_google_code(
+    slug: str, payload: dict, request: Request, response: Response
+):
     handoff_code = str(payload.get("code", ""))
     code_data = _SOCIAL_CODES.pop(handoff_code, None)
     if code_data is None or code_data[3] < time.time() or code_data[0] != slug:
@@ -634,6 +656,7 @@ def exchange_public_google_code(slug: str, payload: dict) -> dict:
         customer = db.get(PedeOnCustomer, code_data[1])
         if customer is None or not customer.active:
             raise HTTPException(status_code=401, detail="Conta Google indisponível.")
+        set_customer_cookie(response, request, code_data[2])
         return public_customer(customer, code_data[2])
 
 

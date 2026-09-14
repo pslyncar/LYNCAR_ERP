@@ -4,10 +4,11 @@ import 'package:http/http.dart' as http;
 
 import 'api_base_url.dart';
 import '../domain/catalog_models.dart';
+import 'http_client_factory.dart';
 
 class CatalogApiService {
   CatalogApiService({http.Client? client, String? baseUrl})
-    : _client = client ?? http.Client(),
+    : _client = client ?? createCatalogHttpClient(),
       _baseUrl = resolvePedeOnApiBaseUrl(
         configured: baseUrl ?? const String.fromEnvironment('PEDEON_API_URL'),
       );
@@ -90,6 +91,27 @@ class CatalogApiService {
     required String password,
   }) => _authRequest(slug, 'login', {'email': email, 'password': password});
 
+  Future<Map<String, dynamic>> currentCustomer(
+    String slug, {
+    String? token,
+  }) async {
+    final response = await _client.get(
+      Uri.parse('$_baseUrl/pedeon/public/$slug/auth/me'),
+      headers: {
+        'Accept': 'application/json',
+        if (token != null) 'Authorization': 'Bearer $token',
+      },
+    );
+    return _decode(response);
+  }
+
+  Future<void> logoutCustomer(String slug, {String? token}) async {
+    await _client.post(
+      Uri.parse('$_baseUrl/pedeon/public/$slug/auth/logout'),
+      headers: {if (token != null) 'Authorization': 'Bearer $token'},
+    );
+  }
+
   Future<String> startGoogleLogin(String slug) async {
     final result = _decode(
       await _client.get(
@@ -150,6 +172,7 @@ class CatalogApiService {
       final detail = decoded is Map ? decoded['detail'] : null;
       throw CatalogRequestException(
         detail?.toString() ?? 'Não foi possível carregar o cardápio.',
+        statusCode: response.statusCode,
       );
     }
     return (decoded as Map).cast<String, dynamic>();
@@ -164,8 +187,9 @@ class CatalogApiService {
 }
 
 class CatalogRequestException implements Exception {
-  const CatalogRequestException(this.message);
+  const CatalogRequestException(this.message, {this.statusCode});
   final String message;
+  final int? statusCode;
   @override
   String toString() => message;
 }

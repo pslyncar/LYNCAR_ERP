@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -15,6 +15,41 @@ class CustomerIdentity:
     name: str
     email: str
     phone: str | None
+
+
+CUSTOMER_SESSION_COOKIE = "pedeon_customer_session"
+_SESSION_MAX_AGE = 60 * 60 * 24 * 30
+
+
+def _cookie_domain(request: Request) -> str | None:
+    host = (request.url.hostname or "").lower().rstrip(".")
+    if host == "lyncar.com.br" or host.endswith(".lyncar.com.br"):
+        return ".lyncar.com.br"
+    return None
+
+
+def set_customer_cookie(response: Response, request: Request, token: str) -> None:
+    response.set_cookie(
+        key=CUSTOMER_SESSION_COOKIE,
+        value=token,
+        max_age=_SESSION_MAX_AGE,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path="/pedeon/public",
+        domain=_cookie_domain(request),
+    )
+
+
+def clear_customer_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(
+        key=CUSTOMER_SESSION_COOKIE,
+        httponly=True,
+        secure=request.url.scheme == "https",
+        samesite="lax",
+        path="/pedeon/public",
+        domain=_cookie_domain(request),
+    )
 
 
 def normalize_email(email: str) -> str:
@@ -46,11 +81,16 @@ def identity(customer: PedeOnCustomer) -> CustomerIdentity:
 
 def read_customer(request: Request, db: Session, store: PedeOnStore) -> PedeOnCustomer:
     authorization = request.headers.get("Authorization", "")
-    if not authorization.lower().startswith("bearer "):
+    token = (
+        authorization.split(" ", 1)[1].strip()
+        if authorization.lower().startswith("bearer ")
+        else request.cookies.get(CUSTOMER_SESSION_COOKIE)
+    )
+    if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Entre para continuar.")
     from app.core.security import decode_access_token
     try:
-        claims = decode_access_token(authorization.split(" ", 1)[1].strip())
+        claims = decode_access_token(token)
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Sua sessão expirou. Entre novamente.") from exc
     if claims.get("scope") != "pedeon_customer" or claims.get("store_slug") != store.public_slug:

@@ -816,6 +816,15 @@ class _FakeRepository implements CatalogRepository {
   );
 
   @override
+  Future<CustomerSession?> currentCustomer(
+    String slug, {
+    String? token,
+  }) async => null;
+
+  @override
+  Future<void> logoutCustomer(String slug, {String? token}) async {}
+
+  @override
   Future<String> startGoogleLogin(String slug) async =>
       'https://accounts.google.com';
 

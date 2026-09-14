@@ -34,6 +34,8 @@ abstract interface class CatalogRepository {
     required String email,
     required String password,
   });
+  Future<CustomerSession?> currentCustomer(String slug, {String? token});
+  Future<void> logoutCustomer(String slug, {String? token});
   Future<String> startGoogleLogin(String slug);
   Future<CustomerSession> exchangeGoogleCode(String slug, String code);
   Future<CustomerSession> updateCustomerProfile(
@@ -130,6 +132,22 @@ class HttpCatalogRepository implements CatalogRepository {
   }) async => CustomerSession.fromJson(
     await _service.loginCustomer(slug, email: email, password: password),
   );
+
+  @override
+  Future<CustomerSession?> currentCustomer(String slug, {String? token}) async {
+    try {
+      return CustomerSession.fromJson(
+        await _service.currentCustomer(slug, token: token),
+      );
+    } on CatalogRequestException catch (exception) {
+      if (exception.statusCode == 401) return null;
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> logoutCustomer(String slug, {String? token}) =>
+      _service.logoutCustomer(slug, token: token);
 
   @override
   Future<String> startGoogleLogin(String slug) =>

@@ -17,6 +17,7 @@ class StorefrontViewModel extends ChangeNotifier {
   final CatalogRepository repository;
   final Map<String, CartLine> _cart = {};
   Timer? _searchTimer;
+  Future<void> _cartWrite = Future.value();
   int _loadGeneration = 0;
 
   Storefront? store;
@@ -77,6 +78,7 @@ class StorefrontViewModel extends ChangeNotifier {
           ?.slug;
       await _restoreCart();
       await _restoreCustomer();
+      await _refreshCustomerFromServer();
       await _restoreCustomerProfile();
     } catch (exception) {
       if (generation != _loadGeneration) return;
@@ -351,12 +353,36 @@ class StorefrontViewModel extends ChangeNotifier {
 
   Future<void> logoutCustomer() async {
     final profileStorageKey = _customerProfileStorageKey;
+    final token = customer?.token;
     customer = null;
     customerProfile = null;
+    notifyListeners();
+    try {
+      await repository.logoutCustomer(slug, token: token);
+    } on Object {
+      // A local logout must complete even when the API is temporarily offline.
+    }
     final preferences = await SharedPreferences.getInstance();
     await preferences.remove(_customerStorageKey);
     await preferences.remove(profileStorageKey);
     notifyListeners();
+  }
+
+  Future<void> _refreshCustomerFromServer() async {
+    if (!kIsWeb) return;
+    final session = await repository.currentCustomer(
+      slug,
+      token: customer?.token,
+    );
+    if (session == null) {
+      customer = null;
+      customerProfile = null;
+      final preferences = await SharedPreferences.getInstance();
+      await preferences.remove(_customerStorageKey);
+      return;
+    }
+    customer = session;
+    await _persistCustomer();
   }
 
   Future<void> saveCustomerProfile({
@@ -483,28 +509,31 @@ class StorefrontViewModel extends ChangeNotifier {
 
   Future<void> _persistCart() async {
     if (!kIsWeb) return;
-    final preferences = await SharedPreferences.getInstance();
-    if (_cart.isEmpty) {
-      await preferences.remove(_cartStorageKey);
-      return;
-    }
-    await preferences.setString(
-      _cartStorageKey,
-      jsonEncode(
-        _cart.values
-            .map(
-              (line) => {
-                'product_id': line.product.id,
-                'quantity': line.quantity,
-                'selected_options': line.selectedOptions.map(
-                  (key, value) => MapEntry('$key', value),
-                ),
-                'customer_notes': line.customerNotes,
-              },
-            )
-            .toList(growable: false),
-      ),
-    );
+    _cartWrite = _cartWrite.then((_) async {
+      final preferences = await SharedPreferences.getInstance();
+      if (_cart.isEmpty) {
+        await preferences.remove(_cartStorageKey);
+        return;
+      }
+      await preferences.setString(
+        _cartStorageKey,
+        jsonEncode(
+          _cart.values
+              .map(
+                (line) => {
+                  'product_id': line.product.id,
+                  'quantity': line.quantity,
+                  'selected_options': line.selectedOptions.map(
+                    (key, value) => MapEntry('$key', value),
+                  ),
+                  'customer_notes': line.customerNotes,
+                },
+              )
+              .toList(growable: false),
+        ),
+      );
+    });
+    await _cartWrite;
   }
 
   @override

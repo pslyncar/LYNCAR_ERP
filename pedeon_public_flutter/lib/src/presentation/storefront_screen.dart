@@ -51,7 +51,7 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
       if (code != null && code.isNotEmpty) {
         try {
           await viewModel.exchangeGoogleCode(code);
-          if (mounted) GoRouter.of(context).go('/${widget.slug}');
+          if (mounted) GoRouter.of(context).go(_storefrontRoute());
         } catch (_) {
           // The view model exposes the error in the storefront state.
         }
@@ -197,8 +197,17 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
     if (action == _CustomerMenuAction.logout) {
       await viewModel.logoutCustomer();
       if (!context.mounted) return;
-      GoRouter.of(context).go('/${widget.slug}');
+      GoRouter.of(context).go(_storefrontRoute());
     }
+  }
+
+  String _storefrontRoute() {
+    final host = Uri.base.host.toLowerCase();
+    if (host.endsWith('.lyncar.com.br') &&
+        !{'www', 'api', 'pedeon'}.contains(host.split('.').first)) {
+      return '/cardapio';
+    }
+    return '/${widget.slug}';
   }
 
   Future<void> _editLine(BuildContext context, CartLine line) async {
