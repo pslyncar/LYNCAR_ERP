@@ -1201,7 +1201,10 @@ class _CartPanel extends StatelessWidget {
           width: double.infinity,
           child: FilledButton.icon(
             key: const Key('review-cart'),
-            onPressed: viewModel.cart.isEmpty ? null : () => _review(context),
+            onPressed:
+                viewModel.cart.isEmpty || !viewModel.store!.acceptingOrders
+                ? null
+                : () => _review(context),
             icon: const Icon(Icons.arrow_forward_rounded),
             label: const Padding(
               padding: EdgeInsets.symmetric(vertical: 14),
@@ -1225,6 +1228,7 @@ class _CartPanel extends StatelessWidget {
   );
 
   Future<void> _review(BuildContext context) async {
+    if (!viewModel.store!.acceptingOrders) return;
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -1259,10 +1263,10 @@ class _CartPanel extends StatelessWidget {
                   ? Icons.verified_rounded
                   : Icons.info_outline_rounded,
             ),
-            title: const Text('Valores conferidos'),
+            title: const Text('Pedido atualizado'),
             content: Text(
               quote.minimumOrderReached
-                  ? 'Subtotal ${_currency(quote.subtotal)}. Os preços e a disponibilidade foram confirmados pelo servidor.'
+                  ? 'Subtotal ${_currency(quote.subtotal)}. Confira seus dados para continuar.'
                   : 'O pedido mínimo é ${_currency(quote.minimumOrderAmount)}. Adicione mais itens para continuar.',
             ),
             actions: [

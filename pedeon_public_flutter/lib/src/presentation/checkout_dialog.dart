@@ -14,6 +14,7 @@ Future<void> showCheckoutDialog(
   required StorefrontViewModel viewModel,
   required CartQuote quote,
 }) async {
+  if (!viewModel.store!.acceptingOrders) return;
   if (viewModel.customer == null) {
     final authenticated = await showCustomerAccessDialog(
       context,
@@ -130,7 +131,8 @@ class _CheckoutDialogState extends State<_CheckoutDialog> {
 
   bool get _requiresLocalPaymentSelection => _paymentMethod == 'pay_at_pickup';
 
-  bool get _canSubmit => _fulfillment != null && _paymentMethod != null;
+  bool get _canSubmit =>
+      _store.acceptingOrders && _fulfillment != null && _paymentMethod != null;
 
   @override
   void dispose() {
