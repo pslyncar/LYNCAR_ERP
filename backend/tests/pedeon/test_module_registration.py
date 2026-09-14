@@ -1,6 +1,6 @@
 import unittest
 
-from app.core.permissions import PERMISSIONS
+from app.core.permissions import PERMISSIONS, ROLE_PERMISSION_CODES
 from app.services.company_modules import ALL_MODULES, PLAN_DEFAULT_MODULES
 
 
@@ -30,6 +30,11 @@ class PedeOnModuleRegistrationTests(unittest.TestCase):
                 "pedeon:settings",
             },
         )
+
+    def test_seller_can_operate_pedeon_when_company_module_is_enabled(self) -> None:
+        self.assertIn("pedeon:view", ROLE_PERMISSION_CODES["seller"])
+        self.assertIn("pedeon:orders", ROLE_PERMISSION_CODES["seller"])
+        self.assertNotIn("pedeon:settings", ROLE_PERMISSION_CODES["seller"])
 
 
 if __name__ == "__main__":

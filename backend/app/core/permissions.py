@@ -217,6 +217,8 @@ ROLE_PERMISSION_CODES = {
         "sales:manual",
         "sales:cancel",
         "pdv_operators:manage",
+        "pedeon:view",
+        "pedeon:orders",
         "service_orders:view",
         "service_orders:create",
         "service_orders:sell",
