@@ -35,6 +35,7 @@ class StorefrontViewModel extends ChangeNotifier {
   CustomerProfile? customerProfile;
   bool authLoading = false;
   String? authError;
+  CartQuote? _lastQuote;
 
   List<CartLine> get cart => List.unmodifiable(_cart.values);
   int get itemCount =>
@@ -43,6 +44,7 @@ class StorefrontViewModel extends ChangeNotifier {
       _cart.values.fold(0, (total, line) => total + line.total);
   bool get canLoadMore => page < totalPages;
   bool get isAuthenticated => customer != null;
+  CartQuote? get lastQuote => _lastQuote;
   String imageUrl(String? value) => repository.imageUrl(value);
 
   Future<void> load() async {
@@ -130,6 +132,7 @@ class StorefrontViewModel extends ChangeNotifier {
     String? customerNotes,
   }) {
     if (!product.available) return;
+    _lastQuote = null;
     final normalizedNotes = (customerNotes ?? '').trim();
     final optionSignature = selectedOptions.entries.toList()
       ..sort((a, b) => a.key.compareTo(b.key));
@@ -151,6 +154,7 @@ class StorefrontViewModel extends ChangeNotifier {
       addConfigured(product: product, quantity: 1);
 
   void increaseLine(CartLine line) {
+    _lastQuote = null;
     _cart[line.id] = CartLine(
       id: line.id,
       product: line.product,
@@ -163,6 +167,7 @@ class StorefrontViewModel extends ChangeNotifier {
   }
 
   void removeLine(CartLine line) {
+    _lastQuote = null;
     _cart.remove(line.id);
     _persistCart();
     notifyListeners();
@@ -174,6 +179,7 @@ class StorefrontViewModel extends ChangeNotifier {
     required Map<int, int> selectedOptions,
     String? customerNotes,
   }) {
+    _lastQuote = null;
     _cart.remove(original.id);
     final normalizedNotes = (customerNotes ?? '').trim();
     final optionSignature = selectedOptions.entries.toList()
@@ -193,6 +199,7 @@ class StorefrontViewModel extends ChangeNotifier {
   }
 
   void decreaseLine(CartLine line) {
+    _lastQuote = null;
     if (line.quantity == 1) {
       _cart.remove(line.id);
     } else {
@@ -214,6 +221,7 @@ class StorefrontViewModel extends ChangeNotifier {
         .firstOrNull;
     final current = entry?.value;
     if (current == null) return;
+    _lastQuote = null;
     if (current.quantity == 1) {
       _cart.remove(entry!.key);
     } else {
@@ -232,12 +240,17 @@ class StorefrontViewModel extends ChangeNotifier {
   Future<CartQuote> confirmQuote({
     String fulfillmentType = 'pickup',
     DeliveryAddress? deliveryAddress,
-  }) => repository.quote(
-    slug,
-    cart,
-    fulfillmentType: fulfillmentType,
-    deliveryAddress: deliveryAddress,
-  );
+  }) async {
+    final quote = await repository.quote(
+      slug,
+      cart,
+      fulfillmentType: fulfillmentType,
+      deliveryAddress: deliveryAddress,
+    );
+    _lastQuote = quote;
+    notifyListeners();
+    return quote;
+  }
 
   Future<PublicOrder> trackOrder(String trackingToken) =>
       repository.trackOrder(slug, trackingToken);
@@ -253,6 +266,7 @@ class StorefrontViewModel extends ChangeNotifier {
       customerToken: customer?.token,
     );
     _cart.clear();
+    _lastQuote = null;
     _persistCart();
     _checkoutIdempotencyKey = null;
     notifyListeners();

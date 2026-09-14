@@ -1183,6 +1183,22 @@ class _CartPanel extends StatelessWidget {
                 ),
         ),
         const Divider(height: 28),
+        if (viewModel.lastQuote?.deliveryFee case final fee? when fee > 0) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Entrega',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              Text(
+                _currency(fee),
+                style: const TextStyle(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+        ],
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -1196,22 +1212,53 @@ class _CartPanel extends StatelessWidget {
             ),
           ],
         ),
+        if (viewModel.lastQuote?.deliveryFee case final fee? when fee > 0) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Total',
+                style: TextStyle(fontWeight: FontWeight.w800),
+              ),
+              Text(
+                _currency(viewModel.lastQuote!.total),
+                style: const TextStyle(
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ],
         const SizedBox(height: 16),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            key: const Key('review-cart'),
-            onPressed:
-                viewModel.cart.isEmpty || !viewModel.store!.acceptingOrders
-                ? null
-                : () => _review(context),
-            icon: const Icon(Icons.arrow_forward_rounded),
-            label: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
-              child: Text('Revisar pedido'),
+        if (viewModel.store!.acceptingOrders)
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              key: const Key('review-cart'),
+              onPressed: viewModel.cart.isEmpty ? null : () => _review(context),
+              icon: const Icon(Icons.arrow_forward_rounded),
+              label: const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Text('Revisar pedido'),
+              ),
+            ),
+          )
+        else
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF1E5),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Text(
+              'A loja está fechada no momento. Tente novamente mais tarde.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w700),
             ),
           ),
-        ),
         const SizedBox(height: 12),
         const Center(
           child: Text(
