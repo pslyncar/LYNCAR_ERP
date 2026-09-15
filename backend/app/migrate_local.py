@@ -1095,6 +1095,28 @@ def add_pedeon_experience_columns(bind_engine=engine) -> None:
         )
 
 
+def add_pedeon_device_columns(bind_engine=engine) -> None:
+    """Evolui o registro do Edge para vários dispositivos PedeOn por loja."""
+    with bind_engine.begin() as connection:
+        additions = (
+            ("device_role", "VARCHAR(30) NOT NULL DEFAULT 'cashier'"),
+            ("active", "BOOLEAN NOT NULL DEFAULT TRUE"),
+            ("sort_order", "INTEGER NOT NULL DEFAULT 100"),
+        )
+        for column_name, column_type in additions:
+            if not column_exists_in_connection(connection, "pedeon_edge_nodes", column_name):
+                connection.execute(
+                    text(
+                        f"ALTER TABLE pedeon_edge_nodes ADD COLUMN {column_name} {column_type}"
+                    )
+                )
+        connection.execute(
+            text(
+                "ALTER TABLE pedeon_edge_nodes DROP CONSTRAINT IF EXISTS uq_pedeon_edge_store"
+            )
+        )
+
+
 def add_pedeon_catalog_channel_columns(bind_engine=engine) -> None:
     """Adds channel ownership while preserving legacy records as shared."""
     with bind_engine.begin() as connection:
@@ -1299,6 +1321,7 @@ def migrate_registered_tenants() -> None:
             add_pedeon_order_columns(tenant_engine)
             add_pedeon_customer_columns(tenant_engine)
             add_pedeon_experience_columns(tenant_engine)
+            add_pedeon_device_columns(tenant_engine)
             add_pedeon_catalog_channel_columns(tenant_engine)
             with tenant_engine.begin() as connection:
                 connection.execute(
@@ -1410,6 +1433,7 @@ def main() -> None:
     add_pedeon_order_columns()
     add_pedeon_customer_columns()
     add_pedeon_experience_columns()
+    add_pedeon_device_columns()
     add_pedeon_catalog_channel_columns()
     backfill_product_batches()
     cleanup_orphan_product_images("tenant")

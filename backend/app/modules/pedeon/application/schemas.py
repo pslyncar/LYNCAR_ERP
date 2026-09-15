@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 import re
 from typing import Literal
@@ -140,6 +141,7 @@ class TerminalPermissionUpdate(BaseModel):
     capabilities: list[TerminalCapability] = Field(default_factory=list)
     notification_mode: Literal["badge", "sound", "silent"] = "badge"
     priority: int = Field(default=100, ge=0, le=9999)
+    device_role: Literal["kitchen", "cashier", "dining_room"] = "cashier"
 
     @model_validator(mode="after")
     def ensure_view_capability(self):
@@ -154,6 +156,8 @@ class TerminalPermissionRead(TerminalPermissionUpdate):
     device_label: str | None = None
     app_version: str | None = None
     terminal_active: bool
+    last_seen_at: datetime | None = None
+    status: str = "offline"
 
 
 class DeliveryZoneInput(BaseModel):

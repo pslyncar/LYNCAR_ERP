@@ -894,9 +894,9 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const _InfoStrip(
-          title: 'Você decide onde o PedeOn aparece',
+          title: 'Dispositivos PedeOn',
           description:
-              'Um mercado pode deixar um único PDV responsável ou liberar vários terminais. Cada PDV recebe somente as ações marcadas abaixo.',
+              'Cada instalação do Edge aparece aqui com o nome da máquina e sua função. O PDV Windows não é listado nesta tela.',
         ),
         const SizedBox(height: 18),
         if (_viewModel.settings!.terminals.isEmpty)
@@ -1869,8 +1869,8 @@ class _PedeOnTabs extends StatelessWidget {
         ),
         const Tab(icon: Icon(Icons.delivery_dining_outlined), text: 'Entrega'),
         const Tab(
-          icon: Icon(Icons.point_of_sale_outlined),
-          text: 'PDVs autorizados',
+          icon: Icon(Icons.devices_other_outlined),
+          text: 'Dispositivos PedeOn',
         ),
       ],
     ),
@@ -3411,53 +3411,47 @@ class _TerminalCard extends StatefulWidget {
 
 class _TerminalCardState extends State<_TerminalCard> {
   late PedeOnTerminalSettings draft = widget.terminal;
-  static const labels = {
-    'notify': 'Avisar',
-    'accept': 'Aceitar',
-    'prepare': 'Preparar',
-    'dispatch': 'Despachar',
-    'cancel': 'Cancelar',
-    'print': 'Imprimir',
-    'checkout': 'Receber / Caixa',
+  static const roles = {
+    'kitchen': 'Cozinha',
+    'cashier': 'Caixa',
+    'dining_room': 'Salão',
   };
   @override
   Widget build(BuildContext context) => _SectionCard(
-    title: 'PDV ${draft.cashRegisterNumber}',
-    subtitle: '${draft.deviceLabel}  •  versão ${draft.appVersion}',
-    icon: Icons.point_of_sale_outlined,
-    badge: draft.terminalActive ? 'Ativo' : 'Inativo',
+    title: draft.deviceLabel,
+    subtitle: 'Dispositivo PedeOn  •  versão ${draft.appVersion}',
+    icon: Icons.devices_other_outlined,
+    badge: draft.terminalActive ? 'Online' : 'Inativo',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SwitchLine(
-          title: 'Usar neste PDV',
-          subtitle: 'Exibe a fila e as funções selecionadas.',
+          title: 'Dispositivo ativo',
+          subtitle: 'Permite que esta instalação receba a operação selecionada.',
           value: draft.enabled,
           onChanged: (value) =>
               setState(() => draft = draft.copyWith(enabled: value)),
         ),
         const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final entry in labels.entries)
-              FilterChip(
-                label: Text(entry.value),
-                selected: draft.capabilities.contains(entry.key),
-                onSelected: draft.enabled
-                    ? (value) {
-                        final next = [...draft.capabilities];
-                        value ? next.add(entry.key) : next.remove(entry.key);
-                        setState(
-                          () => draft = draft.copyWith(
-                            capabilities: next.toSet().toList(),
-                          ),
-                        );
-                      }
-                    : null,
-              ),
+        DropdownButtonFormField<String>(
+          initialValue: roles.containsKey(draft.deviceRole)
+              ? draft.deviceRole
+              : 'cashier',
+          decoration: const InputDecoration(
+            labelText: 'Função deste dispositivo',
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            for (final entry in roles.entries)
+              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
           ],
+          onChanged: widget.saving
+              ? null
+              : (value) {
+                  if (value != null) {
+                    setState(() => draft = draft.copyWith(deviceRole: value));
+                  }
+                },
         ),
         const SizedBox(height: 18),
         Align(
@@ -3465,7 +3459,7 @@ class _TerminalCardState extends State<_TerminalCard> {
           child: FilledButton.tonalIcon(
             onPressed: widget.saving ? null : () => widget.onSave(draft),
             icon: const Icon(Icons.save_outlined),
-            label: const Text('Salvar PDV'),
+            label: const Text('Salvar dispositivo'),
           ),
         ),
       ],
@@ -3540,9 +3534,9 @@ class _EmptyTerminals extends StatelessWidget {
   const _EmptyTerminals();
   @override
   Widget build(BuildContext context) => const _SectionCard(
-    title: 'Nenhum PDV disponível',
+    title: 'Nenhum dispositivo PedeOn registrado',
     subtitle:
-        'Cadastre e ative um terminal PDV Windows antes de escolher quem recebe pedidos.',
+        'A primeira instalação do Edge registra a máquina automaticamente nesta lista.',
     icon: Icons.devices_other_outlined,
     child: SizedBox.shrink(),
   );

@@ -32,6 +32,7 @@ from app.modules.pedeon.infrastructure.database.models import (
     PedeOnPaymentConfiguration,
     PedeOnStore,
     PedeOnFulfillmentStation,
+    PedeOnEdgeNode,
     PedeOnTerminalPermission,
 )
 
@@ -211,10 +212,23 @@ class PedeOnSettingsService:
     def update_terminal(
         self, terminal_id: int, payload: TerminalPermissionUpdate
     ) -> PedeOnSettingsRead:
+        store = self._ensure_store()
+        device = self.db.scalar(
+            select(PedeOnEdgeNode).where(
+                PedeOnEdgeNode.id == terminal_id,
+                PedeOnEdgeNode.store_id == store.id,
+            )
+        )
+        if device is not None:
+            device.device_role = payload.device_role
+            device.active = payload.enabled
+            device.updated_at = datetime.now(timezone.utc)
+            self._enqueue("edge", device.id, "pedeon.device.updated")
+            self.db.commit()
+            return self._settings_read(store)
         terminal = self.db.get(PdvTerminal, terminal_id)
         if terminal is None:
-            raise LookupError("Terminal PDV não encontrado.")
-        store = self._ensure_store()
+            raise LookupError("Dispositivo PedeOn não encontrado.")
         permission = self.db.scalar(
             select(PedeOnTerminalPermission).where(
                 PedeOnTerminalPermission.store_id == store.id,
@@ -348,18 +362,10 @@ class PedeOnSettingsService:
         credit = configs.get("credit_card_on_delivery")
         debit = configs.get("debit_card_on_delivery")
         pickup = configs.get("pay_at_pickup")
-        permissions = {
-            item.pdv_terminal_id: item
-            for item in self.db.scalars(
-                select(PedeOnTerminalPermission).where(
-                    PedeOnTerminalPermission.store_id == store.id
-                )
-            )
-        }
-        terminals = self.db.scalars(
-            select(PdvTerminal)
-            .where(PdvTerminal.activation_status != "pending")
-            .order_by(PdvTerminal.cash_register_number, PdvTerminal.id)
+        devices = self.db.scalars(
+            select(PedeOnEdgeNode)
+            .where(PedeOnEdgeNode.store_id == store.id)
+            .order_by(PedeOnEdgeNode.device_label, PedeOnEdgeNode.id)
         ).all()
         return PedeOnSettingsRead(
             store=StoreSettingsRead.model_validate(
@@ -415,17 +421,20 @@ class PedeOnSettingsService:
             ),
             terminals=[
                 TerminalPermissionRead(
-                    terminal_id=terminal.id,
-                    cash_register_number=terminal.cash_register_number,
-                    device_label=terminal.device_label or terminal.machine_name,
-                    app_version=terminal.app_version,
-                    terminal_active=terminal.active,
-                    enabled=(permissions.get(terminal.id).enabled if permissions.get(terminal.id) else False),
-                    capabilities=(permissions.get(terminal.id).capabilities if permissions.get(terminal.id) else []),
-                    notification_mode=(permissions.get(terminal.id).notification_mode if permissions.get(terminal.id) else "badge"),
-                    priority=(permissions.get(terminal.id).priority if permissions.get(terminal.id) else 100),
+                    terminal_id=device.id,
+                    cash_register_number=f"PedeOn {device.id}",
+                    device_label=device.device_label or "Máquina sem nome",
+                    app_version=device.app_version,
+                    terminal_active=device.active,
+                    enabled=device.active,
+                    capabilities=list(device.capabilities or []),
+                    notification_mode="badge",
+                    priority=device.sort_order,
+                    device_role=device.device_role,
+                    last_seen_at=device.last_seen_at,
+                    status=device.status,
                 )
-                for terminal in terminals
+                for device in devices
             ],
             delivery_zones=PedeOnDeliveryService(self.db).list(store.id),
             fulfillment_stations=[

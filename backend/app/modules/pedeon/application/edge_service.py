@@ -36,7 +36,10 @@ class PedeOnEdgeService:
         now = datetime.now(timezone.utc)
         node = self.db.scalar(
             select(PedeOnEdgeNode)
-            .where(PedeOnEdgeNode.store_id == store.id)
+            .where(
+                PedeOnEdgeNode.store_id == store.id,
+                PedeOnEdgeNode.node_key == payload.node_key,
+            )
             .with_for_update()
         )
         if node is None:
@@ -53,6 +56,7 @@ class PedeOnEdgeService:
             node.pdv_terminal_id = terminal.id
             node.node_key = payload.node_key
         node.device_label = payload.device_label
+        node.device_role = payload.device_role
         node.app_version = payload.app_version
         node.protocol_version = payload.protocol_version
         node.status = "online"

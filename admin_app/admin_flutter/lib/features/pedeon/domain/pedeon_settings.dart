@@ -316,6 +316,7 @@ class PedeOnTerminalSettings {
     required this.capabilities,
     required this.notificationMode,
     required this.priority,
+    required this.deviceRole,
   });
 
   final int terminalId;
@@ -327,6 +328,7 @@ class PedeOnTerminalSettings {
   final List<String> capabilities;
   final String notificationMode;
   final int priority;
+  final String deviceRole;
 
   factory PedeOnTerminalSettings.fromJson(Map<String, dynamic> json) =>
       PedeOnTerminalSettings(
@@ -341,6 +343,7 @@ class PedeOnTerminalSettings {
             .toList(),
         notificationMode: json['notification_mode']?.toString() ?? 'badge',
         priority: json['priority'] as int? ?? 100,
+        deviceRole: json['device_role']?.toString() ?? 'cashier',
       );
 
   Map<String, dynamic> toJson() => {
@@ -348,6 +351,7 @@ class PedeOnTerminalSettings {
     'capabilities': capabilities,
     'notification_mode': notificationMode,
     'priority': priority,
+    'device_role': deviceRole,
   };
 
   PedeOnTerminalSettings copyWith({
@@ -355,6 +359,7 @@ class PedeOnTerminalSettings {
     List<String>? capabilities,
     String? notificationMode,
     int? priority,
+    String? deviceRole,
   }) => PedeOnTerminalSettings(
     terminalId: terminalId,
     cashRegisterNumber: cashRegisterNumber,
@@ -365,6 +370,7 @@ class PedeOnTerminalSettings {
     capabilities: capabilities ?? this.capabilities,
     notificationMode: notificationMode ?? this.notificationMode,
     priority: priority ?? this.priority,
+    deviceRole: deviceRole ?? this.deviceRole,
   );
 }
 

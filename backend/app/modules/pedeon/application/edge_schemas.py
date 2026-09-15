@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -18,6 +19,7 @@ class EdgeRegisterRequest(BaseModel):
     terminal_key: str = Field(min_length=16, max_length=180)
     node_key: str = Field(min_length=16, max_length=80)
     device_label: str | None = Field(default=None, max_length=120)
+    device_role: Literal["kitchen", "cashier", "dining_room"] = "cashier"
     app_version: str | None = Field(default=None, max_length=40)
     protocol_version: int = Field(default=EDGE_PROTOCOL_VERSION, ge=1)
 

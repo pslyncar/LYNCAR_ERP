@@ -9,14 +9,12 @@ from app.core.database import Base
 class PedeOnEdgeNode(Base):
     """Identidade persistente do coordenador local de um estabelecimento.
 
-    O Edge reutiliza um terminal previamente ativado no Lyncar, mas não consome
-    uma licença adicional de PDV. Há somente um coordenador ativo por loja; uma
-    futura troca de máquina assume esta mesma identidade operacional.
+    O Edge reutiliza a autorização operacional existente, mas cada instalação
+    é registrada como um dispositivo PedeOn independente na tela administrativa.
     """
 
     __tablename__ = "pedeon_edge_nodes"
     __table_args__ = (
-        UniqueConstraint("store_id", name="uq_pedeon_edge_store"),
         UniqueConstraint("node_key", name="uq_pedeon_edge_node_key"),
     )
 
@@ -29,9 +27,11 @@ class PedeOnEdgeNode(Base):
     )
     node_key: Mapped[str] = mapped_column(String(80), nullable=False)
     device_label: Mapped[str | None] = mapped_column(String(120))
+    device_role: Mapped[str] = mapped_column(String(30), nullable=False, default="cashier")
     app_version: Mapped[str | None] = mapped_column(String(40))
     protocol_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     status: Mapped[str] = mapped_column(String(30), nullable=False, default="online", index=True)
+    active: Mapped[bool] = mapped_column(nullable=False, default=True, index=True)
     cursors: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     capabilities: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     last_ip: Mapped[str | None] = mapped_column(String(64))
@@ -42,4 +42,5 @@ class PedeOnEdgeNode(Base):
     last_seen_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
     )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
