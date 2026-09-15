@@ -11,6 +11,11 @@ from app.models.company_presence import CompanyPresence  # noqa: F401
 from app.models.master_user import MasterUser  # noqa: F401
 from app.models.master_integration_setting import MasterIntegrationSetting  # noqa: F401
 from app.models.master_pedeon_social_setting import MasterPedeonSocialSetting  # noqa: F401
+from app.models.master_pedeon_customer import (  # noqa: F401
+    MasterPedeOnCustomer,
+    MasterPedeOnCustomerIdentity,
+    MasterPedeOnCustomerStoreLink,
+)
 from app.models.master_email_setting import MasterEmailSetting  # noqa: F401
 from app.models.master_support import MasterSupportTicket, MasterSupportMessage  # noqa: F401
 from app.models.master_user_index import MasterUserIndex  # noqa: F401

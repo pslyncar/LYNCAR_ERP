@@ -16,6 +16,7 @@ from app.api.routes import (
     master_access,
     master_integrations,
     master_pedeon_social,
+    master_pedeon_customers,
     master_email,
     master_plans,
     master_companies,
@@ -61,6 +62,7 @@ api_router.include_router(master_contact_requests.router, prefix="/master", tags
 api_router.include_router(master_access.router, prefix="/master", tags=["master"])
 api_router.include_router(master_integrations.router, prefix="/master", tags=["master"])
 api_router.include_router(master_pedeon_social.router, prefix="/master", tags=["master"])
+api_router.include_router(master_pedeon_customers.router, prefix="/master", tags=["master"])
 api_router.include_router(master_email.router, prefix="/master", tags=["master"])
 api_router.include_router(master_plans.router, prefix="/master", tags=["master"])
 api_router.include_router(master_segments.router, prefix="/master", tags=["master"])

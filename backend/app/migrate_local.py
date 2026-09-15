@@ -320,6 +320,7 @@ PEDEON_DELIVERY_ZONE_COLUMNS = [
 PEDEON_CUSTOMER_COLUMNS = [
     ("document_number", "VARCHAR(30)"),
     ("delivery_address", "JSON"),
+    ("global_customer_id", "INTEGER"),
 ]
 
 

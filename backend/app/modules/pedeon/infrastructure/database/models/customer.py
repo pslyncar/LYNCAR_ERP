@@ -20,6 +20,7 @@ class PedeOnCustomer(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     store_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    global_customer_id: Mapped[int | None] = mapped_column(Integer, index=True)
     name: Mapped[str] = mapped_column(String(180), nullable=False)
     email: Mapped[str] = mapped_column(String(180), nullable=False, index=True)
     phone: Mapped[str | None] = mapped_column(String(40))

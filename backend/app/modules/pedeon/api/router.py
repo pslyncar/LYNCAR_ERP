@@ -67,6 +67,11 @@ from app.modules.pedeon.application.customer_auth import (
     set_customer_cookie,
     token_for,
 )
+from app.modules.pedeon.application.customer_identity import (
+    attach_local_customer,
+    global_customer_for,
+    update_global_profile,
+)
 from app.modules.pedeon.infrastructure.database.models import PedeOnCustomer, PedeOnStore
 from app.services.master_pedeon_social import get_configs
 from app.services.tenancy import session_for_company
@@ -390,7 +395,7 @@ def public_cart_quote(slug: str, payload: CartQuoteRequest) -> CartQuoteRead:
 
 @router.post("/public/{slug}/orders", response_model=PublicOrderRead, status_code=201)
 def create_public_order(
-    slug: str, payload: PublicOrderCreate, request: Request
+    slug: str, payload: PublicOrderCreate, request: Request, response: Response
 ) -> PublicOrderRead:
     try:
         registry = PedeOnPublicCatalogService._registry(slug)
@@ -398,7 +403,7 @@ def create_public_order(
             store = customer_db.get(PedeOnStore, registry.tenant_store_id)
             if store is None:
                 raise LookupError("Loja PedeOn não encontrada.")
-            customer = read_customer(request, customer_db, store)
+            customer = read_customer(request, customer_db, store, registry.company_code)
             payload.customer_name = customer.name
             payload.customer_email = customer.email
             if customer.phone:
@@ -408,6 +413,7 @@ def create_public_order(
             if payload.delivery_address is not None:
                 customer.delivery_address = payload.delivery_address.model_dump()
             customer_db.commit()
+            update_global_profile(customer)
         return PedeOnPublicOrderService.create(slug, payload)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -430,17 +436,17 @@ def register_public_customer(
         existing = db.scalar(select(PedeOnCustomer).where(
             PedeOnCustomer.store_id == store.id, PedeOnCustomer.email == email
         ))
-        if existing is not None:
+        if existing is not None and existing.global_customer_id is None:
             raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
-        customer = PedeOnCustomer(
-            store_id=store.id,
-            name=payload.name.strip(),
+        global_customer = global_customer_for(
             email=email,
-            phone=payload.phone.strip() if payload.phone else None,
+            name=payload.name,
+            phone=payload.phone,
             password_hash=hash_password(payload.password),
-            provider="pedeon",
         )
-        db.add(customer)
+        if not global_customer.active:
+            raise HTTPException(status_code=403, detail="Esta conta de cliente está bloqueada.")
+        customer = attach_local_customer(db, store, registry.company_code, global_customer)
         db.commit()
         db.refresh(customer)
         token = token_for(customer, slug)
@@ -456,13 +462,32 @@ def login_public_customer(
     email = normalize_email(payload.email)
     with session_for_company(registry.company_code) as db:
         store = db.get(PedeOnStore, registry.tenant_store_id)
-        customer = db.scalar(select(PedeOnCustomer).where(
+        local_customer = db.scalar(select(PedeOnCustomer).where(
             PedeOnCustomer.store_id == (store.id if store else -1),
             PedeOnCustomer.email == email,
             PedeOnCustomer.active.is_(True),
         ))
-        if customer is None or not customer.password_hash or not verify_password(payload.password, customer.password_hash):
+        from app.models.master_pedeon_customer import MasterPedeOnCustomer
+        with MasterSessionLocal() as master_db:
+            global_customer = master_db.scalar(
+                select(MasterPedeOnCustomer).where(MasterPedeOnCustomer.email == email)
+            )
+        password_hash = (
+            global_customer.password_hash if global_customer else None
+        ) or (local_customer.password_hash if local_customer else None)
+        if store is None or not password_hash or not verify_password(payload.password, password_hash):
             raise HTTPException(status_code=401, detail="E-mail ou senha inválidos.")
+        if global_customer is None:
+            global_customer = global_customer_for(
+                email=email,
+                name=local_customer.name if local_customer else email,
+                phone=local_customer.phone if local_customer else None,
+                password_hash=password_hash,
+            )
+        if not global_customer.active:
+            raise HTTPException(status_code=403, detail="Esta conta de cliente está bloqueada.")
+        customer = attach_local_customer(db, store, registry.company_code, global_customer)
+        db.commit()
         token = token_for(customer, slug)
         set_customer_cookie(response, request, token)
         return public_customer(customer, token)
@@ -475,7 +500,7 @@ def current_public_customer(slug: str, request: Request, response: Response) -> 
         store = db.get(PedeOnStore, registry.tenant_store_id)
         if store is None:
             raise HTTPException(status_code=404, detail="Loja PedeOn não encontrada.")
-        customer = read_customer(request, db, store)
+        customer = read_customer(request, db, store, registry.company_code)
         token = token_for(customer, slug)
         set_customer_cookie(response, request, token)
         return public_customer(customer, token)
@@ -490,7 +515,7 @@ def update_public_customer_profile(
         store = db.get(PedeOnStore, registry.tenant_store_id)
         if store is None:
             raise HTTPException(status_code=404, detail="Loja PedeOn não encontrada.")
-        customer = read_customer(request, db, store)
+        customer = read_customer(request, db, store, registry.company_code)
         customer.document_number = (payload.document or "").strip() or None
         customer.delivery_address = (
             payload.delivery_address.model_dump()
@@ -499,6 +524,7 @@ def update_public_customer_profile(
         )
         db.commit()
         db.refresh(customer)
+        update_global_profile(customer)
         token = token_for(customer, slug)
         set_customer_cookie(response, request, token)
         return public_customer(customer, token)
@@ -622,26 +648,17 @@ def public_google_callback(
         email = normalize_email(profile.get("email", ""))
         if store is None or not email:
             raise HTTPException(status_code=404, detail="Loja ou e-mail Google não encontrado.")
-        customer = db.scalar(
-            select(PedeOnCustomer).where(
-                PedeOnCustomer.store_id == store.id,
-                PedeOnCustomer.email == email,
-            )
+        global_customer = global_customer_for(
+            email=email,
+            name=profile.get("name") or email.split("@", 1)[0],
+            provider="google",
+            provider_subject=profile.get("sub"),
         )
-        if customer is None:
-            customer = PedeOnCustomer(
-                store_id=store.id,
-                name=profile.get("name") or email.split("@", 1)[0],
-                email=email,
-                provider="google",
-                provider_subject=profile.get("sub"),
-                active=True,
-            )
-            db.add(customer)
-        else:
-            customer.provider = "google"
-            customer.provider_subject = profile.get("sub")
-            customer.active = True
+        if not global_customer.active:
+            raise HTTPException(status_code=403, detail="Esta conta de cliente está bloqueada.")
+        customer = attach_local_customer(
+            db, store, registry.company_code, global_customer
+        )
         db.commit()
         db.refresh(customer)
         handoff_code = secrets.token_urlsafe(32)

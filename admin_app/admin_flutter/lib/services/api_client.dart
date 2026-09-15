@@ -19,6 +19,7 @@ import '../models/master_access_status.dart';
 import '../models/master_staff.dart';
 import '../models/marketplace.dart';
 import '../models/pedeon_social.dart';
+import '../models/master_pedeon_customer.dart';
 import '../models/monitoring_snapshot.dart';
 import '../models/payable.dart';
 import '../models/payment_setting.dart';
@@ -1186,6 +1187,37 @@ class ApiClient {
           (item) => PedeOnSocialProvider.fromJson(item as Map<String, dynamic>),
         )
         .toList();
+  }
+
+  Future<List<MasterPedeOnCustomer>> listMasterPedeOnCustomers(
+    String token, {
+    String? search,
+  }) async {
+    final query = search == null || search.trim().isEmpty
+        ? ''
+        : '?search=${Uri.encodeQueryComponent(search.trim())}';
+    final response = await http.get(
+      Uri.parse('$baseUrl/master/pedeon-customers$query'),
+      headers: _authHeaders(token),
+    );
+    return (_decodeResponse(response) as List<dynamic>)
+        .map(
+          (item) => MasterPedeOnCustomer.fromJson(item as Map<String, dynamic>),
+        )
+        .toList();
+  }
+
+  Future<MasterPedeOnCustomer> updateMasterPedeOnCustomerStatus(
+    String token,
+    int customerId,
+    bool active,
+  ) async {
+    final response = await http.patch(
+      Uri.parse('$baseUrl/master/pedeon-customers/$customerId'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'active': active}),
+    );
+    return MasterPedeOnCustomer.fromJson(_decodeResponse(response));
   }
 
   Future<List<MarketplaceProduct>> listMercadoLivreProducts(

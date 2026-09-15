@@ -62,6 +62,7 @@ def token_for(customer: PedeOnCustomer, slug: str) -> str:
         extra_claims={
             "scope": "pedeon_customer",
             "customer_id": customer.id,
+            "global_customer_id": customer.global_customer_id,
             "store_id": customer.store_id,
             "store_slug": slug,
         },
@@ -79,7 +80,12 @@ def identity(customer: PedeOnCustomer) -> CustomerIdentity:
     )
 
 
-def read_customer(request: Request, db: Session, store: PedeOnStore) -> PedeOnCustomer:
+def read_customer(
+    request: Request,
+    db: Session,
+    store: PedeOnStore,
+    company_code: str | None = None,
+) -> PedeOnCustomer:
     authorization = request.headers.get("Authorization", "")
     token = (
         authorization.split(" ", 1)[1].strip()
@@ -93,15 +99,30 @@ def read_customer(request: Request, db: Session, store: PedeOnStore) -> PedeOnCu
         claims = decode_access_token(token)
     except Exception as exc:
         raise HTTPException(status_code=401, detail="Sua sessão expirou. Entre novamente.") from exc
-    if claims.get("scope") != "pedeon_customer" or claims.get("store_slug") != store.public_slug:
+    if claims.get("scope") != "pedeon_customer":
         raise HTTPException(status_code=401, detail="Sessão de cliente inválida para esta loja.")
-    customer = db.scalar(
-        select(PedeOnCustomer).where(
+    global_customer_id = claims.get("global_customer_id")
+    query = select(PedeOnCustomer).where(
+        PedeOnCustomer.store_id == store.id,
+        PedeOnCustomer.active.is_(True),
+    )
+    if global_customer_id:
+        query = query.where(PedeOnCustomer.global_customer_id == global_customer_id)
+    else:
+        query = query.where(
             PedeOnCustomer.id == claims.get("customer_id"),
             PedeOnCustomer.store_id == store.id,
-            PedeOnCustomer.active.is_(True),
         )
-    )
+    customer = db.scalar(query)
+    if customer is None and global_customer_id and company_code:
+        from app.core.master_database import MasterSessionLocal
+        from app.models.master_pedeon_customer import MasterPedeOnCustomer
+        from app.modules.pedeon.application.customer_identity import attach_local_customer
+
+        with MasterSessionLocal() as master_db:
+            global_customer = master_db.get(MasterPedeOnCustomer, global_customer_id)
+        if global_customer is not None and global_customer.active:
+            customer = attach_local_customer(db, store, company_code, global_customer)
     if customer is None:
         raise HTTPException(status_code=401, detail="Conta de cliente não encontrada.")
     return customer

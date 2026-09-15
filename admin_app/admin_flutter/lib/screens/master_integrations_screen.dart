@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../models/marketplace.dart';
 import '../models/master_email_setting.dart';
 import '../models/pedeon_social.dart';
+import '../models/master_pedeon_customer.dart';
 import '../models/session.dart';
 import '../services/api_client.dart';
 import '../widgets/app_card.dart';
@@ -23,6 +24,7 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
   MercadoLivreAppConfig? _mercadoLivreConfig;
   MasterEmailSetting? _emailConfig;
   List<PedeOnSocialProvider> _socialConfigs = const [];
+  List<MasterPedeOnCustomer> _pedeOnCustomers = const [];
   bool _loading = true;
   bool _saving = false;
   String? _error;
@@ -46,6 +48,15 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
           widget.session.token,
         );
         if (mounted) setState(() => _socialConfigs = socialConfigs);
+      } on ApiException catch (error) {
+        if (mounted) setState(() => _error = error.message);
+      }
+
+      try {
+        final customers = await _api.listMasterPedeOnCustomers(
+          widget.session.token,
+        );
+        if (mounted) setState(() => _pedeOnCustomers = customers);
       } on ApiException catch (error) {
         if (mounted) setState(() => _error = error.message);
       }
@@ -236,10 +247,78 @@ class _MasterIntegrationsScreenState extends State<MasterIntegrationsScreen> {
                       ),
                       const SizedBox(height: 10),
                       ...['google', 'facebook', 'apple'].map(_socialPanel),
+                      const SizedBox(height: 24),
+                      Text(
+                        'Clientes do PedeOn',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Text(
+                        'Contas globais da plataforma. Os pedidos e dados operacionais continuam isolados por empresa.',
+                      ),
+                      const SizedBox(height: 10),
+                      _pedeOnCustomersPanel(),
                     ],
                   ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _pedeOnCustomersPanel() {
+    if (_pedeOnCustomers.isEmpty) {
+      return const AppCard(
+        child: Text('Nenhum cliente global cadastrado ainda.'),
+      );
+    }
+    return AppCard(
+      child: Column(
+        children: _pedeOnCustomers
+            .map(
+              (customer) => ListTile(
+                leading: CircleAvatar(
+                  child: Text(
+                    customer.name.isEmpty
+                        ? '?'
+                        : customer.name[0].toUpperCase(),
+                  ),
+                ),
+                title: Text(customer.name),
+                subtitle: Text(
+                  '${customer.email} • ${customer.linkedStores} loja(s)',
+                ),
+                trailing: Switch(
+                  value: customer.active,
+                  onChanged: _saving
+                      ? null
+                      : (active) async {
+                          try {
+                            final updated = await _api
+                                .updateMasterPedeOnCustomerStatus(
+                                  widget.session.token,
+                                  customer.id,
+                                  active,
+                                );
+                            if (!mounted) return;
+                            setState(() {
+                              _pedeOnCustomers = _pedeOnCustomers
+                                  .map(
+                                    (item) =>
+                                        item.id == updated.id ? updated : item,
+                                  )
+                                  .toList();
+                            });
+                          } on ApiException catch (error) {
+                            if (mounted) setState(() => _error = error.message);
+                          }
+                        },
+                ),
+              ),
+            )
+            .toList(),
       ),
     );
   }
@@ -473,7 +552,8 @@ class _PedeOnSocialDialog extends StatefulWidget {
 class _PedeOnSocialDialogState extends State<_PedeOnSocialDialog> {
   static const _callbackBase = 'https://api.lyncar.com.br/pedeon/public/auth';
 
-  String get _defaultRedirectUri => '$_callbackBase/${widget.provider}/callback';
+  String get _defaultRedirectUri =>
+      '$_callbackBase/${widget.provider}/callback';
 
   late final _clientId = TextEditingController(
     text: widget.config?.clientId ?? '',
@@ -547,7 +627,8 @@ class _PedeOnSocialDialogState extends State<_PedeOnSocialDialog> {
                 readOnly: true,
                 decoration: const InputDecoration(
                   labelText: 'URI de redirecionamento',
-                  helperText: 'Definida automaticamente pela LynCar para todos os clientes.',
+                  helperText:
+                      'Definida automaticamente pela LynCar para todos os clientes.',
                 ),
               ),
               if (apple) ...[
