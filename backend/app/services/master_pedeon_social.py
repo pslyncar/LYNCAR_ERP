@@ -10,6 +10,19 @@ from app.core.config import get_settings
 from app.models.master_pedeon_social_setting import MasterPedeonSocialSetting
 
 PROVIDERS = ("google", "facebook", "apple")
+PUBLIC_SOCIAL_CALLBACK_BASE = "https://api.lyncar.com.br/pedeon/public/auth"
+
+
+def default_redirect_uri(provider: str) -> str:
+    """Return the single platform callback used by a social provider.
+
+    Customer storefront subdomains are carried in OAuth ``state`` and are
+    never registered as provider callbacks. This keeps one credential usable
+    by every LynCar tenant.
+    """
+    if provider not in PROVIDERS:
+        raise ValueError(f"Provedor social inválido: {provider}")
+    return f"{PUBLIC_SOCIAL_CALLBACK_BASE}/{provider}/callback"
 
 
 @dataclass(frozen=True)
@@ -65,7 +78,7 @@ def get_configs(db: Session) -> list[PedeOnSocialConfig]:
             provider=provider,
             client_id=_clean(row.client_id if row else None),
             client_secret=_decrypt(row.client_secret_encrypted if row else None),
-            redirect_uri=_clean(row.redirect_uri if row else None),
+            redirect_uri=_clean(row.redirect_uri if row else None) or default_redirect_uri(provider),
             extra={str(k): _clean(str(v)) if v is not None else None for k, v in extra.items()},
             enabled=bool(row.enabled) if row else False,
         ))

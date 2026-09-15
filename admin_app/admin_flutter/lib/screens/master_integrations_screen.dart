@@ -471,11 +471,15 @@ class _PedeOnSocialDialog extends StatefulWidget {
 }
 
 class _PedeOnSocialDialogState extends State<_PedeOnSocialDialog> {
+  static const _callbackBase = 'https://api.lyncar.com.br/pedeon/public/auth';
+
+  String get _defaultRedirectUri => '$_callbackBase/${widget.provider}/callback';
+
   late final _clientId = TextEditingController(
     text: widget.config?.clientId ?? '',
   );
   late final _redirect = TextEditingController(
-    text: widget.config?.redirectUri ?? '',
+    text: widget.config?.redirectUri ?? _defaultRedirectUri,
   );
   final _secret = TextEditingController();
   final _team = TextEditingController();
@@ -508,6 +512,10 @@ class _PedeOnSocialDialogState extends State<_PedeOnSocialDialog> {
               Text(
                 'Use somente credenciais do aplicativo oficial. Não cole esses valores no código ou no Git.',
                 style: Theme.of(context).textTheme.bodyMedium,
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Use um único callback da LynCar para todos os clientes. A loja de origem é preservada automaticamente pelo login.',
               ),
               const SizedBox(height: 14),
               TextField(
