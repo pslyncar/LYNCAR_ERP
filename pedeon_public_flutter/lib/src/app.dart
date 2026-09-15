@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'data/catalog_api_service.dart';
 import 'data/catalog_repository.dart';
+import 'presentation/salon_entry_screen.dart';
 import 'presentation/storefront_screen.dart';
 
 class PedeOnPublicApp extends StatefulWidget {
@@ -21,6 +22,19 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
     routes: [
       GoRoute(path: '/', builder: (_, state) => _storefrontFor(state)),
       GoRoute(path: '/cardapio', builder: (_, state) => _storefrontFor(state)),
+      GoRoute(
+        path: '/:slug/salao/mesa/:number',
+        builder: (_, state) => SalonLocalFlowScreen(
+          slug: state.pathParameters['slug']!,
+          initialAccountNumber: int.tryParse(state.pathParameters['number']!),
+        ),
+      ),
+      GoRoute(
+        path: '/:slug/salao',
+        builder: (_, state) => SalonLocalFlowScreen(
+          slug: state.pathParameters['slug']!,
+        ),
+      ),
       GoRoute(
         path: '/:slug',
         builder: (_, state) => StorefrontScreen(
