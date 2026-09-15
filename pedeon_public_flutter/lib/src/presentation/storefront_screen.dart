@@ -376,17 +376,18 @@ class _CatalogBodyState extends State<_CatalogBody> {
               onCustomerAccess: widget.onCustomerAccess,
             ),
           ),
-          SliverPersistentHeader(
-            pinned: true,
-            delegate: _CategoryHeaderDelegate(
-              categories: sections
-                  .map((section) => section.category)
-                  .whereType<CatalogCategory>()
-                  .toList(growable: false),
-              selectedCategory: viewModel.selectedCategory,
-              onTap: _scrollToCategory,
+          if (sections.any((section) => section.category != null))
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _CategoryHeaderDelegate(
+                categories: sections
+                    .map((section) => section.category)
+                    .whereType<CatalogCategory>()
+                    .toList(growable: false),
+                selectedCategory: viewModel.selectedCategory,
+                onTap: _scrollToCategory,
+              ),
             ),
-          ),
           if (viewModel.loading)
             const SliverToBoxAdapter(
               child: LinearProgressIndicator(minHeight: 2),
@@ -552,12 +553,18 @@ class _CategorySectionTitle extends StatelessWidget {
         Expanded(
           child: Text(
             title,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900),
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
         ),
         Text(
           '$itemCount ${itemCount == 1 ? 'item' : 'itens'}',
-          style: const TextStyle(color: Colors.black54),
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
         ),
       ],
     ),
@@ -905,7 +912,7 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
     double shrinkOffset,
     bool overlapsContent,
   ) => Material(
-    color: const Color(0xFFF8F5F0),
+    color: Theme.of(context).scaffoldBackgroundColor,
     elevation: overlapsContent ? 2 : 0,
     child: _CategoryNavigation(
       categories: categories,
