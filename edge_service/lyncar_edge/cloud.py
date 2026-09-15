@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import platform
 import requests
 
 from .config import EdgeSettings
@@ -56,7 +57,7 @@ class CloudClient:
             json={
                 "terminal_key": self.settings.terminal_key,
                 "node_key": self.settings.node_key,
-                "device_label": "Lyncar Edge",
+                "device_label": platform.node() or "Lyncar Edge",
                 "app_version": "0.1.0",
                 "protocol_version": 1,
             },
