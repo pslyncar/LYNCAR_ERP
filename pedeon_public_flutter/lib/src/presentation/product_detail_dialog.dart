@@ -131,24 +131,6 @@ class _ProductDetailState extends State<_ProductDetail> {
       backgroundColor: Colors.white,
       body: CustomScrollView(
         slivers: [
-          SliverAppBar(
-            pinned: true,
-            backgroundColor: Colors.white,
-            leading: IconButton(
-              onPressed: () => Navigator.pop(context),
-              icon: const Icon(Icons.arrow_back_rounded),
-            ),
-            title: Text(widget.product.name),
-            actions: [
-              Builder(
-                builder: (shareContext) => IconButton(
-                  tooltip: 'Compartilhar',
-                  onPressed: () => _share(shareContext),
-                  icon: const Icon(Icons.ios_share_rounded),
-                ),
-              ),
-            ],
-          ),
           SliverToBoxAdapter(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -191,14 +173,61 @@ class _ProductDetailState extends State<_ProductDetail> {
                                   ),
                                 ),
                           if (widget.imageUrl.isNotEmpty)
-                            Positioned(
-                              top: 14,
-                              right: 14,
-                              child: IconButton.filledTonal(
-                                key: const Key('fullscreen-product-image'),
-                                tooltip: 'Ampliar foto',
-                                onPressed: _showFullscreenImage,
-                                icon: const Icon(Icons.fullscreen_rounded),
+                            Positioned.fill(
+                              child: SafeArea(
+                                child: Stack(
+                                  children: [
+                                    Align(
+                                      alignment: Alignment.centerLeft,
+                                      child: Padding(
+                                        padding: const EdgeInsets.only(
+                                          left: 16,
+                                        ),
+                                        child: _ImageOverlayButton(
+                                          tooltip: 'Voltar',
+                                          icon: Icons.arrow_back_rounded,
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                        ),
+                                      ),
+                                    ),
+                                    Align(
+                                      alignment: Alignment.topRight,
+                                      child: Padding(
+                                        padding: const EdgeInsets.fromLTRB(
+                                          0,
+                                          16,
+                                          16,
+                                          0,
+                                        ),
+                                        child: Column(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Builder(
+                                              builder: (shareContext) =>
+                                                  _ImageOverlayButton(
+                                                    tooltip: 'Compartilhar',
+                                                    icon:
+                                                        Icons.ios_share_rounded,
+                                                    onPressed: () =>
+                                                        _share(shareContext),
+                                                  ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            _ImageOverlayButton(
+                                              key: const Key(
+                                                'fullscreen-product-image',
+                                              ),
+                                              tooltip: 'Ampliar foto',
+                                              icon: Icons.fullscreen_rounded,
+                                              onPressed: _showFullscreenImage,
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
                         ],
@@ -488,6 +517,30 @@ class _ProductDetailState extends State<_ProductDetail> {
       ),
     );
   }
+}
+
+class _ImageOverlayButton extends StatelessWidget {
+  const _ImageOverlayButton({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton.filled(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    icon: Icon(icon),
+    style: IconButton.styleFrom(
+      backgroundColor: Colors.black.withValues(alpha: .58),
+      foregroundColor: Colors.white,
+    ),
+  );
 }
 
 class _ModifierTile extends StatelessWidget {
