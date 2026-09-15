@@ -1451,7 +1451,13 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
       filename: file.name,
     );
     if (mounted) setState(() => _uploadingStoreMedia = false);
-    if (ok) _loadedStoreId = null;
+    if (ok && mounted && _viewModel.settings != null) {
+      // O upload atualiza o objeto do view model, mas não deve substituir
+      // automaticamente um rascunho que o usuário esteja editando. Aqui,
+      // após a confirmação do arquivo, sincronizamos explicitamente a mídia.
+      _syncDrafts(_viewModel.settings!);
+      setState(() {});
+    }
   }
 
   Future<void> _saveInfinitePay() async {
