@@ -1155,6 +1155,11 @@ class PedeOnOrderService:
             select(PedeOnPrintJob).where(PedeOnPrintJob.job_key == job_key)
         )
         if existing_job is None:
+            transaction = self.db.scalar(
+                select(PedeOnPaymentTransaction)
+                .where(PedeOnPaymentTransaction.order_id == order.id)
+                .order_by(PedeOnPaymentTransaction.id.desc())
+            )
             modifiers = self.db.scalars(
                 select(PedeOnOrderItemModifier)
                 .join(
@@ -1189,6 +1194,13 @@ class PedeOnOrderService:
                         "customer_name": order.customer_name,
                         "fulfillment_type": order.fulfillment_type,
                         "customer_notes": order.customer_notes,
+                        "payment_method": transaction.method if transaction else None,
+                        "local_payment_method": (order.source_metadata or {}).get(
+                            "local_payment_method"
+                        ),
+                        "cash_change_for": (order.source_metadata or {}).get(
+                            "cash_change_for"
+                        ),
                         "items": [
                             {
                                 "description": item.description,

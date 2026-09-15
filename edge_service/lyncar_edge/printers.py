@@ -107,6 +107,27 @@ def production_ticket(payload: dict) -> bytes:
             "-" * 42,
         ]
     )
+    payment_method = payload.get("local_payment_method") or payload.get(
+        "payment_method"
+    )
+    if payment_method:
+        payment_labels = {
+            "cash": "Dinheiro",
+            "dinheiro": "Dinheiro",
+            "pix": "Pix",
+            "manual_pix": "Pix",
+            "infinitepay_pix": "Pix",
+            "credit_card": "Credito",
+            "credit_card_on_delivery": "Credito",
+            "credito": "Credito",
+            "debit_card": "Debito",
+            "debit_card_on_delivery": "Debito",
+            "debito": "Debito",
+        }
+        lines.append(f"Pagamento: {payment_labels.get(payment_method, payment_method)}")
+        if payment_method in {"cash", "dinheiro"} and payload.get("cash_change_for"):
+            lines.append(f"Troco para: R$ {payload['cash_change_for']}")
+        lines.append("-" * 42)
     for item in payload.get("items", []):
         lines.append(f"{item.get('quantity', '1')}x {item.get('description', '')}")
         for modifier in item.get("modifiers", []):
