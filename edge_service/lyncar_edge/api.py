@@ -554,9 +554,10 @@ def build_app(
         payload: OrderCheckoutRequest,
         terminal: dict = Depends(require_capability("checkout")),
     ) -> dict:
-        event_key = payload.idempotency_key or (
-            f"checkout:{config.node_key}:{order_id}:{uuid4()}"
-        )
+        # A checkout key is persisted in the cloud outbox and must stay within
+        # the API's 120-character limit. The order id and Edge node are already
+        # represented by the request context, so a UUID is sufficient here.
+        event_key = payload.idempotency_key or f"checkout:{uuid4()}"
         try:
             cash_session = database.open_cash_session_for_terminal(
                 int(terminal["terminal_id"])
