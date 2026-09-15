@@ -1909,55 +1909,93 @@ class _AppearancePreview extends StatelessWidget {
           SizedBox(
             height: mobile ? 108 : 92,
             width: double.infinity,
-            child: cover == null || cover.isEmpty
-                ? ColoredBox(color: _hexColor(store.accentColor))
-                : Image.network(
+            child: Stack(
+              fit: StackFit.expand,
+              alignment: Alignment.center,
+              children: [
+                if (cover == null || cover.isEmpty)
+                  ColoredBox(color: _hexColor(store.accentColor))
+                else
+                  Image.network(
                     _pedeOnImageUrl(apiBaseUrl, cover),
                     fit: BoxFit.cover,
                     errorBuilder: (_, _, _) =>
                         ColoredBox(color: _hexColor(store.accentColor)),
                   ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Row(
-              children: [
-                CircleAvatar(
-                  radius: 22,
-                  backgroundColor: Colors.white,
-                  backgroundImage: logo == null || logo.isEmpty
-                      ? null
-                      : NetworkImage(_pedeOnImageUrl(apiBaseUrl, logo)),
+                ColoredBox(color: Colors.black.withValues(alpha: .12)),
+                Container(
+                  width: mobile ? 54 : 62,
+                  height: mobile ? 54 : 62,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    image: logo == null || logo.isEmpty
+                        ? null
+                        : DecorationImage(
+                            image: NetworkImage(
+                              _pedeOnImageUrl(apiBaseUrl, logo),
+                            ),
+                            fit: BoxFit.cover,
+                          ),
+                  ),
                   child: logo == null || logo.isEmpty
-                      ? Text(
-                          store.displayName.isEmpty
-                              ? 'L'
-                              : store.displayName[0].toUpperCase(),
+                      ? Center(
+                          child: Text(
+                            store.displayName.isEmpty
+                                ? 'L'
+                                : store.displayName[0].toUpperCase(),
+                            style: TextStyle(
+                              color: _hexColor(store.accentColor),
+                              fontSize: 22,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
                         )
                       : null,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    store.displayName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: foreground,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
                 ),
               ],
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Text(
-              'Cardápio online',
-              style: TextStyle(color: foreground.withValues(alpha: .7)),
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  store.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  store.acceptingOrders
+                      ? 'Aberto para pedidos'
+                      : 'Fechado no momento',
+                  style: TextStyle(
+                    color: foreground.withValues(alpha: .7),
+                    fontSize: 12,
+                  ),
+                ),
+              ],
             ),
           ),
+          if (store.fulfillmentOptions.contains('delivery'))
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                store.minimumOrderAmount > 0
+                    ? 'Pedido mínimo R\$ ${store.minimumOrderAmount.toStringAsFixed(2)}'
+                    : 'Entrega disponível',
+                style: TextStyle(
+                  color: foreground.withValues(alpha: .7),
+                  fontSize: 11,
+                ),
+              ),
+            ),
           const Spacer(),
           Container(
             height: 36,
