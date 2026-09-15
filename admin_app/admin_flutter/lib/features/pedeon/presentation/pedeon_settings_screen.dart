@@ -1939,26 +1939,17 @@ class _AppearancePreview extends StatelessWidget {
                 SizedBox(
                   width: mobile ? 54 : 62,
                   height: mobile ? 54 : 62,
-                  child: ClipOval(
-                    child: ColoredBox(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
                       color: Colors.white,
-                      child: logo == null || logo.isEmpty
-                          ? Center(
-                              child: Text(
-                                store.displayName.isEmpty
-                                    ? 'L'
-                                    : store.displayName[0].toUpperCase(),
-                                style: TextStyle(
-                                  color: _hexColor(store.accentColor),
-                                  fontSize: 22,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            )
-                          : Image.network(
-                              _pedeOnImageUrl(apiBaseUrl, logo),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => Center(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 3),
+                    ),
+                    child: ClipOval(
+                      child: Padding(
+                        padding: const EdgeInsets.all(7),
+                        child: logo == null || logo.isEmpty
+                            ? Center(
                                 child: Text(
                                   store.displayName.isEmpty
                                       ? 'L'
@@ -1969,8 +1960,24 @@ class _AppearancePreview extends StatelessWidget {
                                     fontWeight: FontWeight.w800,
                                   ),
                                 ),
+                              )
+                            : Image.network(
+                                _pedeOnImageUrl(apiBaseUrl, logo),
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, _, _) => Center(
+                                  child: Text(
+                                    store.displayName.isEmpty
+                                        ? 'L'
+                                        : store.displayName[0].toUpperCase(),
+                                    style: TextStyle(
+                                      color: _hexColor(store.accentColor),
+                                      fontSize: 22,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
                               ),
-                            ),
+                      ),
                     ),
                   ),
                 ),
