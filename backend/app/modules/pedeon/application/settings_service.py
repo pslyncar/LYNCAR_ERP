@@ -216,7 +216,11 @@ class PedeOnSettingsService:
         store = self._ensure_store()
         device = self.db.scalar(
             select(PedeOnEdgeNode).where(
-                PedeOnEdgeNode.id == terminal_id,
+                # The UI historically addressed Edge nodes by their own id,
+                # while the operational login uses the linked PDV terminal id.
+                # Accept both identifiers during the transition.
+                (PedeOnEdgeNode.id == terminal_id)
+                | (PedeOnEdgeNode.pdv_terminal_id == terminal_id),
                 PedeOnEdgeNode.store_id == store.id,
             )
         )
@@ -423,8 +427,10 @@ class PedeOnSettingsService:
             ),
             terminals=[
                 TerminalPermissionRead(
-                    terminal_id=device.id,
-                    cash_register_number=f"PedeOn {device.id}",
+                    # This is the identifier returned by /pedeon/terminals and
+                    # used by the Edge login to select an authorized terminal.
+                    terminal_id=device.pdv_terminal_id,
+                    cash_register_number=f"PedeOn {device.pdv_terminal_id}",
                     device_label=device.device_label or "Máquina sem nome",
                     app_version=device.app_version,
                     terminal_active=device.active,
