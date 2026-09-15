@@ -165,9 +165,22 @@ def open_edge_cash_session(
         del store
         operator = None
         if payload.operator_type == "erp_owner":
-            # O primeiro usuário administra os acessos, mas não é o único
-            # operador autorizado. O endpoint já exige sales:create; aqui
-            # apenas garantimos que a sessão pertence ao usuário autenticado.
+            # Somente o primeiro usuário da empresa pode entrar como dono no
+            # PedeOn. Os demais usuários do ERP não são operadores PedeOn;
+            # devem ser cadastrados em PedeOn > Operadores para acessar como
+            # ``pedeon_operator``.
+            first_user = db.scalar(select(User).order_by(User.id.asc()))
+            if first_user is None or first_user.id != current_user.id:
+                raise PermissionError(
+                    "Somente o primeiro usuário da empresa pode abrir o caixa como dono."
+                )
+            # Eventos locais são persistidos para serem reenviados pelo Edge.
+            # Um evento criado durante a inicialização pode conter o operador
+            # provisório; nesse caso, o único valor aceito é o primeiro
+            # usuário autenticado, nunca um usuário arbitrário do ERP.
+            if payload.operator_id == 0 and payload.operator_name == "Usuário PedeOn":
+                payload.operator_id = current_user.id
+                payload.operator_name = current_user.name
             if current_user.id != payload.operator_id:
                 raise PermissionError("O caixa deve ser aberto pelo usuário atualmente logado.")
             if current_user.name != payload.operator_name:
