@@ -1003,6 +1003,7 @@ class _ProductImage extends StatelessWidget {
         Image.network(
           url,
           fit: BoxFit.cover,
+          alignment: Alignment.center,
           cacheWidth: (350 * MediaQuery.devicePixelRatioOf(context)).round(),
           filterQuality: FilterQuality.low,
           errorBuilder: (_, _, _) => const ColoredBox(

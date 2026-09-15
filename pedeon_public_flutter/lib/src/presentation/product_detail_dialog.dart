@@ -153,46 +153,58 @@ class _ProductDetailState extends State<_ProductDetail> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                AspectRatio(
-                  aspectRatio: 16 / 8,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      widget.imageUrl.isEmpty
-                          ? const ColoredBox(
-                              color: Color(0xFFF1ECE4),
-                              child: Icon(Icons.restaurant_rounded, size: 72),
-                            )
-                          : InkWell(
-                              onTap: _showFullscreenImage,
-                              child: Hero(
-                                tag: 'product-image-${widget.product.id}',
-                                child: Image.network(
-                                  widget.imageUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, _, _) => const ColoredBox(
-                                    color: Color(0xFFF1ECE4),
-                                    child: Icon(
-                                      Icons.restaurant_rounded,
-                                      size: 72,
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final aspectRatio = constraints.maxWidth < 600
+                        ? 4 / 3
+                        : 16 / 9;
+                    return AspectRatio(
+                      aspectRatio: aspectRatio,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          widget.imageUrl.isEmpty
+                              ? const ColoredBox(
+                                  color: Color(0xFFF1ECE4),
+                                  child: Icon(
+                                    Icons.restaurant_rounded,
+                                    size: 72,
+                                  ),
+                                )
+                              : InkWell(
+                                  onTap: _showFullscreenImage,
+                                  child: Hero(
+                                    tag: 'product-image-${widget.product.id}',
+                                    child: Image.network(
+                                      widget.imageUrl,
+                                      fit: BoxFit.cover,
+                                      alignment: Alignment.center,
+                                      errorBuilder: (_, _, _) =>
+                                          const ColoredBox(
+                                            color: Color(0xFFF1ECE4),
+                                            child: Icon(
+                                              Icons.restaurant_rounded,
+                                              size: 72,
+                                            ),
+                                          ),
                                     ),
                                   ),
                                 ),
+                          if (widget.imageUrl.isNotEmpty)
+                            Positioned(
+                              top: 14,
+                              right: 14,
+                              child: IconButton.filledTonal(
+                                key: const Key('fullscreen-product-image'),
+                                tooltip: 'Ampliar foto',
+                                onPressed: _showFullscreenImage,
+                                icon: const Icon(Icons.fullscreen_rounded),
                               ),
                             ),
-                      if (widget.imageUrl.isNotEmpty)
-                        Positioned(
-                          top: 14,
-                          right: 14,
-                          child: IconButton.filledTonal(
-                            key: const Key('fullscreen-product-image'),
-                            tooltip: 'Ampliar foto',
-                            onPressed: _showFullscreenImage,
-                            icon: const Icon(Icons.fullscreen_rounded),
-                          ),
-                        ),
-                    ],
-                  ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(24, 22, 24, 10),
