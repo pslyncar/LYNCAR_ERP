@@ -581,170 +581,229 @@ class _StoreHero extends StatelessWidget {
     final compact = MediaQuery.sizeOf(context).width < 600;
     final coverUrl = store.coverUrl;
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      decoration: BoxDecoration(color: scheme.primary),
+    final pageBackground = Theme.of(context).scaffoldBackgroundColor;
+    return ColoredBox(
+      color: pageBackground,
       child: SafeArea(
         bottom: false,
-        child: Stack(
-          children: [
-            if (!compact && coverUrl != null && coverUrl.isNotEmpty)
-              Positioned.fill(
-                child: Image.network(
-                  viewModel.imageUrl(coverUrl),
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, _, _) => const SizedBox.shrink(),
-                ),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 1280),
+            child: Padding(
+              padding: EdgeInsets.fromLTRB(
+                compact ? 16 : 32,
+                14,
+                compact ? 16 : 32,
+                0,
               ),
-            Positioned.fill(
-              child: ColoredBox(
-                color: Colors.black.withValues(alpha: compact ? .08 : .38),
-              ),
-            ),
-            Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1180),
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    compact ? 18 : 36,
-                    24,
-                    compact ? 18 : 36,
-                    28,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+              child: Column(
+                children: [
+                  Row(
                     children: [
-                      Row(
-                        children: [
-                          _StoreLogo(
-                            url: viewModel.imageUrl(store.logoUrl),
-                            name: store.displayName,
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  store.displayName,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context)
-                                      .textTheme
-                                      .headlineMedium
-                                      ?.copyWith(
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  store.acceptingOrders
-                                      ? 'Aberto para pedidos'
-                                      : 'Fechado no momento • pedidos pausados',
-                                  style: TextStyle(
-                                    color: store.acceptingOrders
-                                        ? const Color(0xFFAEF4C7)
-                                        : const Color(0xFFFFD5A8),
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (!compact)
-                            const Text(
-                              'PedeOn by Lyncar',
-                              style: TextStyle(
-                                color: Colors.white70,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          const SizedBox(width: 12),
-                          _CustomerAccessButton(
-                            customer: viewModel.customer,
-                            compact: compact,
-                            onPressed: onCustomerAccess,
-                          ),
-                          const SizedBox(width: 8),
-                          IconButton.filledTonal(
-                            key: const Key('open-cart-header'),
-                            tooltip: 'Abrir carrinho',
-                            onPressed: onOpenCart,
-                            style: IconButton.styleFrom(
-                              backgroundColor: Colors.white,
-                              foregroundColor: scheme.primary,
-                            ),
-                            icon: viewModel.itemCount > 0
-                                ? Badge(
-                                    label: Text('${viewModel.itemCount}'),
-                                    child: const Icon(
-                                      Icons.shopping_bag_outlined,
-                                    ),
-                                  )
-                                : const Icon(Icons.shopping_bag_outlined),
-                          ),
-                        ],
+                      if (!compact)
+                        Expanded(
+                          child: _DeliveryLink(store: store, scheme: scheme),
+                        )
+                      else
+                        Expanded(
+                          child: _DeliveryLink(store: store, scheme: scheme),
+                        ),
+                      if (!compact)
+                        SizedBox(
+                          width: 360,
+                          child: _CatalogSearch(viewModel: viewModel),
+                        ),
+                      const SizedBox(width: 12),
+                      _CustomerAccessButton(
+                        customer: viewModel.customer,
+                        compact: compact,
+                        onPressed: onCustomerAccess,
                       ),
-                      if (store.deliveryFee != null ||
-                          store.deliveryMinutesMin != null) ...[
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          children: [
-                            if (store.deliveryFee != null)
-                              _HeroInfoChip(
-                                icon: Icons.delivery_dining_outlined,
-                                label: store.deliveryFee == 0
-                                    ? 'Entrega grátis'
-                                    : _currency(store.deliveryFee!),
-                              ),
-                            if (store.deliveryMinutesMin != null)
-                              _HeroInfoChip(
-                                icon: Icons.schedule_outlined,
-                                label:
-                                    '${store.deliveryMinutesMin}–${store.deliveryMinutesMax ?? store.deliveryMinutesMin} min',
-                              ),
-                          ],
+                      const SizedBox(width: 8),
+                      IconButton.filledTonal(
+                        key: const Key('open-cart-header'),
+                        tooltip: 'Abrir carrinho',
+                        onPressed: onOpenCart,
+                        style: IconButton.styleFrom(
+                          backgroundColor: scheme.primary,
+                          foregroundColor: Colors.white,
                         ),
-                      ],
-                      if ((store.description ?? '').trim().isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        Text(
-                          store.description!,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white70,
-                            fontSize: 15,
-                            height: 1.45,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 22),
-                      TextField(
-                        key: const Key('catalog-search'),
-                        onChanged: viewModel.setSearch,
-                        decoration: InputDecoration(
-                          hintText: 'O que você quer pedir hoje?',
-                          prefixIcon: const Icon(Icons.search_rounded),
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(18),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
+                        icon: viewModel.itemCount > 0
+                            ? Badge(
+                                label: Text('${viewModel.itemCount}'),
+                                child: const Icon(Icons.shopping_bag_outlined),
+                              )
+                            : const Icon(Icons.shopping_bag_outlined),
                       ),
                     ],
                   ),
-                ),
+                  const SizedBox(height: 16),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(compact ? 22 : 28),
+                    child: SizedBox(
+                      height: compact ? 240 : 390,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          if (coverUrl != null && coverUrl.isNotEmpty)
+                            Image.network(
+                              viewModel.imageUrl(coverUrl),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  ColoredBox(color: scheme.primary),
+                            ),
+                          if (coverUrl == null || coverUrl.isEmpty)
+                            ColoredBox(color: scheme.primary),
+                          ColoredBox(
+                            color: Colors.black.withValues(
+                              alpha: compact ? .25 : .35,
+                            ),
+                          ),
+                          Positioned(
+                            left: compact ? 18 : 34,
+                            right: compact ? 18 : 34,
+                            bottom: compact ? 18 : 28,
+                            child: _StoreIdentity(
+                              store: store,
+                              viewModel: viewModel,
+                              compact: compact,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (compact) ...[
+                    const SizedBox(height: 12),
+                    _CatalogSearch(viewModel: viewModel),
+                  ],
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
   }
+}
+
+class _CatalogSearch extends StatelessWidget {
+  const _CatalogSearch({required this.viewModel});
+  final StorefrontViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) => TextField(
+    key: const Key('catalog-search'),
+    onChanged: viewModel.setSearch,
+    decoration: InputDecoration(
+      hintText: 'Buscar no cardápio',
+      prefixIcon: const Icon(Icons.search_rounded),
+      filled: true,
+      fillColor: Theme.of(context).colorScheme.surface,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(28),
+        borderSide: BorderSide.none,
+      ),
+    ),
+  );
+}
+
+class _DeliveryLink extends StatelessWidget {
+  const _DeliveryLink({required this.store, required this.scheme});
+  final Storefront store;
+  final ColorScheme scheme;
+
+  @override
+  Widget build(BuildContext context) => Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+      decoration: BoxDecoration(
+        border: Border.all(color: scheme.outline.withValues(alpha: .45)),
+        borderRadius: BorderRadius.circular(28),
+      ),
+      child: Text(
+        store.deliveryFee == null
+            ? 'Calcular taxa e tempo de entrega'
+            : 'Entrega ${store.deliveryFee == 0 ? 'grátis' : _currency(store.deliveryFee!)}',
+        style: TextStyle(color: scheme.onSurface, fontWeight: FontWeight.w700),
+      ),
+    ),
+  );
+}
+
+class _StoreIdentity extends StatelessWidget {
+  const _StoreIdentity({
+    required this.store,
+    required this.viewModel,
+    required this.compact,
+  });
+  final Storefront store;
+  final StorefrontViewModel viewModel;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      _StoreLogo(
+        url: viewModel.imageUrl(store.logoUrl),
+        name: store.displayName,
+      ),
+      const SizedBox(width: 14),
+      Expanded(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              store.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: compact ? 22 : 30,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              store.acceptingOrders
+                  ? 'Aberto'
+                  : 'Fechado no momento • pedidos pausados',
+              style: TextStyle(
+                color: store.acceptingOrders
+                    ? const Color(0xFFAEF4C7)
+                    : const Color(0xFFFFD5A8),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            if (!compact &&
+                (store.deliveryFee != null || store.deliveryMinutesMin != null))
+              Padding(
+                padding: const EdgeInsets.only(top: 9),
+                child: Wrap(
+                  spacing: 8,
+                  children: [
+                    if (store.deliveryFee != null)
+                      _HeroInfoChip(
+                        icon: Icons.delivery_dining_outlined,
+                        label: store.deliveryFee == 0
+                            ? 'Entrega grátis'
+                            : _currency(store.deliveryFee!),
+                      ),
+                    if (store.deliveryMinutesMin != null)
+                      _HeroInfoChip(
+                        icon: Icons.schedule_outlined,
+                        label:
+                            '${store.deliveryMinutesMin}–${store.deliveryMinutesMax ?? store.deliveryMinutesMin} min',
+                      ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
 }
 
 class _HeroInfoChip extends StatelessWidget {
