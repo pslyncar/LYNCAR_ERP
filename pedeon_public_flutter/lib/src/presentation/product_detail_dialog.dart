@@ -155,8 +155,8 @@ class _ProductDetailState extends State<_ProductDetail> {
               children: [
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final aspectRatio = constraints.maxWidth < 600
-                        ? 4 / 3
+                    final aspectRatio = constraints.maxWidth < 700
+                        ? 1.2
                         : 16 / 9;
                     return AspectRatio(
                       aspectRatio: aspectRatio,

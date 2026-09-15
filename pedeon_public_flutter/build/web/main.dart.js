@@ -100342,7 +100342,7 @@ A.ayW.prototype={
 $0(){return this.a.rn(this.b)},
 $S:0}
 A.ayZ.prototype={
-$2(a,b){var s=null,r=b.b<600?1.3333333333333333:1.7777777777777777,q=this.a,p=q.a,o=p.d
+$2(a,b){var s=null,r=b.b<700?1.2:1.7777777777777777,q=this.a,p=q.a,o=p.d
 if(o.length===0)p=B.oJ
 else{p=p.c
 p=A.vB(!1,s,!0,A.aaB(A.abh(o,B.V,s,new A.ayV(),B.ed,B.k4),s,s,s,"product-image-"+p.a,!1),s,!0,s,s,s,s,s,s,s,s,s,q.gWY(),s,s,s,s,s,s,s)}p=A.b([p],t.p)
