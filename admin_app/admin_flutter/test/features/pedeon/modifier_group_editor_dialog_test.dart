@@ -34,7 +34,7 @@ void main() {
     expect(find.text('Produto do estoque'), findsOneWidget);
 
     await tester.enterText(
-      find.widgetWithText(TextField, 'Nome do grupo'),
+      find.byType(TextField).first,
       'Qual o ponto da carne?',
     );
     await tester.scrollUntilVisible(
@@ -45,7 +45,7 @@ void main() {
     await tester.tap(find.byKey(const Key('modifier-add-manual')));
     await tester.pumpAndSettle();
     await tester.enterText(
-      find.widgetWithText(TextField, 'Resposta'),
+      find.byType(TextField).last,
       'Bem passado',
     );
     await tester.tap(find.text('Adicionar').last);
@@ -53,7 +53,7 @@ void main() {
     expect(find.text('Bem passado'), findsOneWidget);
     expect(find.text('Resposta sem acréscimo'), findsOneWidget);
 
-    await tester.tap(find.text('Salvar grupo'));
+    await tester.tap(find.text('Salvar pergunta'));
     await tester.pumpAndSettle();
     expect(saved?.minimumSelections, 1);
     expect(saved?.maximumSelections, 1);

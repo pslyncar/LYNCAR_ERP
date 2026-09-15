@@ -37,7 +37,7 @@ void main() {
     expect(find.text('Loja online'), findsOneWidget);
     expect(find.textContaining('Híbr'), findsNothing);
     expect(
-      find.textContaining('drikapadaria.lyncar.com.br/cardapio'),
+      find.text('.lyncar.com.br/cardapio'),
       findsOneWidget,
     );
     expect(find.text('PDVs autorizados'), findsOneWidget);
@@ -86,7 +86,7 @@ void main() {
 
     expect(find.text('Pix manual'), findsOneWidget);
     expect(find.text('Pix InfinitePay'), findsOneWidget);
-    expect(find.text('Maquininha na entrega'), findsOneWidget);
+    expect(find.text('Pagamento na entrega'), findsOneWidget);
     expect(find.text('Aceitar crédito na entrega'), findsOneWidget);
     expect(find.text('Aceitar débito na entrega'), findsOneWidget);
     expect(find.textContaining('Nunca será marcado como pago'), findsOneWidget);

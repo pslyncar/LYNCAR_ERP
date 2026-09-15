@@ -39,7 +39,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
   final _manualPixInstructions = TextEditingController();
   final _infinitePayHandle = TextEditingController();
   final _catalogSearch = TextEditingController();
-  int? _loadedStoreId;
+  PedeOnSettings? _syncedSettings;
   PedeOnStoreSettings? _storeDraft;
   PedeOnManualPixSettings? _manualPixDraft;
   PedeOnInfinitePaySettings? _infinitePayDraft;
@@ -87,14 +87,19 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
   void _onViewModelChanged() {
     if (!mounted) return;
     final settings = _viewModel.settings;
-    if (settings != null && _loadedStoreId != settings.store.id) {
+    // Cada salvamento substitui o objeto de configurações no ViewModel.
+    // Sincronizamos somente esse novo retorno da API, nunca durante a edição
+    // local do rascunho enquanto o usuário ainda está preenchendo a tela.
+    if (settings != null &&
+        !_viewModel.saving &&
+        !identical(settings, _syncedSettings)) {
       _syncDrafts(settings);
     }
     setState(() {});
   }
 
   void _syncDrafts(PedeOnSettings settings) {
-    _loadedStoreId = settings.store.id;
+    _syncedSettings = settings;
     _storeDraft = settings.store;
     _manualPixDraft = settings.manualPix;
     _infinitePayDraft = settings.infinitePay;
@@ -2358,36 +2363,40 @@ class _CategoryStrip extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: const Color(0xFFDCE6EF)),
                 ),
-                child: ListTile(
-                  leading: ReorderableDragStartListener(
-                    index: index,
-                    enabled: !saving,
-                    child: const MouseRegion(
-                      cursor: SystemMouseCursors.grab,
-                      child: Padding(
-                        padding: EdgeInsets.all(8),
-                        child: Icon(Icons.drag_indicator),
+                child: Material(
+                  type: MaterialType.transparency,
+                  borderRadius: BorderRadius.circular(12),
+                  child: ListTile(
+                    leading: ReorderableDragStartListener(
+                      index: index,
+                      enabled: !saving,
+                      child: const MouseRegion(
+                        cursor: SystemMouseCursors.grab,
+                        child: Padding(
+                          padding: EdgeInsets.all(8),
+                          child: Icon(Icons.drag_indicator),
+                        ),
                       ),
                     ),
-                  ),
-                  title: Text(
-                    category.name,
-                    style: const TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  subtitle: Text('Posição ${index + 1} no cardápio'),
-                  trailing: Wrap(
-                    children: [
-                      IconButton(
-                        tooltip: 'Editar categoria',
-                        onPressed: saving ? null : () => onEdit(category),
-                        icon: const Icon(Icons.edit_outlined),
-                      ),
-                      IconButton(
-                        tooltip: 'Excluir categoria',
-                        onPressed: saving ? null : () => onDelete(category),
-                        icon: const Icon(Icons.close),
-                      ),
-                    ],
+                    title: Text(
+                      category.name,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text('Posição ${index + 1} no cardápio'),
+                    trailing: Wrap(
+                      children: [
+                        IconButton(
+                          tooltip: 'Editar categoria',
+                          onPressed: saving ? null : () => onEdit(category),
+                          icon: const Icon(Icons.edit_outlined),
+                        ),
+                        IconButton(
+                          tooltip: 'Excluir categoria',
+                          onPressed: saving ? null : () => onDelete(category),
+                          icon: const Icon(Icons.close),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -3350,7 +3359,7 @@ class _SectionCard extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 22),
-        child,
+        Material(type: MaterialType.transparency, child: child),
       ],
     ),
   );
