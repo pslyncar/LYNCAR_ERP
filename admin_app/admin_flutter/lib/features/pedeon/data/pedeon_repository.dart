@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:http_parser/http_parser.dart';
+
 import '../../../services/http_facade.dart' as http;
 
 import '../../../models/session.dart';
@@ -86,8 +88,21 @@ class HttpPedeOnRepository implements PedeOnRepository {
       Uri.parse('$_baseUrl/pedeon/settings/media/$mediaType'),
     );
     request.headers.addAll(_headers..remove('Content-Type'));
+    final lowerName = filename.toLowerCase();
+    final contentType = lowerName.endsWith('.png')
+        ? MediaType('image', 'png')
+        : lowerName.endsWith('.webp')
+        ? MediaType('image', 'webp')
+        : lowerName.endsWith('.gif')
+        ? MediaType('image', 'gif')
+        : MediaType('image', 'jpeg');
     request.files.add(
-      http.MultipartFile.fromBytes('file', bytes, filename: filename),
+      http.MultipartFile.fromBytes(
+        'file',
+        bytes,
+        filename: filename,
+        contentType: contentType,
+      ),
     );
     final response = await http.Response.fromStream(
       await http.sendMultipart(request),
