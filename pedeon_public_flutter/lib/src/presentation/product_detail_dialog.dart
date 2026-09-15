@@ -43,8 +43,9 @@ Future<ProductConfiguration?> showProductDetail(
     builder: (_) => Dialog(
       insetPadding: const EdgeInsets.all(28),
       clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 860, maxHeight: 780),
+        constraints: const BoxConstraints(maxWidth: 720, maxHeight: 780),
         child: content,
       ),
     ),
