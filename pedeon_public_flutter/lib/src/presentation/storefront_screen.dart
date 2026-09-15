@@ -645,40 +645,52 @@ class _StoreHero extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 16),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(compact ? 22 : 28),
-                    child: SizedBox(
-                      height: compact ? 240 : 390,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          if (coverUrl != null && coverUrl.isNotEmpty)
-                            Image.network(
-                              viewModel.imageUrl(coverUrl),
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) =>
-                                  ColoredBox(color: scheme.primary),
-                            ),
-                          if (coverUrl == null || coverUrl.isEmpty)
-                            ColoredBox(color: scheme.primary),
-                          ColoredBox(
-                            color: Colors.black.withValues(
-                              alpha: compact ? .25 : .35,
-                            ),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      // Em telas largas, a altura acompanha a largura da capa
+                      // em vez de usar uma altura fixa que recorta a imagem.
+                      final heroHeight = compact
+                          ? 240.0
+                          : (constraints.maxWidth / 3.2)
+                                .clamp(390.0, 520.0)
+                                .toDouble();
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(compact ? 22 : 28),
+                        child: SizedBox(
+                          height: heroHeight,
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (coverUrl != null && coverUrl.isNotEmpty)
+                                Image.network(
+                                  viewModel.imageUrl(coverUrl),
+                                  fit: BoxFit.cover,
+                                  alignment: Alignment.center,
+                                  errorBuilder: (_, _, _) =>
+                                      ColoredBox(color: scheme.primary),
+                                ),
+                              if (coverUrl == null || coverUrl.isEmpty)
+                                ColoredBox(color: scheme.primary),
+                              ColoredBox(
+                                color: Colors.black.withValues(
+                                  alpha: compact ? .25 : .35,
+                                ),
+                              ),
+                              Positioned(
+                                left: compact ? 18 : 34,
+                                right: compact ? 18 : 34,
+                                bottom: compact ? 18 : 28,
+                                child: _StoreIdentity(
+                                  store: store,
+                                  viewModel: viewModel,
+                                  compact: compact,
+                                ),
+                              ),
+                            ],
                           ),
-                          Positioned(
-                            left: compact ? 18 : 34,
-                            right: compact ? 18 : 34,
-                            bottom: compact ? 18 : 28,
-                            child: _StoreIdentity(
-                              store: store,
-                              viewModel: viewModel,
-                              compact: compact,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                        ),
+                      );
+                    },
                   ),
                   if (compact) ...[
                     const SizedBox(height: 12),
@@ -755,6 +767,7 @@ class _StoreIdentity extends StatelessWidget {
       _StoreLogo(
         url: viewModel.imageUrl(store.logoUrl),
         name: store.displayName,
+        compact: compact,
       ),
       const SizedBox(width: 14),
       Expanded(
@@ -1175,31 +1188,46 @@ class _ProductImage extends StatelessWidget {
 }
 
 class _StoreLogo extends StatelessWidget {
-  const _StoreLogo({required this.url, required this.name});
+  const _StoreLogo({
+    required this.url,
+    required this.name,
+    required this.compact,
+  });
   final String url;
   final String name;
+  final bool compact;
   @override
-  Widget build(BuildContext context) => Container(
-    width: 68,
-    height: 68,
-    clipBehavior: Clip.antiAlias,
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(20),
-    ),
-    child: url.isEmpty
-        ? Image.asset('assets/images/pedeon_default.png', fit: BoxFit.cover)
-        : Image.network(
-            url,
-            fit: BoxFit.cover,
-            cacheWidth: (68 * MediaQuery.devicePixelRatioOf(context)).round(),
-            filterQuality: FilterQuality.low,
-            errorBuilder: (_, _, _) => Image.asset(
-              'assets/images/pedeon_default.png',
-              fit: BoxFit.cover,
-            ),
-          ),
-  );
+  Widget build(BuildContext context) {
+    final size = compact ? 68.0 : 86.0;
+    return Container(
+      width: size,
+      height: size,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(compact ? 20 : 24),
+      ),
+      child: Padding(
+        padding: EdgeInsets.all(compact ? 4 : 6),
+        child: url.isEmpty
+            ? Image.asset(
+                'assets/images/pedeon_default.png',
+                fit: BoxFit.contain,
+              )
+            : Image.network(
+                url,
+                fit: BoxFit.contain,
+                cacheWidth: (size * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
+                filterQuality: FilterQuality.low,
+                errorBuilder: (_, _, _) => Image.asset(
+                  'assets/images/pedeon_default.png',
+                  fit: BoxFit.contain,
+                ),
+              ),
+      ),
+    );
+  }
 }
 
 class _CartPanel extends StatelessWidget {
