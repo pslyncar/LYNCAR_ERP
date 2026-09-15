@@ -580,8 +580,9 @@ class _StoreHero extends StatelessWidget {
   Widget build(BuildContext context) {
     final compact = MediaQuery.sizeOf(context).width < 600;
     final coverUrl = store.coverUrl;
+    final scheme = Theme.of(context).colorScheme;
     return Container(
-      decoration: const BoxDecoration(color: Color(0xFF063B46)),
+      decoration: BoxDecoration(color: scheme.primary),
       child: SafeArea(
         bottom: false,
         child: Stack(
@@ -671,7 +672,7 @@ class _StoreHero extends StatelessWidget {
                             onPressed: onOpenCart,
                             style: IconButton.styleFrom(
                               backgroundColor: Colors.white,
-                              foregroundColor: const Color(0xFF075E6F),
+                              foregroundColor: scheme.primary,
                             ),
                             icon: viewModel.itemCount > 0
                                 ? Badge(
