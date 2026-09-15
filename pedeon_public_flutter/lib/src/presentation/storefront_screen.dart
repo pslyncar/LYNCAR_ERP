@@ -844,6 +844,13 @@ class _CustomerAccessButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final dark = Theme.of(context).brightness == Brightness.dark;
+    final foreground = dark
+        ? Colors.white
+        : Theme.of(context).colorScheme.onSurface;
+    final background = dark
+        ? Colors.white.withValues(alpha: .14)
+        : Theme.of(context).colorScheme.surfaceContainerHighest;
     final label = customer == null
         ? 'Entrar'
         : customerDisplayName(customer!.name);
@@ -853,8 +860,8 @@ class _CustomerAccessButton extends StatelessWidget {
         tooltip: label,
         onPressed: onPressed,
         style: IconButton.styleFrom(
-          backgroundColor: Colors.white.withValues(alpha: .14),
-          foregroundColor: Colors.white,
+          backgroundColor: background,
+          foregroundColor: foreground,
         ),
         icon: const Icon(Icons.person_outline),
       );
@@ -863,8 +870,8 @@ class _CustomerAccessButton extends StatelessWidget {
       key: const Key('customer-access-button'),
       onPressed: onPressed,
       style: TextButton.styleFrom(
-        foregroundColor: Colors.white,
-        backgroundColor: Colors.white.withValues(alpha: .14),
+        foregroundColor: foreground,
+        backgroundColor: background,
         padding: EdgeInsets.symmetric(
           horizontal: compact ? 10 : 14,
           vertical: 12,
