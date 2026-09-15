@@ -1441,7 +1441,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
       recipientName: _manualPixRecipient.text,
       instructions: _manualPixInstructions.text,
     );
-    if (await _viewModel.saveManualPix(value)) _loadedStoreId = null;
+    if (await _viewModel.saveManualPix(value)) _syncSavedSettings();
   }
 
   Future<void> _pickStoreMedia(String mediaType) async {
@@ -1469,19 +1469,27 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
 
   Future<void> _saveInfinitePay() async {
     final value = _infinitePayDraft!.copyWith(handle: _infinitePayHandle.text);
-    if (await _viewModel.saveInfinitePay(value)) _loadedStoreId = null;
+    if (await _viewModel.saveInfinitePay(value)) _syncSavedSettings();
   }
 
   Future<void> _saveDeliveryCard() async {
     if (await _viewModel.saveDeliveryCard(_deliveryCardDraft!)) {
-      _loadedStoreId = null;
+      _syncSavedSettings();
     }
   }
 
   Future<void> _savePickupPayment() async {
     if (await _viewModel.savePickupPayment(_pickupPaymentDraft!)) {
-      _loadedStoreId = null;
+      _syncSavedSettings();
     }
+  }
+
+  void _syncSavedSettings() {
+    if (!mounted || _viewModel.settings == null) return;
+    // Toda gravação retorna a configuração persistida. Reaplicá-la ao rascunho
+    // impede que a tela mostre valores antigos e peça um segundo salvamento.
+    _syncDrafts(_viewModel.settings!);
+    setState(() {});
   }
 
   Future<void> _editDeliveryZone([PedeOnDeliveryZone? zone]) async {
