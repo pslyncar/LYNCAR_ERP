@@ -1425,7 +1425,14 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
       description: _description.text.trim(),
       minimumOrderAmount: minimum,
     );
-    if (await _viewModel.saveStore(value)) _loadedStoreId = null;
+    if (await _viewModel.saveStore(value) &&
+        mounted &&
+        _viewModel.settings != null) {
+      // A API devolve a configuração persistida. A prévia deve usar esse
+      // retorno, evitando ficar com a cor anterior no rascunho local.
+      _syncDrafts(_viewModel.settings!);
+      setState(() {});
+    }
   }
 
   Future<void> _saveManualPix() async {
