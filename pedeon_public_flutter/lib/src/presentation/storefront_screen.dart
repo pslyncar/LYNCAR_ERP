@@ -1115,18 +1115,16 @@ class _StoreLogo extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
     ),
     child: url.isEmpty
-        ? Center(
-            child: Text(
-              name.characters.first.toUpperCase(),
-              style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w900),
-            ),
-          )
+        ? Image.asset('assets/images/pedeon_default.png', fit: BoxFit.cover)
         : Image.network(
             url,
             fit: BoxFit.cover,
             cacheWidth: (68 * MediaQuery.devicePixelRatioOf(context)).round(),
             filterQuality: FilterQuality.low,
-            errorBuilder: (_, _, _) => const Icon(Icons.storefront_rounded),
+            errorBuilder: (_, _, _) => Image.asset(
+              'assets/images/pedeon_default.png',
+              fit: BoxFit.cover,
+            ),
           ),
   );
 }
