@@ -91,7 +91,10 @@ def upsert_config(db: Session, payload) -> PedeOnSocialConfig:
         row = MasterPedeonSocialSetting(provider=payload.provider)
         db.add(row)
     row.client_id = _clean(payload.client_id)
-    row.redirect_uri = _clean(payload.redirect_uri)
+    # O callback pertence à plataforma, não à empresa nem ao usuário. Nunca
+    # aceite uma URL digitada manualmente que possa quebrar o retorno
+    # multiempresa; o slug da loja viaja no state do OAuth.
+    row.redirect_uri = default_redirect_uri(payload.provider)
     row.enabled = payload.enabled
     if _clean(payload.client_secret):
         row.client_secret_encrypted = _encrypt(payload.client_secret.strip())

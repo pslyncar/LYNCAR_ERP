@@ -544,8 +544,10 @@ class _PedeOnSocialDialogState extends State<_PedeOnSocialDialog> {
               const SizedBox(height: 12),
               TextField(
                 controller: _redirect,
+                readOnly: true,
                 decoration: const InputDecoration(
                   labelText: 'URI de redirecionamento',
+                  helperText: 'Definida automaticamente pela LynCar para todos os clientes.',
                 ),
               ),
               if (apple) ...[
