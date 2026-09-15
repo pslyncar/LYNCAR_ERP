@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:papezzosync_admin/features/pedeon/data/pedeon_repository.dart';
 import 'package:papezzosync_admin/features/pedeon/domain/pedeon_settings.dart';
@@ -35,7 +36,10 @@ void main() {
     expect(find.text('Cardápio / Alimentação'), findsOneWidget);
     expect(find.text('Loja online'), findsOneWidget);
     expect(find.textContaining('Híbr'), findsNothing);
-    expect(find.textContaining('drikapadaria.lyncar.com.br/cardapio'), findsOneWidget);
+    expect(
+      find.textContaining('drikapadaria.lyncar.com.br/cardapio'),
+      findsOneWidget,
+    );
     expect(find.text('PDVs autorizados'), findsOneWidget);
     expect(find.text('Estações operacionais'), findsOneWidget);
 
@@ -290,6 +294,13 @@ class _FakePedeOnRepository implements PedeOnRepository {
       settings;
   @override
   Future<PedeOnSettings> saveStore(PedeOnStoreSettings value) async => settings;
+
+  @override
+  Future<PedeOnSettings> uploadStoreMedia({
+    required String mediaType,
+    required Uint8List bytes,
+    required String filename,
+  }) async => settings;
   @override
   Future<PedeOnSettings> saveTerminal(PedeOnTerminalSettings terminal) async =>
       settings;

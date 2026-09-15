@@ -38,6 +38,19 @@ class PedeOnSettingsViewModel extends ChangeNotifier {
   Future<bool> saveStore(PedeOnStoreSettings value) =>
       _save(() => repository.saveStore(value), 'Loja atualizada.');
 
+  Future<bool> uploadStoreMedia({
+    required String mediaType,
+    required Uint8List bytes,
+    required String filename,
+  }) => _save(
+    () => repository.uploadStoreMedia(
+      mediaType: mediaType,
+      bytes: bytes,
+      filename: filename,
+    ),
+    mediaType == 'logo' ? 'Logo atualizada.' : 'Foto de capa atualizada.',
+  );
+
   Future<bool> saveManualPix(PedeOnManualPixSettings value) =>
       _save(() => repository.saveManualPix(value), 'Pix manual atualizado.');
 

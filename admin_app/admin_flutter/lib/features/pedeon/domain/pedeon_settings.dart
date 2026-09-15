@@ -4,6 +4,8 @@ class PedeOnStoreSettings {
     required this.publicSlug,
     required this.displayName,
     required this.description,
+    this.logoUrl,
+    this.coverUrl,
     required this.active,
     required this.acceptingOrders,
     required this.acceptanceMode,
@@ -20,6 +22,8 @@ class PedeOnStoreSettings {
   final String publicSlug;
   final String displayName;
   final String description;
+  final String? logoUrl;
+  final String? coverUrl;
   final bool active;
   final bool acceptingOrders;
   final String acceptanceMode;
@@ -37,6 +41,8 @@ class PedeOnStoreSettings {
         publicSlug: json['public_slug'] as String,
         displayName: json['display_name'] as String,
         description: json['description']?.toString() ?? '',
+        logoUrl: json['logo_url']?.toString(),
+        coverUrl: json['cover_url']?.toString(),
         active: json['active'] as bool? ?? false,
         acceptingOrders: json['accepting_orders'] as bool? ?? false,
         acceptanceMode: json['acceptance_mode']?.toString() ?? 'manual',
@@ -58,6 +64,8 @@ class PedeOnStoreSettings {
     'public_slug': publicSlug,
     'display_name': displayName,
     'description': description.trim().isEmpty ? null : description.trim(),
+    'logo_url': logoUrl,
+    'cover_url': coverUrl,
     'active': active,
     'accepting_orders': acceptingOrders,
     'acceptance_mode': acceptanceMode,
@@ -74,6 +82,8 @@ class PedeOnStoreSettings {
     String? publicSlug,
     String? displayName,
     String? description,
+    String? logoUrl,
+    String? coverUrl,
     bool? active,
     bool? acceptingOrders,
     String? acceptanceMode,
@@ -89,6 +99,8 @@ class PedeOnStoreSettings {
     publicSlug: publicSlug ?? this.publicSlug,
     displayName: displayName ?? this.displayName,
     description: description ?? this.description,
+    logoUrl: logoUrl ?? this.logoUrl,
+    coverUrl: coverUrl ?? this.coverUrl,
     active: active ?? this.active,
     acceptingOrders: acceptingOrders ?? this.acceptingOrders,
     acceptanceMode: acceptanceMode ?? this.acceptanceMode,
@@ -789,17 +801,18 @@ class PedeOnModifierGroup {
   final String channel;
   final String kind;
 
-  PedeOnModifierGroup copyWith({String? channel, String? kind}) => PedeOnModifierGroup(
-    id: id,
-    name: name,
-    description: description,
-    minimumSelections: minimumSelections,
-    maximumSelections: maximumSelections,
-    options: options,
-    active: active,
-    channel: channel ?? this.channel,
-    kind: kind ?? this.kind,
-  );
+  PedeOnModifierGroup copyWith({String? channel, String? kind}) =>
+      PedeOnModifierGroup(
+        id: id,
+        name: name,
+        description: description,
+        minimumSelections: minimumSelections,
+        maximumSelections: maximumSelections,
+        options: options,
+        active: active,
+        channel: channel ?? this.channel,
+        kind: kind ?? this.kind,
+      );
 
   factory PedeOnModifierGroup.fromJson(Map<String, dynamic> json) =>
       PedeOnModifierGroup(
@@ -938,12 +951,12 @@ class PedeOnCatalogProduct {
             (json['enabled_channels'] as List? ?? const ['pedeon_online'])
                 .map((item) => item.toString())
                 .toList(),
-        publishedChannels:
-            (json['published_channels'] as List? ?? const [])
-                .map((item) => item.toString()).toList(),
-        availableChannels:
-            (json['available_channels'] as List? ?? const [])
-                .map((item) => item.toString()).toList(),
+        publishedChannels: (json['published_channels'] as List? ?? const [])
+            .map((item) => item.toString())
+            .toList(),
+        availableChannels: (json['available_channels'] as List? ?? const [])
+            .map((item) => item.toString())
+            .toList(),
         productionStationCode:
             json['production_station_code']?.toString() ?? '',
         sortOrder: json['sort_order'] as int? ?? 0,

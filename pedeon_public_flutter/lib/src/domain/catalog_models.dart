@@ -10,6 +10,9 @@ class Storefront {
     this.description,
     this.logoUrl,
     this.coverUrl,
+    this.deliveryFee,
+    this.deliveryMinutesMin,
+    this.deliveryMinutesMax,
   });
   factory Storefront.fromJson(Map<String, dynamic> json) => Storefront(
     slug: json['slug'] as String,
@@ -17,6 +20,9 @@ class Storefront {
     description: json['description'] as String?,
     logoUrl: json['logo_url'] as String?,
     coverUrl: json['cover_url'] as String?,
+    deliveryFee: _nullableMoney(json['delivery_fee']),
+    deliveryMinutesMin: json['delivery_minutes_min'] as int?,
+    deliveryMinutesMax: json['delivery_minutes_max'] as int?,
     acceptingOrders: json['accepting_orders'] as bool? ?? false,
     experienceMode: json['experience_mode']?.toString() ?? 'food_service',
     fulfillmentOptions: (json['fulfillment_options'] as List? ?? const [])
@@ -33,6 +39,9 @@ class Storefront {
   final String? description;
   final String? logoUrl;
   final String? coverUrl;
+  final double? deliveryFee;
+  final int? deliveryMinutesMin;
+  final int? deliveryMinutesMax;
   final bool acceptingOrders;
   final String experienceMode;
   final List<String> fulfillmentOptions;
@@ -170,7 +179,7 @@ class ModifierGroup {
     options: (json['options'] as List? ?? const [])
         .cast<Map<String, dynamic>>()
         .map(ModifierOption.fromJson)
-    .toList(growable: false),
+        .toList(growable: false),
     kind: json['kind']?.toString() ?? 'complement',
   );
 
@@ -444,3 +453,6 @@ class PublicOrder {
 }
 
 double _money(Object? value) => double.parse(value.toString());
+
+double? _nullableMoney(Object? value) =>
+    value == null ? null : double.tryParse(value.toString());

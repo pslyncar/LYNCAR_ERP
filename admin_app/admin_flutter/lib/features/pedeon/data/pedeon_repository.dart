@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import '../../../services/http_facade.dart' as http;
 
@@ -9,6 +10,11 @@ import '../domain/pedeon_order.dart';
 abstract interface class PedeOnRepository {
   Future<PedeOnSettings> load();
   Future<PedeOnSettings> saveStore(PedeOnStoreSettings settings);
+  Future<PedeOnSettings> uploadStoreMedia({
+    required String mediaType,
+    required Uint8List bytes,
+    required String filename,
+  });
   Future<PedeOnSettings> saveManualPix(PedeOnManualPixSettings settings);
   Future<PedeOnSettings> saveInfinitePay(PedeOnInfinitePaySettings settings);
   Future<PedeOnSettings> saveDeliveryCard(PedeOnDeliveryCardSettings settings);
@@ -68,6 +74,26 @@ class HttpPedeOnRepository implements PedeOnRepository {
   @override
   Future<PedeOnSettings> saveStore(PedeOnStoreSettings settings) =>
       _send('PUT', '/pedeon/settings/store', settings.toJson());
+
+  @override
+  Future<PedeOnSettings> uploadStoreMedia({
+    required String mediaType,
+    required Uint8List bytes,
+    required String filename,
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$_baseUrl/pedeon/settings/media/$mediaType'),
+    );
+    request.headers.addAll(_headers..remove('Content-Type'));
+    request.files.add(
+      http.MultipartFile.fromBytes('file', bytes, filename: filename),
+    );
+    final response = await http.Response.fromStream(
+      await http.sendMultipart(request),
+    );
+    return PedeOnSettings.fromJson(_decode(response));
+  }
 
   @override
   Future<PedeOnSettings> saveManualPix(PedeOnManualPixSettings settings) =>

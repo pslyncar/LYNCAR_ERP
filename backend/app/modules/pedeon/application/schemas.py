@@ -11,6 +11,8 @@ class StoreSettingsUpdate(BaseModel):
     public_slug: str = Field(pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", min_length=3, max_length=80)
     display_name: str = Field(min_length=2, max_length=180)
     description: str | None = Field(default=None, max_length=1200)
+    logo_url: str | None = Field(default=None, max_length=500)
+    cover_url: str | None = Field(default=None, max_length=500)
     active: bool = False
     accepting_orders: bool = False
     acceptance_mode: Literal["manual", "automatic", "mixed"] = "manual"

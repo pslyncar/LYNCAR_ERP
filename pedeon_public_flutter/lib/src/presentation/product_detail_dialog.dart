@@ -173,47 +173,43 @@ class _ProductDetailState extends State<_ProductDetail> {
                                     ),
                                   ),
                                 ),
-                          if (widget.imageUrl.isNotEmpty)
-                            Positioned.fill(
-                              child: SafeArea(
-                                child: Stack(
-                                  children: [
-                                    Align(
-                                      alignment: Alignment.centerLeft,
-                                      child: Padding(
-                                        padding: const EdgeInsets.only(
-                                          left: 16,
-                                        ),
-                                        child: _ImageOverlayButton(
-                                          tooltip: 'Voltar',
-                                          icon: Icons.arrow_back_rounded,
-                                          onPressed: () =>
-                                              Navigator.pop(context),
-                                        ),
+                          Positioned.fill(
+                            child: SafeArea(
+                              child: Stack(
+                                children: [
+                                  Align(
+                                    alignment: Alignment.centerLeft,
+                                    child: Padding(
+                                      padding: const EdgeInsets.only(left: 16),
+                                      child: _ImageOverlayButton(
+                                        tooltip: 'Voltar',
+                                        icon: Icons.arrow_back_rounded,
+                                        onPressed: () => Navigator.pop(context),
                                       ),
                                     ),
-                                    Align(
-                                      alignment: Alignment.topRight,
-                                      child: Padding(
-                                        padding: const EdgeInsets.fromLTRB(
-                                          0,
-                                          16,
-                                          16,
-                                          0,
-                                        ),
-                                        child: Column(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            Builder(
-                                              builder: (shareContext) =>
-                                                  _ImageOverlayButton(
-                                                    tooltip: 'Compartilhar',
-                                                    icon:
-                                                        Icons.ios_share_rounded,
-                                                    onPressed: () =>
-                                                        _share(shareContext),
-                                                  ),
-                                            ),
+                                  ),
+                                  Align(
+                                    alignment: Alignment.topRight,
+                                    child: Padding(
+                                      padding: const EdgeInsets.fromLTRB(
+                                        0,
+                                        16,
+                                        16,
+                                        0,
+                                      ),
+                                      child: Column(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Builder(
+                                            builder: (shareContext) =>
+                                                _ImageOverlayButton(
+                                                  tooltip: 'Compartilhar',
+                                                  icon: Icons.ios_share_rounded,
+                                                  onPressed: () =>
+                                                      _share(shareContext),
+                                                ),
+                                          ),
+                                          if (widget.imageUrl.isNotEmpty) ...[
                                             const SizedBox(height: 12),
                                             _ImageOverlayButton(
                                               key: const Key(
@@ -224,13 +220,14 @@ class _ProductDetailState extends State<_ProductDetail> {
                                               onPressed: _showFullscreenImage,
                                             ),
                                           ],
-                                        ),
+                                        ],
                                       ),
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
                             ),
+                          ),
                         ],
                       ),
                     );

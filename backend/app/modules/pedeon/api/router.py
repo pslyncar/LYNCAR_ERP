@@ -5,7 +5,7 @@ from urllib.parse import urlencode, urlparse
 import requests
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import select
@@ -46,6 +46,7 @@ from app.modules.pedeon.application.schemas import (
 from app.modules.pedeon.application.catalog_service import PedeOnCatalogService
 from app.modules.pedeon.application.settings_service import PedeOnSettingsService
 from app.modules.pedeon.application.public_catalog_service import PedeOnPublicCatalogService
+from app.services.uploads import save_public_image
 from app.modules.pedeon.application.public_url import public_store_path, public_store_url
 from app.modules.pedeon.application.public_schemas import (
     CartQuoteRead,
@@ -966,6 +967,26 @@ def update_store(
         return PedeOnSettingsService(db).update_store(company_code, payload)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/settings/media/{media_type}", response_model=PedeOnSettingsRead)
+async def upload_store_media(
+    media_type: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_permission("pedeon:settings")),
+) -> PedeOnSettingsRead:
+    if media_type not in {"logo", "cover"}:
+        raise HTTPException(status_code=400, detail="Tipo de imagem inválido.")
+    service = PedeOnSettingsService(db)
+    store = service._ensure_store()
+    url = await save_public_image(file, f"pedeon-store-{store.id}")
+    if media_type == "logo":
+        store.logo_url = url
+    else:
+        store.cover_url = url
+    db.commit()
+    return service.get_settings()
 
 
 @router.put("/settings/payments/manual-pix", response_model=PedeOnSettingsRead)

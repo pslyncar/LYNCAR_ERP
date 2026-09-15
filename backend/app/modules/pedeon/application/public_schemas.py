@@ -11,6 +11,9 @@ class PublicStoreRead(BaseModel):
     description: str | None = None
     logo_url: str | None = None
     cover_url: str | None = None
+    delivery_fee: Decimal | None = None
+    delivery_minutes_min: int | None = None
+    delivery_minutes_max: int | None = None
     accepting_orders: bool
     experience_mode: Literal["food_service", "retail"]
     fulfillment_options: list[str]

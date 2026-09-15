@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../models/session.dart';
 import '../data/pedeon_repository.dart';
@@ -31,6 +32,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
   final _name = TextEditingController();
   final _slug = TextEditingController();
   final _description = TextEditingController();
+  bool _uploadingStoreMedia = false;
   final _minimumOrder = TextEditingController();
   final _manualPixKey = TextEditingController();
   final _manualPixRecipient = TextEditingController();
@@ -205,6 +207,35 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
                   labelText: 'Apresentação da loja',
                 ),
               ),
+              const SizedBox(height: 18),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _uploadingStoreMedia
+                          ? null
+                          : () => _pickStoreMedia('logo'),
+                      icon: const Icon(Icons.account_circle_outlined),
+                      label: const Text('Enviar logo'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _uploadingStoreMedia
+                          ? null
+                          : () => _pickStoreMedia('cover'),
+                      icon: const Icon(Icons.panorama_outlined),
+                      label: const Text('Enviar foto de capa'),
+                    ),
+                  ],
+                ),
+              ),
+              if (_uploadingStoreMedia)
+                const Padding(
+                  padding: EdgeInsets.only(top: 10),
+                  child: LinearProgressIndicator(),
+                ),
             ],
           ),
         );
@@ -1315,6 +1346,23 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
     if (await _viewModel.saveManualPix(value)) _loadedStoreId = null;
   }
 
+  Future<void> _pickStoreMedia(String mediaType) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.image,
+      withData: true,
+    );
+    final file = result?.files.single;
+    if (file?.bytes == null || file!.bytes!.isEmpty) return;
+    setState(() => _uploadingStoreMedia = true);
+    final ok = await _viewModel.uploadStoreMedia(
+      mediaType: mediaType,
+      bytes: file.bytes!,
+      filename: file.name,
+    );
+    if (mounted) setState(() => _uploadingStoreMedia = false);
+    if (ok) _loadedStoreId = null;
+  }
+
   Future<void> _saveInfinitePay() async {
     final value = _infinitePayDraft!.copyWith(handle: _infinitePayHandle.text);
     if (await _viewModel.saveInfinitePay(value)) _loadedStoreId = null;
@@ -2241,6 +2289,7 @@ String _pedeOnImageUrl(String apiBaseUrl, String value) {
   if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
     return trimmed;
   }
+
   final base = apiBaseUrl.endsWith('/')
       ? apiBaseUrl.substring(0, apiBaseUrl.length - 1)
       : apiBaseUrl;

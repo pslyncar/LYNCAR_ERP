@@ -870,6 +870,12 @@ class PedeOnPublicCatalogService:
                         ),
                     )
                 )
+        delivery_operation = (store.settings or {}).get("delivery_operation", {})
+        delivery_fee = (
+            delivery_operation.get("fixed_fee_amount")
+            if delivery_operation.get("pricing_mode") == "fixed"
+            else None
+        )
         return PublicCatalogPageRead(
             store=PublicStoreRead(
                 slug=store.public_slug,
@@ -877,6 +883,9 @@ class PedeOnPublicCatalogService:
                 description=store.description,
                 logo_url=store.logo_url,
                 cover_url=store.cover_url,
+                delivery_fee=delivery_fee,
+                delivery_minutes_min=delivery_operation.get("preparation_minutes_min"),
+                delivery_minutes_max=delivery_operation.get("preparation_minutes_max"),
                 accepting_orders=store_is_accepting_orders(store),
                 experience_mode=store.experience_mode,
                 fulfillment_options=store.fulfillment_options or [],
