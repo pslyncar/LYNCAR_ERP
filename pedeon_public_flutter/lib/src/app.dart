@@ -30,6 +30,7 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
             state.uri.queryParameters['produto'] ?? '',
           ),
           initialSocialCode: state.uri.queryParameters['social_code'],
+          initialSocialProvider: state.uri.queryParameters['social_provider'],
         ),
       ),
     ],
@@ -46,6 +47,7 @@ class _PedeOnPublicAppState extends State<PedeOnPublicApp> {
         state.uri.queryParameters['produto'] ?? '',
       ),
       initialSocialCode: state.uri.queryParameters['social_code'],
+      initialSocialProvider: state.uri.queryParameters['social_provider'],
     );
   }
 

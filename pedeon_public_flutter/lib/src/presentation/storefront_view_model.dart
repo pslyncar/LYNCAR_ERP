@@ -351,14 +351,17 @@ class StorefrontViewModel extends ChangeNotifier {
     }
   }
 
-  Future<String> startGoogleLogin() => repository.startGoogleLogin(slug);
+  Future<String> startSocialLogin(String provider) =>
+      repository.startSocialLogin(slug, provider);
 
-  Future<void> exchangeGoogleCode(String code) async {
+  Future<String> startGoogleLogin() => startSocialLogin('google');
+
+  Future<void> exchangeSocialCode(String code, String provider) async {
     authLoading = true;
     authError = null;
     notifyListeners();
     try {
-      customer = await repository.exchangeGoogleCode(slug, code);
+      customer = await repository.exchangeSocialCode(slug, provider, code);
       customerProfile = CustomerProfile(
         document: customer!.document,
         deliveryAddress: customer!.deliveryAddress,
@@ -373,6 +376,9 @@ class StorefrontViewModel extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  Future<void> exchangeGoogleCode(String code) =>
+      exchangeSocialCode(code, 'google');
 
   Future<void> logoutCustomer() async {
     final profileStorageKey = _customerProfileStorageKey;

@@ -19,6 +19,7 @@ class StorefrontScreen extends StatefulWidget {
     this.initialProductId,
     this.initialCustomer,
     this.initialSocialCode,
+    this.initialSocialProvider,
     super.key,
   });
 
@@ -27,6 +28,7 @@ class StorefrontScreen extends StatefulWidget {
   final int? initialProductId;
   final CustomerSession? initialCustomer;
   final String? initialSocialCode;
+  final String? initialSocialProvider;
 
   @override
   State<StorefrontScreen> createState() => _StorefrontScreenState();
@@ -50,7 +52,10 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
       final code = widget.initialSocialCode;
       if (code != null && code.isNotEmpty) {
         try {
-          await viewModel.exchangeGoogleCode(code);
+          await viewModel.exchangeSocialCode(
+            code,
+            widget.initialSocialProvider ?? 'google',
+          );
           if (mounted) GoRouter.of(context).go(_storefrontRoute());
         } catch (_) {
           // The view model exposes the error in the storefront state.

@@ -113,6 +113,8 @@ def attach_local_customer(
         customer.global_customer_id = global_customer.id
         customer.name = global_customer.name
         customer.phone = global_customer.phone
+        customer.document_number = global_customer.document_number
+        customer.delivery_address = global_customer.delivery_address
         customer.password_hash = global_customer.password_hash
         customer.active = global_customer.active
     db.flush()

@@ -2,6 +2,7 @@ import secrets
 import time
 from urllib.parse import urlencode, urlparse
 
+import jwt
 import requests
 from datetime import datetime, timezone
 
@@ -108,7 +109,7 @@ router = APIRouter()
 
 _SOCIAL_STATE_TTL_SECONDS = 600
 _SOCIAL_CODE_TTL_SECONDS = 120
-_SOCIAL_STATES: dict[str, tuple[str, float, str]] = {}
+_SOCIAL_STATES: dict[str, tuple[str, str, float, str]] = {}
 _SOCIAL_CODES: dict[str, tuple[str, int, str, float]] = {}
 
 
@@ -436,7 +437,7 @@ def register_public_customer(
         existing = db.scalar(select(PedeOnCustomer).where(
             PedeOnCustomer.store_id == store.id, PedeOnCustomer.email == email
         ))
-        if existing is not None and existing.global_customer_id is None:
+        if existing is not None:
             raise HTTPException(status_code=409, detail="Já existe uma conta com este e-mail.")
         global_customer = global_customer_for(
             email=email,
@@ -540,11 +541,6 @@ def logout_public_customer(slug: str, request: Request, response: Response) -> d
 def start_public_social_login(slug: str, provider: str, request: Request) -> dict:
     if provider not in {"google", "facebook", "apple"}:
         raise HTTPException(status_code=404, detail="Provedor de acesso não suportado.")
-    if provider != "google":
-        raise HTTPException(
-            status_code=501,
-            detail=f"O acesso com {provider.title()} ainda não foi habilitado nesta loja.",
-        )
     with MasterSessionLocal() as master_db:
         config = next(
             (item for item in get_configs(master_db) if item.provider == provider),
@@ -553,7 +549,7 @@ def start_public_social_login(slug: str, provider: str, request: Request) -> dic
     if config is None or not config.enabled or not config.configured:
         raise HTTPException(
             status_code=503,
-            detail="O login Google ainda não está configurado nas credenciais da plataforma.",
+            detail=f"O login {provider.title()} ainda não está configurado nas credenciais da plataforma.",
         )
     now = time.time()
     _SOCIAL_STATES.clear()
@@ -569,79 +565,122 @@ def start_public_social_login(slug: str, provider: str, request: Request) -> dic
         origin = public_store_url(slug, get_settings().pedeon_public_base_url)
         if origin.endswith("/cardapio"):
             origin = origin.removesuffix("/cardapio")
-    _SOCIAL_STATES[state] = (slug, now + _SOCIAL_STATE_TTL_SECONDS, origin)
-    return {
-        "authorization_url": "https://accounts.google.com/o/oauth2/v2/auth?"
-        + urlencode(
-            {
-                "client_id": config.client_id,
-                "redirect_uri": config.redirect_uri,
-                "response_type": "code",
-                "scope": "openid email profile",
-                "state": state,
-                "prompt": "select_account",
-            }
-        )
-    }
+    _SOCIAL_STATES[state] = (slug, provider, now + _SOCIAL_STATE_TTL_SECONDS, origin)
+    if provider == "google":
+        authorization_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode({
+            "client_id": config.client_id,
+            "redirect_uri": config.redirect_uri,
+            "response_type": "code",
+            "scope": "openid email profile",
+            "state": state,
+            "prompt": "select_account",
+        })
+    elif provider == "facebook":
+        authorization_url = "https://www.facebook.com/v20.0/dialog/oauth?" + urlencode({
+            "client_id": config.client_id,
+            "redirect_uri": config.redirect_uri,
+            "response_type": "code",
+            "scope": "email,public_profile",
+            "state": state,
+        })
+    else:
+        authorization_url = "https://appleid.apple.com/auth/authorize?" + urlencode({
+            "client_id": config.client_id,
+            "redirect_uri": config.redirect_uri,
+            "response_type": "code",
+            "response_mode": "query",
+            "scope": "name email",
+            "state": state,
+        })
+    return {"authorization_url": authorization_url}
 
 
-@router.get("/public/auth/google/callback")
-def public_google_callback(
+@router.get("/public/auth/{provider}/callback")
+def public_social_callback(
+    provider: str,
     code: str | None = None,
     state: str | None = None,
     error: str | None = None,
 ) -> RedirectResponse:
+    if provider not in {"google", "facebook", "apple"}:
+        raise HTTPException(status_code=404, detail="Provedor de acesso não suportado.")
     state_data = _SOCIAL_STATES.pop(state or "", None)
-    if state_data is None or state_data[1] < time.time():
+    if state_data is None or state_data[2] < time.time():
         raise HTTPException(status_code=400, detail="Sessão OAuth expirada ou inválida.")
-    slug, _expires_at, public_origin = state_data
+    slug, state_provider, _expires_at, public_origin = state_data
+    if provider != state_provider:
+        raise HTTPException(status_code=400, detail="Provedor OAuth inválido.")
     if error or not code:
-        raise HTTPException(status_code=400, detail="O login Google foi cancelado.")
+        raise HTTPException(status_code=400, detail=f"O login {provider.title()} foi cancelado.")
     with MasterSessionLocal() as master_db:
         config = next(
-            (item for item in get_configs(master_db) if item.provider == "google"),
+            (item for item in get_configs(master_db) if item.provider == provider),
             None,
         )
     if config is None or not config.enabled or not config.configured:
-        raise HTTPException(status_code=503, detail="Login Google não configurado.")
+        raise HTTPException(status_code=503, detail=f"Login {provider.title()} não configurado.")
     try:
-        token_response = requests.post(
-            "https://oauth2.googleapis.com/token",
-            data={
-                "code": code,
-                "client_id": config.client_id,
-                "client_secret": config.client_secret,
-                "redirect_uri": config.redirect_uri,
+        if provider == "google":
+            token_response = requests.post("https://oauth2.googleapis.com/token", data={
+                "code": code, "client_id": config.client_id,
+                "client_secret": config.client_secret, "redirect_uri": config.redirect_uri,
                 "grant_type": "authorization_code",
-            },
-            timeout=15,
-        )
+            }, timeout=15)
+        elif provider == "facebook":
+            token_response = requests.get("https://graph.facebook.com/v20.0/oauth/access_token", params={
+                "code": code, "client_id": config.client_id,
+                "client_secret": config.client_secret, "redirect_uri": config.redirect_uri,
+            }, timeout=15)
+        else:
+            now = int(time.time())
+            client_secret = jwt.encode(
+                {"iss": config.extra["team_id"], "iat": now, "exp": now + 86400,
+                 "aud": "https://appleid.apple.com", "sub": config.client_id},
+                config.extra["private_key"], algorithm="ES256",
+                headers={"kid": config.extra["key_id"]},
+            )
+            token_response = requests.post("https://appleid.apple.com/auth/token", data={
+                "code": code, "client_id": config.client_id, "client_secret": client_secret,
+                "redirect_uri": config.redirect_uri, "grant_type": "authorization_code",
+            }, timeout=15)
     except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Não foi possível comunicar com o Google durante o login.",
-        ) from exc
+        raise HTTPException(status_code=502, detail=f"Não foi possível comunicar com {provider.title()} durante o login.") from exc
     if not token_response.ok:
-        raise HTTPException(status_code=400, detail="O Google não autorizou este login.")
-    id_token = token_response.json().get("id_token")
-    if not id_token:
-        raise HTTPException(status_code=400, detail="Resposta OAuth do Google sem identidade.")
-    try:
-        profile_response = requests.get(
-            "https://oauth2.googleapis.com/tokeninfo",
-            params={"id_token": id_token},
-            timeout=15,
-        )
-    except requests.RequestException as exc:
-        raise HTTPException(
-            status_code=502,
-            detail="Não foi possível validar a conta Google neste momento.",
-        ) from exc
-    if not profile_response.ok:
-        raise HTTPException(status_code=400, detail="Não foi possível validar a conta Google.")
-    profile = profile_response.json()
-    if profile.get("aud") != config.client_id or profile.get("email_verified") not in {True, "true", "True"}:
-        raise HTTPException(status_code=400, detail="A conta Google não pôde ser validada.")
+        raise HTTPException(status_code=400, detail=f"O {provider.title()} não autorizou este login.")
+    token_data = token_response.json()
+    if provider == "google":
+        id_token = token_data.get("id_token")
+        if not id_token:
+            raise HTTPException(status_code=400, detail="Resposta Google sem identidade.")
+        profile_response = requests.get("https://oauth2.googleapis.com/tokeninfo", params={"id_token": id_token}, timeout=15)
+        if not profile_response.ok:
+            raise HTTPException(status_code=400, detail="Não foi possível validar a conta Google.")
+        profile = profile_response.json()
+        if profile.get("aud") != config.client_id or profile.get("email_verified") not in {True, "true", "True"}:
+            raise HTTPException(status_code=400, detail="A conta Google não pôde ser validada.")
+        subject, email, name = profile.get("sub"), profile.get("email"), profile.get("name")
+    elif provider == "facebook":
+        access_token = token_data.get("access_token")
+        profile_response = requests.get("https://graph.facebook.com/v20.0/me", params={
+            "fields": "id,name,email", "access_token": access_token,
+        }, timeout=15)
+        if not profile_response.ok:
+            raise HTTPException(status_code=400, detail="Não foi possível validar a conta Facebook.")
+        profile = profile_response.json()
+        subject, email, name = profile.get("id"), profile.get("email"), profile.get("name")
+    else:
+        id_token = token_data.get("id_token")
+        if not id_token:
+            raise HTTPException(status_code=400, detail="Resposta Apple sem identidade.")
+        try:
+            profile = jwt.decode(
+                id_token, options={"verify_signature": False, "verify_aud": False}
+            )
+        except jwt.InvalidTokenError as exc:
+            raise HTTPException(status_code=400, detail="A resposta Apple é inválida.") from exc
+        if profile.get("iss") != "https://appleid.apple.com" or profile.get("aud") != config.client_id:
+            raise HTTPException(status_code=400, detail="A conta Apple não pôde ser validada.")
+        subject, email, name = profile.get("sub"), profile.get("email"), None
     registry = PedeOnPublicCatalogService._registry(slug)
     with session_for_company(registry.company_code) as db:
         store = db.get(PedeOnStore, registry.tenant_store_id)
@@ -650,9 +689,9 @@ def public_google_callback(
             raise HTTPException(status_code=404, detail="Loja ou e-mail Google não encontrado.")
         global_customer = global_customer_for(
             email=email,
-            name=profile.get("name") or email.split("@", 1)[0],
-            provider="google",
-            provider_subject=profile.get("sub"),
+            name=name or email.split("@", 1)[0],
+            provider=provider,
+            provider_subject=subject,
         )
         if not global_customer.active:
             raise HTTPException(status_code=403, detail="Esta conta de cliente está bloqueada.")
@@ -669,24 +708,26 @@ def public_google_callback(
             time.time() + _SOCIAL_CODE_TTL_SECONDS,
         )
     return RedirectResponse(
-        url=f"{public_origin}{public_store_path(public_origin, slug)}?social_code={handoff_code}",
+        url=f"{public_origin}{public_store_path(public_origin, slug)}?social_code={handoff_code}&social_provider={provider}",
         status_code=303,
     )
 
 
-@router.post("/public/{slug}/auth/google/exchange", response_model=PublicCustomerAuthRead)
-def exchange_public_google_code(
-    slug: str, payload: dict, request: Request, response: Response
+@router.post("/public/{slug}/auth/{provider}/exchange", response_model=PublicCustomerAuthRead)
+def exchange_public_social_code(
+    slug: str, provider: str, payload: dict, request: Request, response: Response
 ):
+    if provider not in {"google", "facebook", "apple"}:
+        raise HTTPException(status_code=404, detail="Provedor de acesso não suportado.")
     handoff_code = str(payload.get("code", ""))
     code_data = _SOCIAL_CODES.pop(handoff_code, None)
     if code_data is None or code_data[3] < time.time() or code_data[0] != slug:
-        raise HTTPException(status_code=400, detail="Código de login Google expirado ou inválido.")
+        raise HTTPException(status_code=400, detail="Código de login social expirado ou inválido.")
     registry = PedeOnPublicCatalogService._registry(slug)
     with session_for_company(registry.company_code) as db:
         customer = db.get(PedeOnCustomer, code_data[1])
         if customer is None or not customer.active:
-            raise HTTPException(status_code=401, detail="Conta Google indisponível.")
+            raise HTTPException(status_code=401, detail="Conta social indisponível.")
         set_customer_cookie(response, request, code_data[2])
         return public_customer(customer, code_data[2])
 

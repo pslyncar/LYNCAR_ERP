@@ -112,18 +112,21 @@ class CatalogApiService {
     );
   }
 
-  Future<String> startGoogleLogin(String slug) async {
+  Future<String> startSocialLogin(String slug, String provider) async {
     final result = _decode(
       await _client.get(
-        Uri.parse('$_baseUrl/pedeon/public/$slug/auth/google/start'),
+        Uri.parse('$_baseUrl/pedeon/public/$slug/auth/$provider/start'),
         headers: const {'Accept': 'application/json'},
       ),
     );
     return result['authorization_url'] as String;
   }
 
-  Future<Map<String, dynamic>> exchangeGoogleCode(String slug, String code) =>
-      _authRequest(slug, 'google/exchange', {'code': code});
+  Future<Map<String, dynamic>> exchangeSocialCode(
+    String slug,
+    String provider,
+    String code,
+  ) => _authRequest(slug, '$provider/exchange', {'code': code});
 
   Future<Map<String, dynamic>> updateCustomerProfile(
     String slug, {

@@ -61,18 +61,10 @@ class _CustomerAccessDialogState extends State<_CustomerAccessDialog> {
     }
   }
 
-  void _socialUnavailable(String provider) {
-    setState(
-      () => _error =
-          'O acesso com $provider precisa das credenciais oficiais da loja. '
-          'Use o cadastro direto do PedeOn enquanto essa integração é configurada.',
-    );
-  }
-
-  Future<void> _googleLogin() async {
+  Future<void> _socialLogin(String provider) async {
     setState(() => _error = null);
     try {
-      final url = await widget.viewModel.startGoogleLogin();
+      final url = await widget.viewModel.startSocialLogin(provider);
       await launchUrl(
         Uri.parse(url),
         mode: LaunchMode.platformDefault,
@@ -157,19 +149,25 @@ class _CustomerAccessDialogState extends State<_CustomerAccessDialog> {
               ),
               const Divider(height: 24),
               OutlinedButton.icon(
-                onPressed: widget.viewModel.authLoading ? null : _googleLogin,
+                onPressed: widget.viewModel.authLoading
+                    ? null
+                    : () => _socialLogin('google'),
                 icon: const Icon(Icons.g_mobiledata),
                 label: const Text('Continuar com Google'),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: () => _socialUnavailable('Facebook'),
+                onPressed: widget.viewModel.authLoading
+                    ? null
+                    : () => _socialLogin('facebook'),
                 icon: const Icon(Icons.facebook),
                 label: const Text('Continuar com Facebook'),
               ),
               const SizedBox(height: 8),
               OutlinedButton.icon(
-                onPressed: () => _socialUnavailable('Apple'),
+                onPressed: widget.viewModel.authLoading
+                    ? null
+                    : () => _socialLogin('apple'),
                 icon: const Icon(Icons.apple),
                 label: const Text('Continuar com Apple'),
               ),

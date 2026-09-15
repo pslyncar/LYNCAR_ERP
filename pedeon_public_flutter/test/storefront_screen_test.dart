@@ -825,11 +825,15 @@ class _FakeRepository implements CatalogRepository {
   Future<void> logoutCustomer(String slug, {String? token}) async {}
 
   @override
-  Future<String> startGoogleLogin(String slug) async =>
+  Future<String> startSocialLogin(String slug, String provider) async =>
       'https://accounts.google.com';
 
   @override
-  Future<CustomerSession> exchangeGoogleCode(String slug, String code) async =>
+  Future<CustomerSession> exchangeSocialCode(
+    String slug,
+    String provider,
+    String code,
+  ) async =>
       const CustomerSession(
         token: 'google-test-token',
         id: 1,
