@@ -2,6 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 import os
 import json
+import secrets
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -24,6 +25,7 @@ class EdgeSettings(BaseSettings):
     terminal_key: str = Field(default="", repr=False)
     node_key: str = Field(default="", min_length=0, max_length=80)
     lan_key: str = Field(default="", repr=False)
+    pairing_code: str = Field(default="", min_length=0, max_length=32, repr=False)
     data_dir: Path = Field(default_factory=_default_data_dir)
     bind_host: str = "0.0.0.0"
     bind_port: int = Field(default=8765, ge=1024, le=65535)
@@ -46,6 +48,12 @@ class EdgeSettings(BaseSettings):
             for value in (self.access_token, self.terminal_key, self.node_key, self.lan_key)
         )
 
+    def ensure_pairing_code(self) -> str:
+        if not self.pairing_code:
+            self.pairing_code = secrets.token_urlsafe(9).replace("-", "").replace("_", "")[:12].upper()
+            self.persist()
+        return self.pairing_code
+
     def load_persisted(self) -> None:
         if not self.config_path.is_file():
             return
@@ -53,7 +61,7 @@ class EdgeSettings(BaseSettings):
             values = json.loads(self.config_path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             return
-        for name in ("cloud_url", "access_token", "terminal_key", "node_key", "lan_key"):
+        for name in ("cloud_url", "access_token", "terminal_key", "node_key", "lan_key", "pairing_code"):
             value = values.get(name)
             if isinstance(value, str) and value:
                 setattr(self, name, value)
@@ -68,6 +76,7 @@ class EdgeSettings(BaseSettings):
                     "terminal_key": self.terminal_key,
                     "node_key": self.node_key,
                     "lan_key": self.lan_key,
+                    "pairing_code": self.pairing_code,
                 },
                 ensure_ascii=False,
                 indent=2,

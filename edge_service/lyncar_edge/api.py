@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .cloud import CloudClient
 from .config import EdgeSettings, get_settings
@@ -32,7 +32,14 @@ class PrintResultRequest(BaseModel):
 
 
 class PairTerminalRequest(BaseModel):
-    terminal_key: str = Field(min_length=16, max_length=180)
+    terminal_key: str | None = Field(default=None, min_length=16, max_length=180)
+    pairing_code: str | None = Field(default=None, min_length=6, max_length=32)
+
+    @model_validator(mode="after")
+    def require_pairing_code(self):
+        if not self.pairing_code and not self.terminal_key:
+            raise ValueError("Informe o código exibido pelo Edge.")
+        return self
 
 
 class LoginTerminalRequest(BaseModel):
@@ -191,12 +198,14 @@ def build_app(
 
     @app.get("/.well-known/lyncar-edge")
     def discovery() -> dict:
+        pairing_code = config.ensure_pairing_code()
         return {
             "service": "lyncar-edge",
             "protocol_version": 1,
             "node_key": config.node_key,
             "port": config.bind_port,
             "pairing_required": True,
+            "pairing_code": pairing_code,
         }
 
     @app.get("/health")
@@ -209,6 +218,7 @@ def build_app(
             "order_cursor": int(database.state("cursor.orders", "0")),
             "last_error": database.state("cloud.last_error") or None,
             "server_time": datetime.now(timezone.utc).isoformat(),
+            "pairing_code": config.ensure_pairing_code(),
         }
 
     @app.get("/v1/catalog/products")
@@ -263,15 +273,29 @@ def build_app(
     ) -> dict:
         return PrintCoordinator(database).process()
 
-    @app.post("/v1/pair", dependencies=[Depends(authorize)])
-    def pair_terminal(payload: PairTerminalRequest) -> dict:
+    @app.post("/v1/pair")
+    def pair_terminal(
+        payload: PairTerminalRequest,
+        x_lyncar_edge_key: str = Header(default=""),
+    ) -> dict:
+        pairing_valid = payload.pairing_code and hmac.compare_digest(
+            payload.pairing_code.strip().upper(), config.ensure_pairing_code()
+        )
+        legacy_valid = payload.pairing_code is None and hmac.compare_digest(
+            x_lyncar_edge_key, config.lan_key
+        )
+        if not pairing_valid and not legacy_valid:
+            raise HTTPException(status_code=401, detail="Código de pareamento inválido ou expirado.")
         try:
-            authorization = cloud.authorize_terminal(payload.terminal_key)
+            authorization = cloud.authorize_terminal(payload.terminal_key or config.terminal_key)
         except Exception as exc:
             raise HTTPException(status_code=403, detail="Pareamento não autorizado.") from exc
         local_token = secrets.token_urlsafe(32)
         token_hash = hashlib.sha256(local_token.encode("utf-8")).hexdigest()
         database.save_paired_terminal(authorization, token_hash)
+        if pairing_valid:
+            config.pairing_code = ""
+            config.persist()
         database.set_state(
             "session.user",
             __import__("json").dumps(login.get("user", {"email": payload.email})),
