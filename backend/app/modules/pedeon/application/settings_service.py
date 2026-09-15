@@ -27,6 +27,7 @@ from app.modules.pedeon.application.schemas import (
     TerminalPermissionUpdate,
 )
 from app.modules.pedeon.application.delivery_service import PedeOnDeliveryService
+from app.modules.pedeon.domain.lifecycle import TerminalCapability
 from app.modules.pedeon.infrastructure.database.models import (
     PedeOnOutboxEvent,
     PedeOnPaymentConfiguration,
@@ -367,6 +368,7 @@ class PedeOnSettingsService:
             .where(PedeOnEdgeNode.store_id == store.id)
             .order_by(PedeOnEdgeNode.device_label, PedeOnEdgeNode.id)
         ).all()
+        terminal_capabilities = {item.value for item in TerminalCapability}
         return PedeOnSettingsRead(
             store=StoreSettingsRead.model_validate(
                 {
@@ -427,7 +429,15 @@ class PedeOnSettingsService:
                     app_version=device.app_version,
                     terminal_active=device.active,
                     enabled=device.active,
-                    capabilities=list(device.capabilities or []),
+                    # Edge nodes also store infrastructure capabilities (for
+                    # example catalog_cache and order_relay). Those values
+                    # are not terminal permissions and cannot be serialized
+                    # as TerminalCapability by the settings response.
+                    capabilities=[
+                        capability
+                        for capability in (device.capabilities or [])
+                        if capability in terminal_capabilities
+                    ],
                     notification_mode="badge",
                     priority=device.sort_order,
                     device_role=device.device_role,
