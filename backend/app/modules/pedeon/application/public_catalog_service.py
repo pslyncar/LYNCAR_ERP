@@ -883,6 +883,8 @@ class PedeOnPublicCatalogService:
                 description=store.description,
                 logo_url=store.logo_url,
                 cover_url=store.cover_url,
+                accent_color=(store.settings or {}).get("accent_color", "#075E6F"),
+                dark_mode=(store.settings or {}).get("dark_mode", False),
                 delivery_fee=delivery_fee,
                 delivery_minutes_min=delivery_operation.get("preparation_minutes_min"),
                 delivery_minutes_max=delivery_operation.get("preparation_minutes_max"),

@@ -10,6 +10,8 @@ class Storefront {
     this.description,
     this.logoUrl,
     this.coverUrl,
+    this.accentColor = '#075E6F',
+    this.darkMode = false,
     this.deliveryFee,
     this.deliveryMinutesMin,
     this.deliveryMinutesMax,
@@ -20,6 +22,8 @@ class Storefront {
     description: json['description'] as String?,
     logoUrl: json['logo_url'] as String?,
     coverUrl: json['cover_url'] as String?,
+    accentColor: json['accent_color']?.toString() ?? '#075E6F',
+    darkMode: json['dark_mode'] as bool? ?? false,
     deliveryFee: _nullableMoney(json['delivery_fee']),
     deliveryMinutesMin: json['delivery_minutes_min'] as int?,
     deliveryMinutesMax: json['delivery_minutes_max'] as int?,
@@ -39,6 +43,8 @@ class Storefront {
   final String? description;
   final String? logoUrl;
   final String? coverUrl;
+  final String accentColor;
+  final bool darkMode;
   final double? deliveryFee;
   final int? deliveryMinutesMin;
   final int? deliveryMinutesMax;

@@ -84,10 +84,14 @@ class PedeOnSettingsService:
             master_db.flush()
             values = payload.model_dump()
             inventory_policy = values.pop("inventory_policy")
+            accent_color = values.pop("accent_color")
+            dark_mode = values.pop("dark_mode")
             for field, value in values.items():
                 setattr(store, field, value)
             settings = dict(store.settings or {})
             settings["inventory_policy"] = inventory_policy
+            settings["accent_color"] = accent_color
+            settings["dark_mode"] = dark_mode
             store.settings = settings
             store.updated_at = datetime.now(timezone.utc)
             self._enqueue("store", store.id, "pedeon.store.settings.updated")
@@ -363,7 +367,7 @@ class PedeOnSettingsService:
                     **{
                         field: getattr(store, field)
                         for field in StoreSettingsUpdate.model_fields
-                        if field != "inventory_policy"
+                        if field not in {"inventory_policy", "accent_color", "dark_mode"}
                     },
                     "id": store.id,
                     "inventory_policy": (store.settings or {}).get(
@@ -372,6 +376,8 @@ class PedeOnSettingsService:
                         if store.experience_mode == "food_service"
                         else "strict_block",
                     ),
+                    "accent_color": (store.settings or {}).get("accent_color", "#075E6F"),
+                    "dark_mode": (store.settings or {}).get("dark_mode", False),
                 }
             ),
             payments=PaymentSettingsRead(

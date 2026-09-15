@@ -6,6 +6,8 @@ class PedeOnStoreSettings {
     required this.description,
     this.logoUrl,
     this.coverUrl,
+    this.accentColor = '#075E6F',
+    this.darkMode = false,
     required this.active,
     required this.acceptingOrders,
     required this.acceptanceMode,
@@ -24,6 +26,8 @@ class PedeOnStoreSettings {
   final String description;
   final String? logoUrl;
   final String? coverUrl;
+  final String accentColor;
+  final bool darkMode;
   final bool active;
   final bool acceptingOrders;
   final String acceptanceMode;
@@ -43,6 +47,8 @@ class PedeOnStoreSettings {
         description: json['description']?.toString() ?? '',
         logoUrl: json['logo_url']?.toString(),
         coverUrl: json['cover_url']?.toString(),
+        accentColor: json['accent_color']?.toString() ?? '#075E6F',
+        darkMode: json['dark_mode'] as bool? ?? false,
         active: json['active'] as bool? ?? false,
         acceptingOrders: json['accepting_orders'] as bool? ?? false,
         acceptanceMode: json['acceptance_mode']?.toString() ?? 'manual',
@@ -66,6 +72,8 @@ class PedeOnStoreSettings {
     'description': description.trim().isEmpty ? null : description.trim(),
     'logo_url': logoUrl,
     'cover_url': coverUrl,
+    'accent_color': accentColor,
+    'dark_mode': darkMode,
     'active': active,
     'accepting_orders': acceptingOrders,
     'acceptance_mode': acceptanceMode,
@@ -84,6 +92,8 @@ class PedeOnStoreSettings {
     String? description,
     String? logoUrl,
     String? coverUrl,
+    String? accentColor,
+    bool? darkMode,
     bool? active,
     bool? acceptingOrders,
     String? acceptanceMode,
@@ -101,6 +111,8 @@ class PedeOnStoreSettings {
     description: description ?? this.description,
     logoUrl: logoUrl ?? this.logoUrl,
     coverUrl: coverUrl ?? this.coverUrl,
+    accentColor: accentColor ?? this.accentColor,
+    darkMode: darkMode ?? this.darkMode,
     active: active ?? this.active,
     acceptingOrders: acceptingOrders ?? this.acceptingOrders,
     acceptanceMode: acceptanceMode ?? this.acceptanceMode,

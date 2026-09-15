@@ -13,6 +13,8 @@ class StoreSettingsUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=1200)
     logo_url: str | None = Field(default=None, max_length=500)
     cover_url: str | None = Field(default=None, max_length=500)
+    accent_color: str = Field(default="#075E6F", pattern=r"^#[0-9A-Fa-f]{6}$")
+    dark_mode: bool = False
     active: bool = False
     accepting_orders: bool = False
     acceptance_mode: Literal["manual", "automatic", "mixed"] = "manual"

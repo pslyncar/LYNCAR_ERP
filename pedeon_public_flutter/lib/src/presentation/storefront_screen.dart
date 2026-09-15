@@ -83,34 +83,57 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
       final store = viewModel.store;
       if (store == null) return const SizedBox.shrink();
       final compact = MediaQuery.sizeOf(context).width < 700;
-      return Scaffold(
-        body: _CatalogBody(
-          viewModel: viewModel,
-          onOpenCart: () => _openCart(context),
-          onAdd: (product) => _addProduct(context, product),
-          onCustomerAccess: () => _openCustomerAccess(context),
+      final theme = _storeTheme(context, store);
+      return Theme(
+        data: theme,
+        child: Scaffold(
+          body: _CatalogBody(
+            viewModel: viewModel,
+            onOpenCart: () => _openCart(context),
+            onAdd: (product) => _addProduct(context, product),
+            onCustomerAccess: () => _openCustomerAccess(context),
+          ),
+          floatingActionButton: !compact && viewModel.itemCount > 0
+              ? FloatingActionButton.extended(
+                  key: const Key('open-cart-floating'),
+                  onPressed: () => _openCart(context),
+                  icon: Badge(
+                    label: Text('${viewModel.itemCount}'),
+                    child: const Icon(Icons.shopping_bag_outlined),
+                  ),
+                  label: Text('Ver pedido • ${_currency(viewModel.subtotal)}'),
+                )
+              : null,
+          bottomNavigationBar: compact && viewModel.itemCount > 0
+              ? _MobileCartBar(
+                  count: viewModel.itemCount,
+                  subtotal: viewModel.subtotal,
+                  onTap: () => _openCart(context),
+                )
+              : null,
         ),
-        floatingActionButton: !compact && viewModel.itemCount > 0
-            ? FloatingActionButton.extended(
-                key: const Key('open-cart-floating'),
-                onPressed: () => _openCart(context),
-                icon: Badge(
-                  label: Text('${viewModel.itemCount}'),
-                  child: const Icon(Icons.shopping_bag_outlined),
-                ),
-                label: Text('Ver pedido • ${_currency(viewModel.subtotal)}'),
-              )
-            : null,
-        bottomNavigationBar: compact && viewModel.itemCount > 0
-            ? _MobileCartBar(
-                count: viewModel.itemCount,
-                subtotal: viewModel.subtotal,
-                onTap: () => _openCart(context),
-              )
-            : null,
       );
     },
   );
+
+  ThemeData _storeTheme(BuildContext context, Storefront store) {
+    final raw = store.accentColor.replaceFirst('#', '');
+    final parsed = int.tryParse(raw, radix: 16);
+    final seed = parsed == null
+        ? const Color(0xFF075E6F)
+        : Color(0xFF000000 | (parsed | 0xFF000000));
+    final brightness = store.darkMode ? Brightness.dark : Brightness.light;
+    return Theme.of(context).copyWith(
+      brightness: brightness,
+      colorScheme: ColorScheme.fromSeed(
+        seedColor: seed,
+        brightness: brightness,
+      ),
+      scaffoldBackgroundColor: store.darkMode
+          ? const Color(0xFF191919)
+          : const Color(0xFFF8F7F3),
+    );
+  }
 
   Future<void> _addProduct(BuildContext context, CatalogProduct product) async {
     final configuration = await showProductDetail(

@@ -11,6 +11,8 @@ class PublicStoreRead(BaseModel):
     description: str | None = None
     logo_url: str | None = None
     cover_url: str | None = None
+    accent_color: str = "#075E6F"
+    dark_mode: bool = False
     delivery_fee: Decimal | None = None
     delivery_minutes_min: int | None = None
     delivery_minutes_max: int | None = None

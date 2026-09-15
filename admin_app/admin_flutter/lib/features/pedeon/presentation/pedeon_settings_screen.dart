@@ -49,7 +49,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _viewModel =
         widget.viewModel ??
         PedeOnSettingsViewModel(HttpPedeOnRepository(widget.session));
@@ -161,6 +161,7 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
               children: [
                 PedeOnOrdersPanel(viewModel: _viewModel),
                 _buildStoreTab(),
+                _buildAppearanceTab(),
                 _buildCatalogTab(),
                 _buildPaymentsTab(),
                 _buildDeliveryTab(),
@@ -207,35 +208,6 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
                   labelText: 'Apresentação da loja',
                 ),
               ),
-              const SizedBox(height: 18),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _uploadingStoreMedia
-                          ? null
-                          : () => _pickStoreMedia('logo'),
-                      icon: const Icon(Icons.account_circle_outlined),
-                      label: const Text('Enviar logo'),
-                    ),
-                    OutlinedButton.icon(
-                      onPressed: _uploadingStoreMedia
-                          ? null
-                          : () => _pickStoreMedia('cover'),
-                      icon: const Icon(Icons.panorama_outlined),
-                      label: const Text('Enviar foto de capa'),
-                    ),
-                  ],
-                ),
-              ),
-              if (_uploadingStoreMedia)
-                const Padding(
-                  padding: EdgeInsets.only(top: 10),
-                  child: LinearProgressIndicator(),
-                ),
             ],
           ),
         );
@@ -479,6 +451,125 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
                 onPressed: _viewModel.saving ? null : _saveStore,
                 icon: const Icon(Icons.save_outlined),
                 label: const Text('Salvar configurações'),
+              ),
+            ),
+          ],
+        );
+      },
+    ),
+  );
+
+  Widget _buildAppearanceTab() => _PagePadding(
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final colors = <String>[
+          '#075E6F',
+          '#1976D2',
+          '#7B1FA2',
+          '#D84315',
+          '#2E7D32',
+          '#37474F',
+        ];
+        final draft = _storeDraft!;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _SectionCard(
+              title: 'Aparência do cardápio',
+              subtitle: 'Personalize a identidade visual da sua loja online.',
+              icon: Icons.palette_outlined,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Cor principal',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    children: colors
+                        .map(
+                          (color) => InkWell(
+                            onTap: () => setState(
+                              () => _storeDraft = draft.copyWith(
+                                accentColor: color,
+                              ),
+                            ),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                color: _hexColor(color),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: draft.accentColor == color
+                                      ? Colors.black
+                                      : Colors.transparent,
+                                  width: 3,
+                                ),
+                              ),
+                              child: draft.accentColor == color
+                                  ? const Icon(Icons.check, color: Colors.white)
+                                  : null,
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                  const SizedBox(height: 18),
+                  SwitchListTile.adaptive(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Fundo escuro'),
+                    subtitle: const Text('Exibe o cardápio com tema escuro.'),
+                    value: draft.darkMode,
+                    onChanged: (value) => setState(
+                      () => _storeDraft = draft.copyWith(darkMode: value),
+                    ),
+                  ),
+                  const Divider(),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: _uploadingStoreMedia
+                            ? null
+                            : () => _pickStoreMedia('logo'),
+                        icon: const Icon(Icons.account_circle_outlined),
+                        label: const Text('Selecionar logo'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _uploadingStoreMedia
+                            ? null
+                            : () => _pickStoreMedia('cover'),
+                        icon: const Icon(Icons.panorama_outlined),
+                        label: const Text('Selecionar capa'),
+                      ),
+                    ],
+                  ),
+                  if (_uploadingStoreMedia)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 10),
+                      child: LinearProgressIndicator(),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
+            _AppearancePreview(
+              store: draft,
+              apiBaseUrl: widget.session.apiBaseUrl,
+              wide: constraints.maxWidth > 850,
+            ),
+            const SizedBox(height: 18),
+            Align(
+              alignment: Alignment.centerRight,
+              child: FilledButton.icon(
+                onPressed: _viewModel.saving ? null : _saveStore,
+                icon: const Icon(Icons.save_outlined),
+                label: const Text('Salvar aparência'),
               ),
             ),
           ],
@@ -1737,6 +1828,7 @@ class _PedeOnTabs extends StatelessWidget {
           icon: Icon(Icons.storefront_outlined),
           text: 'Configuração da loja',
         ),
+        const Tab(icon: Icon(Icons.palette_outlined), text: 'Aparência'),
         Tab(
           icon: Icon(
             experienceMode == 'food_service'
@@ -1757,6 +1849,134 @@ class _PedeOnTabs extends StatelessWidget {
       ],
     ),
   );
+}
+
+Color _hexColor(String value) {
+  final hex = value.replaceFirst('#', '');
+  return Color(int.parse('FF$hex', radix: 16));
+}
+
+class _AppearancePreview extends StatelessWidget {
+  const _AppearancePreview({
+    required this.store,
+    required this.apiBaseUrl,
+    required this.wide,
+  });
+  final PedeOnStoreSettings store;
+  final String apiBaseUrl;
+  final bool wide;
+
+  @override
+  Widget build(BuildContext context) => _SectionCard(
+    title: 'Pré-visualização',
+    subtitle: 'Veja como a vitrine ficará para seus clientes.',
+    icon: Icons.preview_outlined,
+    child: Flex(
+      direction: wide ? Axis.horizontal : Axis.vertical,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (wide)
+          Expanded(flex: 3, child: _preview(context, false))
+        else
+          _preview(context, false),
+        if (wide) const SizedBox(width: 18) else const SizedBox(height: 18),
+        SizedBox(
+          width: wide ? 250 : double.infinity,
+          child: _preview(context, true),
+        ),
+      ],
+    ),
+  );
+
+  Widget _preview(BuildContext context, bool mobile) {
+    final background = store.darkMode
+        ? const Color(0xFF191919)
+        : const Color(0xFFF8F7F3);
+    final foreground = store.darkMode ? Colors.white : const Color(0xFF172033);
+    final cover = store.coverUrl;
+    final logo = store.logoUrl;
+    return Container(
+      height: mobile ? 300 : 220,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.black12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: mobile ? 108 : 92,
+            width: double.infinity,
+            child: cover == null || cover.isEmpty
+                ? ColoredBox(color: _hexColor(store.accentColor))
+                : Image.network(
+                    _pedeOnImageUrl(apiBaseUrl, cover),
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) =>
+                        ColoredBox(color: _hexColor(store.accentColor)),
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 22,
+                  backgroundColor: Colors.white,
+                  backgroundImage: logo == null || logo.isEmpty
+                      ? null
+                      : NetworkImage(_pedeOnImageUrl(apiBaseUrl, logo)),
+                  child: logo == null || logo.isEmpty
+                      ? Text(
+                          store.displayName.isEmpty
+                              ? 'L'
+                              : store.displayName[0].toUpperCase(),
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    store.displayName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Text(
+              'Cardápio online',
+              style: TextStyle(color: foreground.withValues(alpha: .7)),
+            ),
+          ),
+          const Spacer(),
+          Container(
+            height: 36,
+            width: double.infinity,
+            color: _hexColor(store.accentColor),
+            child: const Center(
+              child: Text(
+                'Ver cardápio',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _PagePadding extends StatelessWidget {
