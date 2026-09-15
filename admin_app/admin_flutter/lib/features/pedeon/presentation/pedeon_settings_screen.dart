@@ -1929,35 +1929,43 @@ class _AppearancePreview extends StatelessWidget {
                         ColoredBox(color: _hexColor(store.accentColor)),
                   ),
                 ColoredBox(color: Colors.black.withValues(alpha: .12)),
-                Container(
+                SizedBox(
                   width: mobile ? 54 : 62,
                   height: mobile ? 54 : 62,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    image: logo == null || logo.isEmpty
-                        ? null
-                        : DecorationImage(
-                            image: NetworkImage(
+                  child: ClipOval(
+                    child: ColoredBox(
+                      color: Colors.white,
+                      child: logo == null || logo.isEmpty
+                          ? Center(
+                              child: Text(
+                                store.displayName.isEmpty
+                                    ? 'L'
+                                    : store.displayName[0].toUpperCase(),
+                                style: TextStyle(
+                                  color: _hexColor(store.accentColor),
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            )
+                          : Image.network(
                               _pedeOnImageUrl(apiBaseUrl, logo),
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) => Center(
+                                child: Text(
+                                  store.displayName.isEmpty
+                                      ? 'L'
+                                      : store.displayName[0].toUpperCase(),
+                                  style: TextStyle(
+                                    color: _hexColor(store.accentColor),
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
                             ),
-                            fit: BoxFit.cover,
-                          ),
+                    ),
                   ),
-                  child: logo == null || logo.isEmpty
-                      ? Center(
-                          child: Text(
-                            store.displayName.isEmpty
-                                ? 'L'
-                                : store.displayName[0].toUpperCase(),
-                            style: TextStyle(
-                              color: _hexColor(store.accentColor),
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        )
-                      : null,
                 ),
               ],
             ),

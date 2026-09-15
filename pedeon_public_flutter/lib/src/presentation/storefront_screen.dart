@@ -128,7 +128,7 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
       colorScheme: ColorScheme.fromSeed(
         seedColor: seed,
         brightness: brightness,
-      ),
+      ).copyWith(primary: seed, secondary: seed),
       scaffoldBackgroundColor: store.darkMode
           ? const Color(0xFF191919)
           : const Color(0xFFF8F7F3),
