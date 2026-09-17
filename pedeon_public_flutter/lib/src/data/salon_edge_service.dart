@@ -36,7 +36,9 @@ class SalonEdgeService {
   Future<CatalogPage> catalog(String token) async {
     final result = await _decode(
       await _client.get(
-        Uri.parse('$_baseUrl/v1/pedeon/catalog'),
+        Uri.parse('$_baseUrl/v1/pedeon/catalog').replace(
+          queryParameters: const {'channel': 'onsite_waiter'},
+        ),
         headers: {'Accept': 'application/json', 'X-Lyncar-Waiter-Token': token},
       ),
     );

@@ -19,6 +19,41 @@ from .print_coordinator import PrintCoordinator
 from .printers import installed_printers
 
 
+def _canonical_pedeon_channel(value: object) -> str:
+    """Map the legacy Salon label to the channel consumed by Edge/PDV."""
+    return 'onsite_waiter' if str(value) == 'onsite_qr' else str(value)
+
+
+def _pedeon_item_enabled_for(item: dict, channel: str) -> bool:
+    channels = item.get('enabled_channels')
+    if not isinstance(channels, list):
+        # Older local caches did not persist channel metadata. Keep those
+        # products visible until the next catalog refresh supplies it.
+        return bool(item.get('available', True))
+    canonical = _canonical_pedeon_channel(channel)
+    return canonical in {_canonical_pedeon_channel(value) for value in channels}
+
+
+def _compact_event_key(prefix: str, *parts: object) -> str:
+    """Keep locally generated idempotency keys below the API limit."""
+    material = '|'.join((prefix, *(str(part) for part in parts)))
+    digest = hashlib.sha256(material.encode('utf-8')).hexdigest()
+    return f'{prefix}:{digest}'
+
+
+def _normalize_event_key(
+    prefix: str,
+    supplied: str | None,
+    *parts: object,
+    max_length: int = 120,
+) -> str:
+    """Keep legacy client keys stable while enforcing the cloud limit."""
+    raw = supplied.strip() if supplied else ""
+    if raw and len(raw) <= max_length:
+        return raw
+    return _compact_event_key(prefix, raw, *parts)
+
+
 class OrderTransitionRequest(BaseModel):
     status: str = Field(
         pattern=r"^(accepted|in_preparation|ready|out_for_delivery|completed|cancelled)$"
@@ -231,13 +266,37 @@ def build_app(
 
     @app.get("/v1/pedeon/catalog")
     def pedeon_catalog(
+        channel: str | None = Query(default=None),
         _: dict = Depends(require_staff_capability("view")),
     ) -> dict:
         stores = database.list_entities("catalog_store", 1, 0)
+        raw_categories = database.list_entities("catalog_category", 500, 0)
+        raw_items = database.list_entities("catalog_product", 500, 0)
+        requested_channel = (
+            _canonical_pedeon_channel(channel) if channel else None
+        )
+        items = (
+            [
+                item
+                for item in raw_items
+                if _pedeon_item_enabled_for(item, requested_channel)
+            ]
+            if requested_channel
+            else raw_items
+        )
+        category_ids = {
+            item.get('category_id')
+            for item in items
+            if item.get('category_id') is not None
+        }
         return {
             "store": stores[0] if stores else None,
-            "categories": database.list_entities("catalog_category", 500, 0),
-            "items": database.list_entities("catalog_product", 500, 0),
+            "categories": [
+                category
+                for category in raw_categories
+                if not requested_channel or category.get('id') in category_ids
+            ],
+            "items": items,
         }
 
     @app.get("/v1/printers")

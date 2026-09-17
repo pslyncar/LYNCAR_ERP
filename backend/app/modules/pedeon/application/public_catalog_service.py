@@ -107,9 +107,16 @@ class PedeOnPublicCatalogService:
     LOCAL_CHANNELS = frozenset({"onsite_waiter", "pdv_counter"})
 
     @staticmethod
+    def _canonical_channel(channel: object) -> str:
+        # `onsite_qr` was the original label used by the first Salon screen.
+        # Keep old publications working while exposing the canonical Edge channel.
+        return "onsite_waiter" if str(channel) == "onsite_qr" else str(channel)
+
+    @staticmethod
     def _enabled_channels(publication: PedeOnProductPublication) -> set[str]:
         rules = publication.availability_rules or {}
-        return set(rules.get("enabled_channels", ["pedeon_online"]))
+        configured = rules.get("enabled_channels", ["pedeon_online"])
+        return {PedeOnPublicCatalogService._canonical_channel(channel) for channel in configured}
 
     @classmethod
     def _enabled_for(
@@ -121,13 +128,23 @@ class PedeOnPublicCatalogService:
     def _published_for(cls, publication: PedeOnProductPublication, channel: str) -> bool:
         rules = publication.availability_rules or {}
         configured = rules.get("published_channels")
-        return (publication.published if configured is None else channel in configured)
+        canonical = cls._canonical_channel(channel)
+        return (
+            publication.published
+            if configured is None
+            else canonical in {cls._canonical_channel(item) for item in configured}
+        )
 
     @classmethod
     def _available_for(cls, publication: PedeOnProductPublication, channel: str) -> bool:
         rules = publication.availability_rules or {}
         configured = rules.get("available_channels")
-        return (publication.available if configured is None else channel in configured)
+        canonical = cls._canonical_channel(channel)
+        return (
+            publication.available
+            if configured is None
+            else canonical in {cls._canonical_channel(item) for item in configured}
+        )
 
     @classmethod
     def catalog(

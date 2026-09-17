@@ -11,6 +11,14 @@ import 'delivery_zone_editor_dialog.dart';
 import 'store_hours_card.dart';
 import 'delivery_operation_card.dart';
 
+String _canonicalPedeOnChannel(String channel) =>
+    channel == 'onsite_qr' ? 'onsite_waiter' : channel;
+
+bool _hasPedeOnChannel(Iterable<String> channels, String channel) {
+  final canonical = _canonicalPedeOnChannel(channel);
+  return channels.any((item) => _canonicalPedeOnChannel(item) == canonical);
+}
+
 class PedeOnSettingsScreen extends StatefulWidget {
   const PedeOnSettingsScreen({
     super.key,
@@ -1339,19 +1347,26 @@ class _PedeOnSettingsScreenState extends State<PedeOnSettingsScreen>
     String channel,
     bool value,
   ) async {
-    final published = {...product.publishedChannels};
-    final available = {...product.availableChannels};
+    final canonicalChannel = _canonicalPedeOnChannel(channel);
+    final published = {
+      for (final item in product.publishedChannels)
+        _canonicalPedeOnChannel(item),
+    };
+    final available = {
+      for (final item in product.availableChannels)
+        _canonicalPedeOnChannel(item),
+    };
     final legacyOnline = product.published && product.publishedChannels.isEmpty;
     if (legacyOnline) {
       published.add('pedeon_online');
       available.add('pedeon_online');
     }
     if (value) {
-      published.add(channel);
-      available.add(channel);
+      published.add(canonicalChannel);
+      available.add(canonicalChannel);
     } else {
-      published.remove(channel);
-      available.remove(channel);
+      published.remove(canonicalChannel);
+      available.remove(canonicalChannel);
     }
     await _viewModel.savePublication(
       product.copyWith(
@@ -2500,12 +2515,14 @@ class _CatalogProductCard extends StatelessWidget {
                         ),
                         _ChannelSwitch(
                           label: 'Salão',
-                          value: product.publishedChannels.contains(
-                            'onsite_qr',
+                          value: _hasPedeOnChannel(
+                            product.publishedChannels,
+                            'onsite_waiter',
                           ),
                           onChanged: saving
                               ? null
-                              : (value) => onToggleChannel('onsite_qr', value),
+                              : (value) =>
+                                    onToggleChannel('onsite_waiter', value),
                         ),
                       ],
                     ),
@@ -2527,9 +2544,12 @@ class _CatalogProductCard extends StatelessWidget {
                   children: [
                     if (product.enabledChannels.contains('pedeon_online'))
                       const _ChannelBadge(label: 'Online', icon: Icons.public),
-                    if (product.enabledChannels.contains('onsite_qr'))
+                    if (_hasPedeOnChannel(
+                      product.enabledChannels,
+                      'onsite_waiter',
+                    ))
                       const _ChannelBadge(
-                        label: 'Salão / QR',
+                        label: 'Salão',
                         icon: Icons.table_restaurant,
                       ),
                     if (product.enabledChannels.isEmpty)
@@ -3106,9 +3126,9 @@ class _ProductEditorDialogState extends State<_ProductEditorDialog> {
                       'Site público e pedidos para entrega ou retirada',
                     ),
                     (
-                      'onsite_qr',
-                      'QR da mesa',
-                      'Autoatendimento feito pelo cliente no salão',
+                      'onsite_waiter',
+                      'Salão',
+                      'Pedidos feitos no salão pelo Edge',
                     ),
                   ])
                     CheckboxListTile(

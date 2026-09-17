@@ -1,5 +1,13 @@
 # Registro de Decisoes Tecnicas
 
+## 2026-09-17 - Canais independentes no PedeOn
+
+- Status: aprovado e implementado no ERP, Edge e tela administrativa.
+- Decisão: separar o cardápio online (`pedeon_online`), o Salão local via Edge (`onsite_waiter`) e o balcão do PDV PedeOn (`pdv_counter`). A tela administrativa não deve tratar o Salão como Online nem como um canal público.
+- Compatibilidade: o identificador legado `onsite_qr` é lido e convertido para `onsite_waiter`, evitando perda de produtos já configurados. Novos salvamentos usam somente o identificador canônico.
+- Consequências: o Edge entrega ao Salão apenas produtos liberados para o canal de salão e mantém também os itens de balcão para o PDV operacional. Categorias acompanham os produtos liberados para evitar catálogo vazio ou mistura entre canais.
+- Escopo: o PDV operacional Flutter permaneceu local e fora do commit/push, conforme a regra de publicação do projeto.
+
 ## 2026-08-20 - Saldo de estoque alterado somente por movimento
 
 - Status: aprovado e implementado localmente.
