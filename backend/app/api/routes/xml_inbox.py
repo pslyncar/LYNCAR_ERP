@@ -2,11 +2,11 @@ from datetime import date
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import require_any_permission
+from app.api.dependencies import bearer_scheme, require_any_permission
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.master_database import MasterSessionLocal
@@ -29,7 +29,6 @@ from app.services.nfe_xml import parse_nfe_xml
 from app.services.tenancy import company_code_from_token_claims, session_for_company
 
 router = APIRouter()
-bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def _digits(value: str | None) -> str:
