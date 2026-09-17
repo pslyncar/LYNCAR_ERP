@@ -40,7 +40,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
   int _receivablesView = 0;
   int _receivablesStatus = 0;
   int _receivablesPage = 0;
-  static const _financePageSize = 20;
+  static const _financePageSize = 50;
   bool _showAllAmounts = false;
   final Set<String> _revealedAmounts = {};
 
