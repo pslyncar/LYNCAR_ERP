@@ -2134,7 +2134,7 @@ class ApiClient {
     String token, {
     String? status,
     int? clientId,
-    int limit = 100,
+    int limit = 500,
   }) async {
     final params = <String, String>{'limit': '$limit'};
     if (status != null && status.isNotEmpty) params['status'] = status;

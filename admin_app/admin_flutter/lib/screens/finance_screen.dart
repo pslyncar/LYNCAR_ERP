@@ -376,7 +376,6 @@ class _FinanceScreenState extends State<FinanceScreen> {
                               due.isBefore(DateTime.now());
                         }),
                       )
-                      .take(3)
                       .toList(),
                   amountVisible: _amountVisible,
                   onToggleAmount: _toggleAmount,
