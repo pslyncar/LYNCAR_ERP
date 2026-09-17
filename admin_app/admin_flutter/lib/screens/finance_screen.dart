@@ -2594,6 +2594,9 @@ class _BatchReceivablePaymentDialogState
       .where((item) => _selected.contains(item.id))
       .fold(0, (sum, item) => sum + item.balanceAmount);
 
+  List<Receivable> get _orderedReceivables =>
+      [...widget.receivables]..sort(_compareReceivablesByOpeningDate);
+
   Future<void> _save() async {
     if (_selected.isEmpty) {
       setState(() => _error = 'Selecione pelo menos um título.');
@@ -2604,15 +2607,9 @@ class _BatchReceivablePaymentDialogState
       _error = null;
     });
     try {
-      final selected =
-          widget.receivables
-              .where((item) => _selected.contains(item.id))
-              .toList()
-            ..sort(
-              (a, b) => (a.dueDate ?? a.createdAt).compareTo(
-                b.dueDate ?? b.createdAt,
-              ),
-            );
+      final selected = _orderedReceivables
+          .where((item) => _selected.contains(item.id))
+          .toList();
       for (final receivable in selected) {
         await widget.api.payReceivable(
           widget.token,
@@ -2654,7 +2651,7 @@ class _BatchReceivablePaymentDialogState
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    for (final item in widget.receivables)
+                    for (final item in _orderedReceivables)
                       CheckboxListTile(
                         value: _selected.contains(item.id),
                         onChanged: _saving
@@ -2667,7 +2664,8 @@ class _BatchReceivablePaymentDialogState
                                 }
                               }),
                         title: Text(_receivableStatementTitle(item)),
-                        subtitle: Text('Vencimento ${_date(item.dueDate)}'),
+                        isThreeLine: true,
+                        subtitle: Text(_receivableBatchSubtitle(item)),
                         secondary: Text(
                           _money(item.balanceAmount),
                           style: const TextStyle(fontWeight: FontWeight.w900),
@@ -4296,6 +4294,30 @@ String _creditLabel(Client? client) {
   if (client == null) return '-';
   if (!client.allowCredit) return 'Bloqueado';
   return '${client.creditStatus} / ${_money(client.creditLimit)}';
+}
+
+DateTime _receivableOpeningDate(Receivable receivable) =>
+    receivable.saleSoldAt ?? receivable.createdAt;
+
+int _compareReceivablesByOpeningDate(Receivable a, Receivable b) {
+  final result = _receivableOpeningDate(a).compareTo(_receivableOpeningDate(b));
+  return result != 0 ? result : a.id.compareTo(b.id);
+}
+
+String _receivableNoteStatus(Receivable receivable) {
+  if (receivable.fiscalDocumentId == null) return 'Nota: não emitida';
+  final number = receivable.fiscalDocumentNumber;
+  if (number == null) return 'Nota: registrada';
+  return 'Nota: emitida #$number';
+}
+
+String _receivableBatchSubtitle(Receivable receivable) {
+  final opening = _dateTime(_receivableOpeningDate(receivable));
+  final due = receivable.dueDate == null
+      ? 'Vencimento -'
+      : 'Vencimento ${_date(receivable.dueDate)}';
+  return 'Data de abertura: $opening\n'
+      '${_receivableNoteStatus(receivable)} • $due';
 }
 
 String _receivableStatementTitle(Receivable receivable) {
