@@ -12,6 +12,10 @@ from app.services.fiscal_output_rules import (
     resolve_output_rule,
     resolve_output_tax_profile,
 )
+from app.services.fiscal_operation_guard import (
+    FiscalOperationContext,
+    cfop_compatibility_issues,
+)
 
 
 FiscalIssueSeverity = Literal["error", "warning", "info"]
@@ -223,6 +227,25 @@ def resolve_fiscal_product(
                 message="CFOP de saída deve ter 4 dígitos",
             )
         )
+    else:
+        context = FiscalOperationContext(
+            operation_type=(
+                operation_type
+                if operation_type in {"sale", "return", "transfer", "bonus", "remittance"}
+                else "sale"
+            ),
+            document_model=model,
+            issuer_uf=getattr(setting, "uf", None),
+            recipient_uf=uf_destination,
+        )
+        for message in cfop_compatibility_issues(cfop, context):
+            issues.append(
+                FiscalResolutionIssue(
+                    field="cfop",
+                    message=message,
+                    owner="contador",
+                )
+            )
     if origin is None or len(origin) != 1:
         issues.append(
             FiscalResolutionIssue(

@@ -73,6 +73,10 @@ from app.services.fiscal_resolver import (
     fiscal_snapshot_from_resolution,
     resolve_fiscal_product,
 )
+from app.services.fiscal_operation_guard import (
+    document_cfop_issues,
+    operation_type_from_nature,
+)
 from app.services.fiscal_document_policy import should_move_stock_for_fiscal_document
 from app.services.rtc_compliance import (
     RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
@@ -413,6 +417,11 @@ def _validate_output_rule_payload(data: dict) -> None:
     cfop = _only_digits(data.get("cfop"))
     if data.get("cfop") and len(cfop) != 4:
         raise HTTPException(status_code=400, detail="CFOP deve ter 4 digitos.")
+    if cfop and cfop[0] not in {"5", "6", "7"}:
+        raise HTTPException(
+            status_code=400,
+            detail="Regra fiscal de saida precisa usar CFOP iniciado por 5, 6 ou 7.",
+        )
     if cfop:
         data["cfop"] = cfop
     if data.get("csosn") and data.get("cst"):
@@ -918,6 +927,7 @@ def _resolved_item_tax_snapshot(
     db: Session,
     item: object | None = None,
     model: str,
+    operation_type: str = "sale",
 ) -> dict[str, str | None]:
     if product is None:
         return {}
@@ -931,6 +941,7 @@ def _resolved_item_tax_snapshot(
         product,
         item=item,
         model=model,
+        operation_type=operation_type,
         rtc_mandatory=is_rtc_mandatory(setting, date.today()),
         suggestions=suggestions,
     )
@@ -948,8 +959,16 @@ def _merged_item_tax_snapshot(
     *,
     db: Session,
     model: str,
+    operation_type: str = "sale",
 ) -> dict[str, str | None]:
-    snapshot = _resolved_item_tax_snapshot(setting, product, db=db, item=override, model=model)
+    snapshot = _resolved_item_tax_snapshot(
+        setting,
+        product,
+        db=db,
+        item=override,
+        model=model,
+        operation_type=operation_type,
+    )
     snapshot.update(_clean_item_tax_overrides(override))
     return snapshot
 
@@ -988,6 +1007,7 @@ def _replace_document_items(
                 override,
                 db=db,
                 model=document.model or "55",
+                operation_type=operation_type_from_nature(document.operation_nature),
             ),
         ))
     if not included_count:
@@ -1878,6 +1898,11 @@ def update_product_tax_profile(
         raise HTTPException(status_code=422, detail="NCM deve ter 8 digitos.")
     if data.get("cfop_sale") and len(data["cfop_sale"]) != 4:
         raise HTTPException(status_code=422, detail="CFOP deve ter 4 digitos.")
+    if data.get("cfop_sale") and data["cfop_sale"][0] not in {"5", "6", "7"}:
+        raise HTTPException(
+            status_code=422,
+            detail="CFOP de venda deve iniciar por 5, 6 ou 7. Use regras fiscais para operacoes de entrada.",
+        )
     if data.get("origin") and data["origin"] not in {"0", "1", "2", "3", "4", "5", "6", "7", "8"}:
         raise HTTPException(status_code=422, detail="Origem deve ser um codigo de 0 a 8.")
 
@@ -2047,9 +2072,10 @@ def prepare_fiscal_document_with_items(
                 **_merged_item_tax_snapshot(
                     setting,
                     product,
-                    override,
-                    db=db,
-                    model=document.model or "55",
+                override,
+                db=db,
+                model=document.model or "55",
+                operation_type=operation_type_from_nature(document.operation_nature),
                 ),
             )
         )
@@ -2182,6 +2208,7 @@ def prepare_fiscal_document_from_sales(
                     db=db,
                     item=item,
                     model=document.model or "55",
+                    operation_type=operation_type_from_nature(document.operation_nature),
                 ),
                 created_by_user_id=current_user.id,
             )
@@ -2282,9 +2309,10 @@ def prepare_manual_fiscal_document(
                 **_merged_item_tax_snapshot(
                     setting,
                     product,
-                    override,
-                    db=db,
-                    model=document.model or "55",
+                override,
+                db=db,
+                model=document.model or "55",
+                operation_type=operation_type_from_nature(document.operation_nature),
                 ),
             )
         )
@@ -2473,6 +2501,15 @@ def authorize_fiscal_document(
         if document.sale is not None
         else _manual_fiscal_sale_view(document)
     )
+    cfop_issues = document_cfop_issues(document, setting, fiscal_sale)
+    if cfop_issues:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Pre-validacao fiscal bloqueou a emissao antes da numeracao: "
+                + " ".join(cfop_issues)
+            ),
+        )
     # Never send a padded chapter (for example 00001006) to SEFAZ.  It can
     # look like an eight-digit value but is not a valid NCM item code.
     for item_index, item in enumerate(document.fiscal_items, start=1):

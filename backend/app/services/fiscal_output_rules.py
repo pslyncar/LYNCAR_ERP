@@ -78,6 +78,17 @@ def _first_configured(product: Any, rule: Any, name: str, default: Any = None) -
     return rule_value if rule_value is not None else default
 
 
+def _resolved_output_cfop(product: Any, rule: Any, default: str | None) -> str | None:
+    """Resolve CFOP from the operation rule before a product exception.
+
+    CFOP is not an intrinsic product characteristic: it changes with the
+    direction, nature and destination of the operation. Product data remains
+    an explicit fallback only when no applicable output rule supplies a CFOP.
+    """
+
+    return _clean(getattr(rule, "cfop", None)) or _product_value(product, "cfop") or default
+
+
 class _OutputTaxProductProxy:
     def __init__(self, product: Any, profile: OutputTaxProfile):
         self._product = product
@@ -284,8 +295,9 @@ def resolve_output_tax_profile(
 ) -> OutputTaxProfile:
     """Resolve a tributacao de saida sem sobrescrever o cadastro do produto.
 
-    A ordem de precedência é cadastro explícito, regra fiscal aplicável e,
-    por último, padrão seguro do emitente. A regra apenas completa lacunas.
+    A regra fiscal da operação decide o CFOP. Os demais dados do produto ainda
+    podem complementar a regra, mas um CFOP salvo no produto nunca pode
+    derrotar a regra que representa a natureza/destino da emissão.
     """
     rule = resolve_output_rule(
         setting,
@@ -312,7 +324,7 @@ def resolve_output_tax_profile(
             {"csosn": digits(resolved_csosn) or None},
         )()
         return OutputTaxProfile(
-            cfop=_first_configured(product, rule, "cfop", default_cfop),
+            cfop=_resolved_output_cfop(product, rule, default_cfop),
             origin=_first_configured(product, rule, "origin", default_origin),
             cst=_first_configured(product, rule, "cst"),
             csosn=effective_csosn(setting, rule_product, model=model),
