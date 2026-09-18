@@ -90,7 +90,7 @@ def get_receivable_or_404(db: Session, receivable_id: int) -> Receivable:
 def list_receivables(
     status_filter: str | None = Query(default=None, alias="status"),
     client_id: int | None = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=100, ge=1, le=2000),
     db: Session = Depends(get_db),
     current_user: User = Depends(
         require_any_permission("finance:view", "finance:receivables:view")

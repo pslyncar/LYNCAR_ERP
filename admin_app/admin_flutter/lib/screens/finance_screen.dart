@@ -75,7 +75,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     try {
       final results = await Future.wait([
         _api.listClients(widget.session.token),
-        _api.listReceivables(widget.session.token, limit: 500),
+        _api.listReceivables(widget.session.token, limit: 1000),
         _api.listSuppliers(widget.session.token),
         _api.listPayables(widget.session.token, limit: 500),
         _api.listProducts(widget.session.token, active: true, limit: 500),
