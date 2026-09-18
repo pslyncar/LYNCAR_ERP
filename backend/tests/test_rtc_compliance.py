@@ -225,7 +225,7 @@ class RtcComplianceTests(unittest.TestCase):
         self.assertEqual(same_state.cfop, "5102")
         self.assertEqual(other_state.cfop, "6102")
 
-    def test_explicit_product_values_win_over_automatic_rule(self) -> None:
+    def test_operation_rule_wins_over_product_cfop_but_product_keeps_tax_details(self) -> None:
         issuer = setting(crt="3", tax_regime="regime_normal")
         issuer.output_rules = [
             SimpleNamespace(
@@ -275,7 +275,7 @@ class RtcComplianceTests(unittest.TestCase):
 
         profile = resolve_output_tax_profile(issuer, current, model="65")
 
-        self.assertEqual(profile.cfop, "5102")
+        self.assertEqual(profile.cfop, "5405")
         self.assertEqual(profile.origin, "0")
         self.assertEqual(profile.cst, "00")
         self.assertEqual(profile.icms_rate, Decimal("12"))
