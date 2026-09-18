@@ -1544,45 +1544,73 @@ class _PriorityQueue extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final account = accounts[index];
                   final key = 'priority-${account.client?.id ?? account.name}';
-                  return ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    leading: CircleAvatar(
-                      radius: 17,
-                      backgroundColor: const Color(0xFFFFEDD5),
-                      child: Text(
-                        account.name.trim().isEmpty
-                            ? '?'
-                            : account.name.trim()[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: Color(0xFFC2410C),
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    title: Text(
-                      account.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '${account.openCount} título(s) em aberto',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                  return SizedBox(
+                    height: 72,
+                    child: Row(
                       children: [
-                        _AmountWithEye(
-                          value: account.balance,
-                          visible: amountVisible(key),
-                          onToggle: () => onToggleAmount(key),
-                          strong: true,
+                        CircleAvatar(
+                          radius: 17,
+                          backgroundColor: const Color(0xFFFFEDD5),
+                          child: Text(
+                            account.name.trim().isEmpty
+                                ? '?'
+                                : account.name.trim()[0].toUpperCase(),
+                            style: const TextStyle(
+                              color: Color(0xFFC2410C),
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                         ),
-                        TextButton(
-                          onPressed: () => onOpen(account),
-                          child: const Text('Abrir extrato'),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                account.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '${account.openCount} título(s) em aberto',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            _AmountWithEye(
+                              value: account.balance,
+                              visible: amountVisible(key),
+                              onToggle: () => onToggleAmount(key),
+                              strong: true,
+                            ),
+                            const SizedBox(height: 2),
+                            SizedBox(
+                              height: 30,
+                              child: TextButton(
+                                onPressed: () => onOpen(account),
+                                style: TextButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                  ),
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text('Abrir extrato'),
+                              ),
+                            ),
+                          ],
                         ),
                       ],
                     ),
