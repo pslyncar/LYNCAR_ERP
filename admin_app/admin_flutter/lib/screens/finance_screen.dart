@@ -546,14 +546,26 @@ class _FinanceScreenState extends State<FinanceScreen> {
               const LinearProgressIndicator()
             else if (_error != null)
               ErrorPanel(message: _error!, onRetry: _load)
-            else if (_tab == 0)
+            else if (_tab == 0) ...[
+              if (totalPages > 1) ...[
+                _FinancePagination(
+                  page: effectivePage,
+                  pageCount: totalPages,
+                  total: accounts.length,
+                  pageSize: _financePageSize,
+                  onPageChanged: (page) =>
+                      setState(() => _receivablesPage = page),
+                ),
+                const SizedBox(height: 12),
+              ],
               _ReceivablesByClient(
                 accounts: visibleAccounts,
+                totalAccounts: accounts.length,
                 onOpen: _openStatement,
                 amountVisible: _amountVisible,
                 onToggleAmount: _toggleAmount,
-              )
-            else
+              ),
+            ] else
               _PayablesPanel(
                 payables: _filteredPayables(),
                 suppliers: _suppliers,
@@ -1522,54 +1534,62 @@ class _PriorityQueue extends StatelessWidget {
               ),
             )
           else
-            for (final account in accounts)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                dense: true,
-                leading: CircleAvatar(
-                  radius: 17,
-                  backgroundColor: const Color(0xFFFFEDD5),
-                  child: Text(
-                    account.name.trim().isEmpty
-                        ? '?'
-                        : account.name.trim()[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: Color(0xFFC2410C),
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-                title: Text(
-                  account.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                subtitle: Text(
-                  '${account.openCount} título(s) em aberto',
-                  style: const TextStyle(fontSize: 12),
-                ),
-                trailing: Wrap(
-                  spacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _AmountWithEye(
-                      value: account.balance,
-                      visible: amountVisible(
-                        'priority-${account.client?.id ?? account.name}',
+            SizedBox(
+              height: math.min(360, accounts.length * 72.0),
+              child: ListView.separated(
+                primary: false,
+                padding: EdgeInsets.zero,
+                itemCount: accounts.length,
+                separatorBuilder: (_, _) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final account = accounts[index];
+                  final key = 'priority-${account.client?.id ?? account.name}';
+                  return ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    leading: CircleAvatar(
+                      radius: 17,
+                      backgroundColor: const Color(0xFFFFEDD5),
+                      child: Text(
+                        account.name.trim().isEmpty
+                            ? '?'
+                            : account.name.trim()[0].toUpperCase(),
+                        style: const TextStyle(
+                          color: Color(0xFFC2410C),
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
-                      onToggle: () => onToggleAmount(
-                        'priority-${account.client?.id ?? account.name}',
-                      ),
-                      strong: true,
                     ),
-                    OutlinedButton(
-                      onPressed: () => onOpen(account),
-                      child: const Text('Abrir extrato'),
+                    title: Text(
+                      account.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                  ],
-                ),
+                    subtitle: Text(
+                      '${account.openCount} título(s) em aberto',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    trailing: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        _AmountWithEye(
+                          value: account.balance,
+                          visible: amountVisible(key),
+                          onToggle: () => onToggleAmount(key),
+                          strong: true,
+                        ),
+                        TextButton(
+                          onPressed: () => onOpen(account),
+                          child: const Text('Abrir extrato'),
+                        ),
+                      ],
+                    ),
+                  );
+                },
               ),
+            ),
         ],
       ),
     );
@@ -1579,12 +1599,14 @@ class _PriorityQueue extends StatelessWidget {
 class _ReceivablesByClient extends StatelessWidget {
   const _ReceivablesByClient({
     required this.accounts,
+    required this.totalAccounts,
     required this.onOpen,
     required this.amountVisible,
     required this.onToggleAmount,
   });
 
   final List<_ClientReceivables> accounts;
+  final int totalAccounts;
   final ValueChanged<_ClientReceivables> onOpen;
   final bool Function(String key) amountVisible;
   final ValueChanged<String> onToggleAmount;
@@ -1614,7 +1636,7 @@ class _ReceivablesByClient extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  '${accounts.length} cliente(s)',
+                  '${accounts.length} de $totalAccounts cliente(s)',
                   style: const TextStyle(color: Color(0xFF64748B)),
                 ),
               ],
