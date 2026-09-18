@@ -2135,8 +2135,10 @@ class ApiClient {
     String? status,
     int? clientId,
     int limit = 500,
+    int offset = 0,
   }) async {
     final params = <String, String>{'limit': '$limit'};
+    if (offset > 0) params['offset'] = '$offset';
     if (status != null && status.isNotEmpty) params['status'] = status;
     if (clientId != null) params['client_id'] = '$clientId';
     final uri = Uri.parse(
