@@ -231,6 +231,24 @@ def _reserve_fiscal_number(
     return document, setting
 
 
+def _can_discard_unnumbered_fiscal_draft(document: FiscalDocument) -> bool:
+    """Only discard internal drafts that never entered the fiscal sequence."""
+
+    return (
+        document.status in {"draft", "pending_certificate", "pending_configuration"}
+        and document.number is None
+        and document.series is None
+        and document.access_key is None
+        and document.xml_generated is None
+        and document.xml_signed is None
+        and document.xml_authorized is None
+        and document.sefaz_protocol is None
+        and document.issued_at is None
+        and document.authorized_at is None
+        and document.cancelled_at is None
+    )
+
+
 def _create_timeout_contingency(
     db: Session,
     *,
@@ -2317,6 +2335,48 @@ def update_fiscal_document(
     db.commit()
     db.refresh(document)
     return document
+
+
+@router.delete("/documents/{document_id}/draft", status_code=status.HTTP_204_NO_CONTENT)
+def discard_unnumbered_fiscal_draft(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("fiscal:emit")),
+) -> Response:
+    """Remove a pre-nota interna only before it consumes a fiscal number."""
+
+    document = db.scalar(
+        select(FiscalDocument)
+        .where(FiscalDocument.id == document_id)
+        .with_for_update()
+    )
+    if document is None:
+        raise HTTPException(status_code=404, detail="Documento fiscal nao encontrado.")
+    if not _can_discard_unnumbered_fiscal_draft(document):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Somente rascunho sem numero, chave, XML ou transmissao pode ser descartado. "
+                "Nota ja numerada deve ser corrigida/retransmitida, cancelada ou inutilizada."
+            ),
+        )
+    existing_job = db.scalar(
+        select(FiscalTransmissionJob.id)
+        .where(FiscalTransmissionJob.document_id == document.id)
+        .limit(1)
+    )
+    if existing_job is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="O rascunho possui uma transmissao registrada e nao pode ser descartado.",
+        )
+
+    # Items and the sales grouped by Financeiro are linked with delete cascade.
+    # The original sales and receivables stay intact and no longer report this
+    # document as 'preparada' after the link is removed.
+    db.delete(document)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post(

@@ -2643,6 +2643,19 @@ class ApiClient {
     return FiscalDocument.fromJson(_decodeResponse(response));
   }
 
+  Future<void> discardUnnumberedFiscalDraft(
+    String token,
+    int documentId,
+  ) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/fiscal/documents/$documentId/draft'),
+      headers: _authHeaders(token),
+    );
+    if (response.statusCode >= 400) {
+      _decodeResponse(response);
+    }
+  }
+
   Future<FiscalDocument> transmitFiscalContingencyDocument(
     String token,
     int documentId,

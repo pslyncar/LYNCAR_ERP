@@ -527,6 +527,15 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
                                             label: 'Editar / revisar rascunho',
                                           ),
                                         ),
+                                      if (_canDiscardDraft(document))
+                                        const PopupMenuItem(
+                                          value: 'discard_draft',
+                                          child: _ActionLine(
+                                            icon: Icons.delete_outline,
+                                            label: 'Descartar rascunho',
+                                            danger: true,
+                                          ),
+                                        ),
                                       if (_canAuthorize(document))
                                         PopupMenuItem(
                                           value: 'authorize',
@@ -650,6 +659,16 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         document.status != 'authorized' &&
         document.status != 'cancelled' &&
         document.status != 'contingency_offline';
+  }
+
+  bool _canDiscardDraft(FiscalDocument document) {
+    return _canEmit &&
+        document.number == null &&
+        {
+          'draft',
+          'pending_certificate',
+          'pending_configuration',
+        }.contains(document.status);
   }
 
   // Transitional implementation retained only while its product/client selectors
@@ -1786,6 +1805,60 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         await _downloadXml(document);
       case 'cancel':
         await _cancelDocument(document);
+      case 'discard_draft':
+        await _discardDraft(document);
+    }
+  }
+
+  Future<void> _discardDraft(FiscalDocument document) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Descartar rascunho fiscal?'),
+        content: const Text(
+          'Este rascunho ainda não possui número fiscal e não foi enviado à SEFAZ. '
+          'A venda e os títulos financeiros serão preservados; eles apenas deixarão de '
+          'mostrar a nota como preparada.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Voltar'),
+          ),
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFB91C1C),
+            ),
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Descartar rascunho'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _error = null);
+    try {
+      await _api.discardUnnumberedFiscalDraft(
+        widget.session.token,
+        document.id,
+      );
+      if (!mounted) return;
+      setState(() {
+        _documents = _documents
+            .where((item) => item.id != document.id)
+            .toList(growable: false);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Rascunho descartado. Nenhuma numeração fiscal foi usada.',
+          ),
+        ),
+      );
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
     }
   }
 
