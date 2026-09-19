@@ -1,7 +1,9 @@
 {
     "name": "PedeOn by Lyncar",
     "short_name": "PedeOn",
-    "start_url": ".",
+    "id": "/cardapio/",
+    "start_url": "/cardapio/",
+    "scope": "/cardapio/",
     "display": "standalone",
     "background_color": "#F8F5F0",
     "theme_color": "#075E6F",
@@ -9,13 +11,13 @@
     "prefer_related_applications": false,
     "icons": [
         {
-            "src": "icons/Icon-192.png",
-            "sizes": "192x192",
+            "src": "/cardapio/favicon.png?v=2",
+            "sizes": "any",
             "type": "image/png"
         },
         {
-            "src": "icons/Icon-512.png",
-            "sizes": "512x512",
+            "src": "/cardapio/favicon.png?v=2",
+            "sizes": "any",
             "type": "image/png"
         },
         {
