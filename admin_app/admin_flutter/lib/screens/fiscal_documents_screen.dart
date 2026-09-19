@@ -46,6 +46,12 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
 
   bool get _canEmit => widget.session.can('fiscal:emit');
   bool get _canCancel => widget.session.can('fiscal:cancel');
+  bool get _isSimplesOrMei {
+    final setting = _settings;
+    if (setting == null) return false;
+    return {'1', '2', '4'}.contains(setting.crt?.trim()) ||
+        {'mei', 'simples_nacional'}.contains(setting.taxRegime?.trim());
+  }
 
   @override
   void initState() {
@@ -187,6 +193,11 @@ class _FiscalDocumentsScreenState extends State<FiscalDocumentsScreen> {
         onSave: _saveCorrection,
         onLoadFiscalSuggestion: _loadItemFiscalSuggestion,
         onSaveFiscalToProduct: _saveItemFiscalToProduct,
+        onSelectFiscalProduct: _selectFiscalProduct,
+        showIbsCbsSuggestions: true,
+        ibsCbsLegalNotice: _isSimplesOrMei
+            ? 'Para MEI e Simples Nacional, IBS/CBS é apenas preparação: em 2026 não é exigido; a regra passa a produzir efeitos em 2027.'
+            : 'IBS/CBS é uma sugestão de transição. Aplique somente se corresponder ao enquadramento fiscal da operação.',
       );
     }
     final filtered = _filteredDocuments;

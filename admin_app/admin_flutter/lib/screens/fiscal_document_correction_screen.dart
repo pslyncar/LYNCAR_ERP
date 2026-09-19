@@ -16,6 +16,9 @@ class FiscalDocumentCorrectionScreen extends StatefulWidget {
     required this.onSave,
     required this.onLoadFiscalSuggestion,
     required this.onSaveFiscalToProduct,
+    required this.onSelectFiscalProduct,
+    required this.showIbsCbsSuggestions,
+    this.ibsCbsLegalNotice,
   });
 
   final FiscalDocument document;
@@ -30,6 +33,10 @@ class FiscalDocumentCorrectionScreen extends StatefulWidget {
   final Future<FiscalAssistantResponse> Function(FiscalDraftItem item)
   onLoadFiscalSuggestion;
   final Future<void> Function(FiscalDraftItem item) onSaveFiscalToProduct;
+  final Future<FiscalProductLookup?> Function(BuildContext context)
+  onSelectFiscalProduct;
+  final bool showIbsCbsSuggestions;
+  final String? ibsCbsLegalNotice;
 
   @override
   State<FiscalDocumentCorrectionScreen> createState() =>
@@ -255,6 +262,27 @@ class _FiscalDocumentCorrectionScreenState
     }
   }
 
+  Future<void> _addProduct() async {
+    final product = await widget.onSelectFiscalProduct(context);
+    if (product == null || !mounted) return;
+    final item = FiscalDraftItem(
+      fiscalProductId: product.id,
+      fiscalProductName: product.name,
+      fiscalDescription: product.name,
+      quantity: 1,
+      unit: product.unit,
+      unitPrice: product.salePrice,
+      discountAmount: 0,
+      totalPrice: product.salePrice,
+      barcode: product.barcode,
+      adjustmentReason: 'Produto adicionado na revisão da pré-nota fiscal.',
+    );
+    setState(() {
+      _items.add(item);
+      _itemControllers.add(_FiscalItemControllers(item));
+    });
+  }
+
   Future<void> _loadFiscalSuggestion(int index) async {
     final current = _itemControllers[index].buildItem(_items[index]);
     final productId = current.fiscalProductId ?? current.originalProductId;
@@ -271,21 +299,29 @@ class _FiscalDocumentCorrectionScreenState
     });
     try {
       final response = await widget.onLoadFiscalSuggestion(current);
-      final applied = _itemControllers[index].applyBestFiscalSuggestion(
-        response,
-      );
       if (!mounted) return;
       setState(() {
         _itemControllers[index].expanded = true;
         _itemControllers[index].fiscalAssistant = response;
-        final hasOfficialSuggestions =
-            response.ncmOfficialSuggestions.isNotEmpty ||
-            response.ibsCbsOfficialSuggestions.isNotEmpty;
-        _itemControllers[index].fiscalSuggestionMessage = applied
-            ? 'Sugestão fiscal aplicada pelo motor. Revise os campos e salve no produto se estiver correto.'
-            : hasOfficialSuggestions
-            ? 'O motor encontrou opções oficiais de apoio abaixo. Escolha a correta com o contador/responsável fiscal e salve no produto.'
-            : 'O motor não achou sugestão fiscal segura para esse produto ainda. Preencha uma vez e salve no produto para aprender.';
+        final controller = _itemControllers[index];
+        final hasSuggestions =
+            (controller.ncm.text.trim().isEmpty &&
+                response.ncmOfficialSuggestions.isNotEmpty) ||
+            response.suggestions.any(controller.canApplyClassicSuggestion) ||
+            response.collectiveSuggestions.any(
+              (suggestion) => controller.canApplyCollectiveSuggestion(
+                suggestion,
+                includeIbsCbs: widget.showIbsCbsSuggestions,
+              ),
+            ) ||
+            (widget.showIbsCbsSuggestions &&
+                response.ibsCbsOfficialSuggestions.any(
+                  controller.canApplyIbsCbsSuggestion,
+                ));
+        controller.suggestionsExpanded = hasSuggestions;
+        controller.fiscalSuggestionMessage = hasSuggestions
+            ? 'Sugestões apenas para campos ainda em branco. Escolha a que se aplica; nada foi preenchido automaticamente.'
+            : 'Não há sugestão para os campos pendentes deste item. Os campos já preenchidos não são substituídos.';
       });
     } catch (error) {
       if (mounted) {
@@ -477,6 +513,35 @@ class _FiscalDocumentCorrectionScreenState
                     icon: Icons.inventory_2_outlined,
                     child: Column(
                       children: [
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              if (_itemControllers.any(
+                                (item) => item.suggestionsExpanded,
+                              ))
+                                OutlinedButton.icon(
+                                  onPressed: () => setState(() {
+                                    for (final item in _itemControllers) {
+                                      item.suggestionsExpanded = false;
+                                    }
+                                  }),
+                                  icon: const Icon(Icons.unfold_less),
+                                  label: const Text(
+                                    'Ocultar todas as sugestões',
+                                  ),
+                                ),
+                              OutlinedButton.icon(
+                                onPressed: _saving ? null : _addProduct,
+                                icon: const Icon(Icons.add),
+                                label: const Text('Adicionar produto à nota'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
                         for (
                           var index = 0;
                           index < _itemControllers.length;
@@ -528,21 +593,58 @@ class _FiscalDocumentCorrectionScreenState
                             ),
                             fiscalSuggestionText:
                                 _itemControllers[index].fiscalSuggestionMessage,
+                            suggestionsExpanded:
+                                _itemControllers[index].suggestionsExpanded,
+                            onToggleSuggestions: () => setState(
+                              () =>
+                                  _itemControllers[index].suggestionsExpanded =
+                                      !_itemControllers[index]
+                                          .suggestionsExpanded,
+                            ),
+                            classicTaxSuggestions:
+                                (_itemControllers[index]
+                                            .fiscalAssistant
+                                            ?.suggestions ??
+                                        const [])
+                                    .where(
+                                      _itemControllers[index]
+                                          .canApplyClassicSuggestion,
+                                    )
+                                    .toList(),
                             ncmOfficialSuggestions:
-                                _itemControllers[index]
-                                    .fiscalAssistant
-                                    ?.ncmOfficialSuggestions ??
-                                const [],
+                                _itemControllers[index].ncm.text.trim().isEmpty
+                                ? _itemControllers[index]
+                                          .fiscalAssistant
+                                          ?.ncmOfficialSuggestions ??
+                                      const []
+                                : const [],
                             collectiveSuggestions:
-                                _itemControllers[index]
-                                    .fiscalAssistant
-                                    ?.collectiveSuggestions ??
-                                const [],
+                                (_itemControllers[index]
+                                            .fiscalAssistant
+                                            ?.collectiveSuggestions ??
+                                        const [])
+                                    .where(
+                                      (suggestion) => _itemControllers[index]
+                                          .canApplyCollectiveSuggestion(
+                                            suggestion,
+                                            includeIbsCbs:
+                                                widget.showIbsCbsSuggestions,
+                                          ),
+                                    )
+                                    .toList(),
                             ibsCbsOfficialSuggestions:
-                                _itemControllers[index]
-                                    .fiscalAssistant
-                                    ?.ibsCbsOfficialSuggestions ??
-                                const [],
+                                widget.showIbsCbsSuggestions
+                                ? (_itemControllers[index]
+                                              .fiscalAssistant
+                                              ?.ibsCbsOfficialSuggestions ??
+                                          const [])
+                                      .where(
+                                        _itemControllers[index]
+                                            .canApplyIbsCbsSuggestion,
+                                      )
+                                      .toList()
+                                : const [],
+                            ibsCbsLegalNotice: widget.ibsCbsLegalNotice,
                             loadingFiscalSuggestion:
                                 _itemControllers[index].loadingFiscalSuggestion,
                             onLoadFiscalSuggestion:
@@ -558,21 +660,36 @@ class _FiscalDocumentCorrectionScreenState
                               _itemControllers[index].fiscalSuggestionMessage =
                                   'NCM oficial ${suggestion.code} aplicado. Confira com contador/classificação fiscal antes de emitir.';
                             }),
-                            onApplyCollectiveSuggestion: (suggestion) => setState(() {
-                              _itemControllers[index].applyCollectiveFiscalSuggestion(
-                                suggestion,
-                              );
-                              _itemControllers[index].expanded = true;
-                              _itemControllers[index].fiscalSuggestionMessage =
-                                  'Sugestão coletiva aplicada após sua confirmação. Confira os dados fiscais antes de reenviar.';
-                            }),
+                            onApplyClassicSuggestion: (suggestion) => setState(
+                              () {
+                                _itemControllers[index]
+                                    .applyClassicTaxSuggestion(suggestion);
+                                _itemControllers[index].expanded = true;
+                                _itemControllers[index]
+                                        .fiscalSuggestionMessage =
+                                    'Sugestão de ICMS/PIS/COFINS aplicada somente nos campos em branco. Confira antes de reenviar.';
+                              },
+                            ),
+                            onApplyCollectiveSuggestion: (suggestion) =>
+                                setState(() {
+                                  _itemControllers[index]
+                                      .applyCollectiveFiscalSuggestion(
+                                        suggestion,
+                                      );
+                                  _itemControllers[index].expanded = true;
+                                  _itemControllers[index]
+                                          .fiscalSuggestionMessage =
+                                      'Sugestão coletiva aplicada após sua confirmação. Confira os dados fiscais antes de reenviar.';
+                                }),
                             onApplyOfficialIbsCbs: (suggestion) => setState(() {
-                              _itemControllers[index].ibsCbsCst.text =
-                                  suggestion.cst;
-                              _itemControllers[index]
-                                      .ibsCbsClassification
-                                      .text =
-                                  suggestion.cclassTrib;
+                              _FiscalItemControllers._fillIfEmpty(
+                                _itemControllers[index].ibsCbsCst,
+                                suggestion.cst,
+                              );
+                              _FiscalItemControllers._fillIfEmpty(
+                                _itemControllers[index].ibsCbsClassification,
+                                suggestion.cclassTrib,
+                              );
                               _itemControllers[index].expanded = true;
                               _itemControllers[index].fiscalSuggestionMessage =
                                   'IBS/CBS oficial CST ${suggestion.cst} e cClassTrib ${suggestion.cclassTrib} aplicados. Confira a hipótese fiscal antes de emitir.';
@@ -822,6 +939,7 @@ class _FiscalItemControllers {
       originalTotal = item.totalPrice;
 
   bool expanded = false;
+  bool suggestionsExpanded = false;
   bool _valueEdited = false;
   bool loadingFiscalSuggestion = false;
   String? fiscalSuggestionMessage;
@@ -854,84 +972,75 @@ class _FiscalItemControllers {
 
   double get total => _valueEdited ? calculatedTotal : originalTotal;
 
-  bool applyBestFiscalSuggestion(FiscalAssistantResponse response) {
-    FiscalSuggestion? suggestion;
-    for (final item in response.suggestions) {
-      if (_hasValue(item.ncm) ||
-          _hasValue(item.cest) ||
-          _hasValue(item.cfop) ||
-          _hasValue(item.origin) ||
-          _hasValue(item.cst) ||
-          _hasValue(item.csosn) ||
-          _hasValue(item.pisCst) ||
-          _hasValue(item.cofinsCst) ||
-          _hasValue(item.ibsCbsCst) ||
-          _hasValue(item.ibsCbsClassification) ||
-          _hasValue(item.selectiveTaxCst) ||
-          _hasValue(item.selectiveTaxClassification)) {
-        suggestion = item;
-        break;
-      }
+  bool canApplyClassicSuggestion(FiscalSuggestion suggestion) =>
+      (_isEmpty(ncm) && _hasValue(suggestion.ncm)) ||
+      (_isEmpty(cest) && _hasValue(suggestion.cest)) ||
+      (_isEmpty(cfop) && _hasValue(suggestion.cfop)) ||
+      (_isEmpty(origin) && _hasValue(suggestion.origin)) ||
+      ((_isEmpty(cst) && _isEmpty(csosn)) &&
+          (_hasValue(suggestion.cst) || _hasValue(suggestion.csosn))) ||
+      (_isEmpty(pisCst) && _hasValue(suggestion.pisCst)) ||
+      (_isEmpty(cofinsCst) && _hasValue(suggestion.cofinsCst));
+
+  bool canApplyCollectiveSuggestion(
+    FiscalCollectiveSuggestion suggestion, {
+    required bool includeIbsCbs,
+  }) =>
+      (_isEmpty(ncm) && _hasValue(suggestion.ncm)) ||
+      (_isEmpty(cest) && _hasValue(suggestion.cest)) ||
+      (_isEmpty(cfop) && _hasValue(suggestion.cfop)) ||
+      (_isEmpty(origin) && _hasValue(suggestion.origin)) ||
+      ((_isEmpty(cst) && _isEmpty(csosn)) &&
+          (_hasValue(suggestion.cst) || _hasValue(suggestion.csosn))) ||
+      (includeIbsCbs &&
+          ((_isEmpty(ibsCbsCst) && _hasValue(suggestion.ibsCbsCst)) ||
+              (_isEmpty(ibsCbsClassification) &&
+                  _hasValue(suggestion.ibsCbsClassification)) ||
+              (_isEmpty(selectiveTaxCst) &&
+                  _hasValue(suggestion.selectiveTaxCst)) ||
+              (_isEmpty(selectiveTaxClassification) &&
+                  _hasValue(suggestion.selectiveTaxClassification))));
+
+  bool canApplyIbsCbsSuggestion(FiscalIbsCbsOfficialSuggestion suggestion) =>
+      (_isEmpty(ibsCbsCst) && _hasValue(suggestion.cst)) ||
+      (_isEmpty(ibsCbsClassification) && _hasValue(suggestion.cclassTrib));
+
+  void applyClassicTaxSuggestion(FiscalSuggestion suggestion) {
+    _fillIfEmpty(ncm, suggestion.ncm);
+    _fillIfEmpty(cest, suggestion.cest);
+    _fillIfEmpty(cfop, suggestion.cfop);
+    _fillIfEmpty(origin, suggestion.origin);
+    if (_isEmpty(cst) && _isEmpty(csosn)) {
+      _fillIfEmpty(cst, suggestion.cst);
+      _fillIfEmpty(csosn, suggestion.csosn);
     }
-    var applied = false;
-    if (suggestion != null) {
-      applied = _fillIfEmpty(ncm, suggestion.ncm) || applied;
-      applied = _fillIfEmpty(cest, suggestion.cest) || applied;
-      applied = _fillIfEmpty(cfop, suggestion.cfop) || applied;
-      applied = _fillIfEmpty(origin, suggestion.origin) || applied;
-      applied = _fillIfEmpty(cst, suggestion.cst) || applied;
-      applied = _fillIfEmpty(csosn, suggestion.csosn) || applied;
-      applied = _fillIfEmpty(pisCst, suggestion.pisCst) || applied;
-      applied = _fillIfEmpty(cofinsCst, suggestion.cofinsCst) || applied;
-      applied = _fillIfEmpty(ibsCbsCst, suggestion.ibsCbsCst) || applied;
-      applied =
-          _fillIfEmpty(ibsCbsClassification, suggestion.ibsCbsClassification) ||
-          applied;
-      applied =
-          _fillIfEmpty(selectiveTaxCst, suggestion.selectiveTaxCst) || applied;
-      applied =
-          _fillIfEmpty(
-            selectiveTaxClassification,
-            suggestion.selectiveTaxClassification,
-          ) ||
-          applied;
-    }
-    if (response.ibsCbsOfficialSuggestions.isNotEmpty) {
-      final official = response.ibsCbsOfficialSuggestions.first;
-      applied = _fillIfEmpty(ibsCbsCst, official.cst) || applied;
-      applied =
-          _fillIfEmpty(ibsCbsClassification, official.cclassTrib) || applied;
-    }
-    // Official NCM rows are alternatives, not an automatic fiscal decision.
-    // They are deliberately applied only when the operator selects one in the
-    // suggestion list.
-    if (!applied) return false;
-    expanded = true;
-    return true;
+    _fillIfEmpty(pisCst, suggestion.pisCst);
+    _fillIfEmpty(cofinsCst, suggestion.cofinsCst);
   }
 
   void applyCollectiveFiscalSuggestion(FiscalCollectiveSuggestion suggestion) {
-    _replaceIfPresent(ncm, suggestion.ncm);
-    _replaceIfPresent(cest, suggestion.cest);
-    _replaceIfPresent(cfop, suggestion.cfop);
-    _replaceIfPresent(origin, suggestion.origin);
-    _replaceIfPresent(cst, suggestion.cst);
-    _replaceIfPresent(csosn, suggestion.csosn);
-    _replaceIfPresent(ibsCbsCst, suggestion.ibsCbsCst);
-    _replaceIfPresent(ibsCbsClassification, suggestion.ibsCbsClassification);
-    _replaceIfPresent(selectiveTaxCst, suggestion.selectiveTaxCst);
-    _replaceIfPresent(
+    _fillIfEmpty(ncm, suggestion.ncm);
+    _fillIfEmpty(cest, suggestion.cest);
+    _fillIfEmpty(cfop, suggestion.cfop);
+    _fillIfEmpty(origin, suggestion.origin);
+    if (_isEmpty(cst) && _isEmpty(csosn)) {
+      _fillIfEmpty(cst, suggestion.cst);
+      _fillIfEmpty(csosn, suggestion.csosn);
+    }
+    _fillIfEmpty(ibsCbsCst, suggestion.ibsCbsCst);
+    _fillIfEmpty(ibsCbsClassification, suggestion.ibsCbsClassification);
+    _fillIfEmpty(selectiveTaxCst, suggestion.selectiveTaxCst);
+    _fillIfEmpty(
       selectiveTaxClassification,
       suggestion.selectiveTaxClassification,
     );
     markValueEdited();
   }
 
-  void _replaceIfPresent(TextEditingController controller, String? value) {
-    if (value?.trim().isNotEmpty == true) controller.text = value!.trim();
-  }
-
   static bool _hasValue(String? value) => value?.trim().isNotEmpty == true;
+
+  static bool _isEmpty(TextEditingController controller) =>
+      controller.text.trim().isEmpty;
 
   static bool _fillIfEmpty(TextEditingController controller, String? value) {
     if (controller.text.trim().isEmpty && value?.trim().isNotEmpty == true) {

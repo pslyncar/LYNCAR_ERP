@@ -29,6 +29,23 @@ String _ibsCbsSuggestionLabel(FiscalIbsCbsOfficialSuggestion suggestion) {
       '${detail.isEmpty ? '' : ' • $detail'}';
 }
 
+String _classicTaxSuggestionLabel(FiscalSuggestion suggestion) {
+  final fields = <String>[
+    if (suggestion.ncm?.trim().isNotEmpty == true) 'NCM ${suggestion.ncm}',
+    if (suggestion.cfop?.trim().isNotEmpty == true) 'CFOP ${suggestion.cfop}',
+    if (suggestion.cst?.trim().isNotEmpty == true) 'CST ${suggestion.cst}',
+    if (suggestion.csosn?.trim().isNotEmpty == true)
+      'CSOSN ${suggestion.csosn}',
+    if (suggestion.pisCst?.trim().isNotEmpty == true)
+      'PIS ${suggestion.pisCst}',
+    if (suggestion.cofinsCst?.trim().isNotEmpty == true)
+      'COFINS ${suggestion.cofinsCst}',
+  ];
+  return fields.isEmpty
+      ? 'Dados de tributação disponíveis'
+      : fields.join(' • ');
+}
+
 class FiscalItemCard extends StatelessWidget {
   const FiscalItemCard({
     super.key,
@@ -58,11 +75,16 @@ class FiscalItemCard extends StatelessWidget {
     required this.onChanged,
     required this.onValueChanged,
     this.fiscalSuggestionText,
+    this.suggestionsExpanded = false,
+    this.onToggleSuggestions,
+    this.classicTaxSuggestions = const [],
     this.ncmOfficialSuggestions = const [],
     this.collectiveSuggestions = const [],
     this.ibsCbsOfficialSuggestions = const [],
+    this.ibsCbsLegalNotice,
     this.loadingFiscalSuggestion = false,
     this.onLoadFiscalSuggestion,
+    this.onApplyClassicSuggestion,
     this.onApplyOfficialNcm,
     this.onApplyCollectiveSuggestion,
     this.onApplyOfficialIbsCbs,
@@ -96,11 +118,16 @@ class FiscalItemCard extends StatelessWidget {
   final VoidCallback onChanged;
   final ValueChanged<String> onValueChanged;
   final String? fiscalSuggestionText;
+  final bool suggestionsExpanded;
+  final VoidCallback? onToggleSuggestions;
+  final List<FiscalSuggestion> classicTaxSuggestions;
   final List<FiscalNcmOfficialSuggestion> ncmOfficialSuggestions;
   final List<FiscalCollectiveSuggestion> collectiveSuggestions;
   final List<FiscalIbsCbsOfficialSuggestion> ibsCbsOfficialSuggestions;
+  final String? ibsCbsLegalNotice;
   final bool loadingFiscalSuggestion;
   final VoidCallback? onLoadFiscalSuggestion;
+  final ValueChanged<FiscalSuggestion>? onApplyClassicSuggestion;
   final ValueChanged<FiscalNcmOfficialSuggestion>? onApplyOfficialNcm;
   final ValueChanged<FiscalCollectiveSuggestion>? onApplyCollectiveSuggestion;
   final ValueChanged<FiscalIbsCbsOfficialSuggestion>? onApplyOfficialIbsCbs;
@@ -117,6 +144,12 @@ class FiscalItemCard extends StatelessWidget {
     final unitText = unit.text.trim().isEmpty
         ? 'UN'
         : unit.text.trim().toUpperCase();
+    final hasSuggestionContent =
+        fiscalSuggestionText?.trim().isNotEmpty == true ||
+        classicTaxSuggestions.isNotEmpty ||
+        ncmOfficialSuggestions.isNotEmpty ||
+        collectiveSuggestions.isNotEmpty ||
+        ibsCbsOfficialSuggestions.isNotEmpty;
     return Card(
       key: ValueKey('fiscal-item-$index'),
       color: const Color(0xFFF8FAFC),
@@ -130,7 +163,17 @@ class FiscalItemCard extends StatelessWidget {
               runSpacing: 10,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                SizedBox(width: 520, child: productField),
+                SizedBox(
+                  width: 520,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      productField,
+                      const SizedBox(height: 10),
+                      _text(description, 'Descrição que sairá na nota *'),
+                    ],
+                  ),
+                ),
                 SizedBox(
                   width: 180,
                   child: _text(
@@ -188,6 +231,20 @@ class FiscalItemCard extends StatelessWidget {
                           : 'Buscar sugestão fiscal',
                     ),
                   ),
+                if (hasSuggestionContent && onToggleSuggestions != null)
+                  OutlinedButton.icon(
+                    onPressed: onToggleSuggestions,
+                    icon: Icon(
+                      suggestionsExpanded
+                          ? Icons.expand_less
+                          : Icons.expand_more,
+                    ),
+                    label: Text(
+                      suggestionsExpanded
+                          ? 'Ocultar sugestões'
+                          : 'Ver sugestões fiscais',
+                    ),
+                  ),
                 if (onDelete != null)
                   IconButton(
                     tooltip: 'Remover item',
@@ -202,203 +259,265 @@ class FiscalItemCard extends StatelessWidget {
                   ),
               ],
             ),
-            if (fiscalSuggestionText != null &&
-                fiscalSuggestionText!.trim().isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEFF6FF),
-                  border: Border.all(color: const Color(0xFFBFDBFE)),
-                  borderRadius: BorderRadius.circular(10),
+            if (suggestionsExpanded) ...[
+              if (fiscalSuggestionText != null &&
+                  fiscalSuggestionText!.trim().isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFEFF6FF),
+                    border: Border.all(color: const Color(0xFFBFDBFE)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(
+                        Icons.info_outline,
+                        size: 18,
+                        color: Color(0xFF1D4ED8),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          fiscalSuggestionText!,
+                          style: const TextStyle(
+                            color: Color(0xFF1E3A8A),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(
-                      Icons.info_outline,
-                      size: 18,
-                      color: Color(0xFF1D4ED8),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        fiscalSuggestionText!,
+              ],
+              if (ncmOfficialSuggestions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Sugestões oficiais de NCM pela descrição',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Use como apoio. NCM precisa ser conferido antes de emitir.',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final suggestion in ncmOfficialSuggestions)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.fact_check_outlined),
+                                label: Text(
+                                  '${suggestion.code} • ${suggestion.description}',
+                                  softWrap: true,
+                                  maxLines: null,
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                ),
+                                onPressed: onApplyOfficialNcm == null
+                                    ? null
+                                    : () => onApplyOfficialNcm!(suggestion),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (classicTaxSuggestions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF5F3FF),
+                    border: Border.all(color: const Color(0xFFDDD6FE)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Sugestões de ICMS, PIS e COFINS',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Aplique somente se a classificação for correta. A sugestão não altera campos já preenchidos.',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      for (final suggestion in classicTaxSuggestions)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.account_balance_outlined),
+                            label: Text(
+                              _classicTaxSuggestionLabel(suggestion),
+                              softWrap: true,
+                              maxLines: null,
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                            ),
+                            onPressed: onApplyClassicSuggestion == null
+                                ? null
+                                : () => onApplyClassicSuggestion!(suggestion),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              if (collectiveSuggestions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    border: Border.all(color: const Color(0xFFFDE68A)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Sugestões coletivas do Lyncar',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Classificações confirmadas de forma agregada por outras empresas. Escolha somente após conferir.',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      for (final suggestion in collectiveSuggestions)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: OutlinedButton.icon(
+                            icon: const Icon(Icons.groups_outlined),
+                            label: Text(
+                              'NCM ${suggestion.ncm ?? '-'} • CFOP ${suggestion.cfop ?? '-'} • confirmado por ${suggestion.companiesCount} empresas',
+                              softWrap: true,
+                              maxLines: null,
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 10,
+                              ),
+                            ),
+                            onPressed: onApplyCollectiveSuggestion == null
+                                ? null
+                                : () =>
+                                      onApplyCollectiveSuggestion!(suggestion),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+              if (ibsCbsOfficialSuggestions.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Sugestões oficiais IBS/CBS',
+                        style: TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        ibsCbsLegalNotice ??
+                            'Use quando a SEFAZ/homologação exigir IBS/CBS. Confira a hipótese fiscal antes de emitir.',
                         style: const TextStyle(
-                          color: Color(0xFF1E3A8A),
-                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF64748B),
+                          fontSize: 12,
                         ),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (ncmOfficialSuggestions.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  border: Border.all(color: const Color(0xFFCBD5E1)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Sugestões oficiais de NCM pela descrição',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Use como apoio. NCM precisa ser conferido antes de emitir.',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final suggestion in ncmOfficialSuggestions.take(20))
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.fact_check_outlined),
-                              label: Text(
-                                '${suggestion.code} • ${suggestion.description}',
-                                softWrap: true,
-                                maxLines: null,
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                alignment: Alignment.centerLeft,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
+                      const SizedBox(height: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          for (final suggestion in ibsCbsOfficialSuggestions)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 8),
+                              child: OutlinedButton.icon(
+                                icon: const Icon(Icons.balance_outlined),
+                                label: Text(
+                                  _ibsCbsSuggestionLabel(suggestion),
+                                  softWrap: true,
+                                  maxLines: null,
                                 ),
+                                style: OutlinedButton.styleFrom(
+                                  alignment: Alignment.centerLeft,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 10,
+                                  ),
+                                ),
+                                onPressed: onApplyOfficialIbsCbs == null
+                                    ? null
+                                    : () => onApplyOfficialIbsCbs!(suggestion),
                               ),
-                              onPressed: onApplyOfficialNcm == null
-                                  ? null
-                                  : () => onApplyOfficialNcm!(suggestion),
                             ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (collectiveSuggestions.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFFFBEB),
-                  border: Border.all(color: const Color(0xFFFDE68A)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Sugestões coletivas do Lyncar',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Classificações confirmadas de forma agregada por outras empresas. Escolha somente após conferir.',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    for (final suggestion in collectiveSuggestions)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.groups_outlined),
-                          label: Text(
-                            'NCM ${suggestion.ncm ?? '-'} • CFOP ${suggestion.cfop ?? '-'} • confirmado por ${suggestion.companiesCount} empresas',
-                            softWrap: true,
-                            maxLines: null,
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            alignment: Alignment.centerLeft,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 10,
-                            ),
-                          ),
-                          onPressed: onApplyCollectiveSuggestion == null
-                              ? null
-                              : () => onApplyCollectiveSuggestion!(suggestion),
-                        ),
+                        ],
                       ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-            if (ibsCbsOfficialSuggestions.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
-                  border: Border.all(color: const Color(0xFFBBF7D0)),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Sugestões oficiais IBS/CBS',
-                      style: TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Use quando a SEFAZ/homologação exigir IBS/CBS. Confira a hipótese fiscal antes de emitir.',
-                      style: TextStyle(color: Color(0xFF64748B), fontSize: 12),
-                    ),
-                    const SizedBox(height: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        for (final suggestion in ibsCbsOfficialSuggestions.take(
-                          5,
-                        ))
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
-                            child: OutlinedButton.icon(
-                              icon: const Icon(Icons.balance_outlined),
-                              label: Text(
-                                _ibsCbsSuggestionLabel(suggestion),
-                                softWrap: true,
-                                maxLines: null,
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                alignment: Alignment.centerLeft,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 12,
-                                  vertical: 10,
-                                ),
-                              ),
-                              onPressed: onApplyOfficialIbsCbs == null
-                                  ? null
-                                  : () => onApplyOfficialIbsCbs!(suggestion),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
+              ],
             ],
             if (expanded) ...[
               const SizedBox(height: 12),
               FiscalFieldGrid(
                 children: [
-                  _text(description, 'Descrição fiscal *'),
                   _text(unit, 'Unidade'),
                   _text(
                     discount,

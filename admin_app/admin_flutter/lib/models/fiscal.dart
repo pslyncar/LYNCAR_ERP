@@ -909,6 +909,7 @@ class FiscalDraftItem {
   }
 
   Map<String, dynamic> toOverrideJson() => {
+    'fiscal_item_id': id,
     'sale_item_id': saleItemId,
     'fiscal_product_id': fiscalProductId,
     'fiscal_description': fiscalDescription,

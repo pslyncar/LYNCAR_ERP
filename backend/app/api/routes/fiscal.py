@@ -981,10 +981,26 @@ def _replace_document_items(
     current_user: User,
 ) -> None:
     included_count = 0
+    existing_items_by_id = {item.id: item for item in document.fiscal_items if item.id is not None}
+    referenced_item_ids: set[int] = set()
+    for override in items:
+        fiscal_item_id = override.fiscal_item_id
+        if fiscal_item_id is None:
+            continue
+        if fiscal_item_id not in existing_items_by_id:
+            raise HTTPException(status_code=400, detail="Item fiscal informado não pertence a esta nota.")
+        if fiscal_item_id in referenced_item_ids:
+            raise HTTPException(status_code=400, detail="Um item fiscal não pode ser informado mais de uma vez.")
+        referenced_item_ids.add(fiscal_item_id)
     document.fiscal_items.clear()
     db.flush()
     setting = _attach_output_rules(_get_or_create_settings(db), db)
     for override in items:
+        previous_item = (
+            existing_items_by_id.get(override.fiscal_item_id)
+            if override.fiscal_item_id is not None
+            else None
+        )
         product = db.get(Product, override.fiscal_product_id) if override.fiscal_product_id else None
         if override.included and product is None:
             raise HTTPException(status_code=400, detail="Item incluido precisa ter produto fiscal vinculado.")
@@ -997,6 +1013,17 @@ def _replace_document_items(
         )
         description = " ".join((override.fiscal_description or "").split()) or (product.name if product else "Item fiscal")
         document.fiscal_items.append(FiscalDocumentItem(
+            sale_item_id=previous_item.sale_item_id if previous_item is not None else override.sale_item_id,
+            original_product_id=(
+                previous_item.original_product_id
+                if previous_item is not None
+                else None
+            ),
+            original_description=(
+                previous_item.original_description
+                if previous_item is not None
+                else None
+            ),
             fiscal_product_id=product.id if product else None, fiscal_description=description[:220],
             quantity=quantity, unit=(" ".join((override.unit or "").split()) or (product.unit if product else "un"))[:20],
             unit_price=unit_price, discount_amount=discount, total_price=total_price,
@@ -2333,7 +2360,12 @@ def update_fiscal_document(
 ) -> FiscalDocument:
     document = db.scalar(
         select(FiscalDocument)
-        .options(selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product))
+        .options(
+            selectinload(FiscalDocument.sale).selectinload(Sale.items).selectinload(SaleItem.product),
+            selectinload(FiscalDocument.sale).selectinload(Sale.client),
+            selectinload(FiscalDocument.fiscal_client),
+            selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
+        )
         .where(FiscalDocument.id == document_id)
     )
     if document is None:
@@ -2350,12 +2382,52 @@ def update_fiscal_document(
             setattr(document, name, getattr(payload, name))
     if payload.items is not None:
         _replace_document_items(db, document, payload.items, current_user)
+    setting = _attach_output_rules(_get_or_create_settings(db), db)
+    fiscal_sale = (
+        _fiscal_sale_view(document, document.sale)
+        if document.sale is not None
+        else _manual_fiscal_sale_view(document)
+    )
+    preflight_warnings: list[str] = []
+    preflight_warnings.extend(document_cfop_issues(document, setting, fiscal_sale))
+    for item_index, item in enumerate(document.fiscal_items, start=1):
+        if not item.included:
+            continue
+        missing = [
+            label
+            for label, value in (
+                ('NCM', item.ncm),
+                ('CFOP', item.cfop),
+                ('origem da mercadoria', item.origin),
+            )
+            if not str(value or '').strip()
+        ]
+        if not str(item.cst or '').strip() and not str(item.csosn or '').strip():
+            missing.append('CST/CSOSN')
+        if missing:
+            preflight_warnings.append(
+                f"Item {item_index} ({item.fiscal_description or 'produto'}): faltam {', '.join(missing)}."
+            )
+    try:
+        validate_rtc_document(
+            setting,
+            fiscal_sale,
+            model='65' if document.document_type == 'nfce' else '55',
+            issue_date=datetime.now().date(),
+        )
+    except RtcComplianceError as exc:
+        preflight_warnings.append(str(exc))
     # Se a SEFAZ ja recebeu esta tentativa, o numero permanece no documento.
     # A edicao apenas recompõe o rascunho para um reenvio idempotente da mesma
     # serie/numero; documentos ainda sem numero receberao o proximo disponivel.
     document.status = "draft"
-    document.sefaz_status_code = None
-    document.sefaz_message = "Rascunho fiscal atualizado e pronto para revisao."
+    document.sefaz_status_code = 'PREVALIDACAO' if preflight_warnings else 'OK'
+    document.sefaz_message = (
+        'Rascunho salvo com pendencias para revisar antes de transmitir: '
+        + ' '.join(preflight_warnings)
+        if preflight_warnings
+        else 'Rascunho salvo. Pre-validacao fiscal concluida sem pendencias conhecidas.'
+    )
     document.sefaz_protocol = None
     document.xml_generated = None
     document.xml_signed = None

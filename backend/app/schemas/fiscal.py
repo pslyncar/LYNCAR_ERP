@@ -244,6 +244,7 @@ class FiscalDocumentDraftRead(BaseModel):
 
 
 class FiscalDocumentItemOverride(BaseModel):
+    fiscal_item_id: int | None = Field(default=None, gt=0)
     sale_item_id: int | None = None
     fiscal_product_id: int | None = None
     fiscal_description: str | None = Field(default=None, max_length=220)
