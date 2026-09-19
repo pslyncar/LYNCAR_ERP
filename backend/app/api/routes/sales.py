@@ -957,10 +957,10 @@ def update_sale_items(
     sale = get_sale_or_404(db, sale_id)
     if sale.status == "cancelada":
         raise HTTPException(status_code=400, detail="Venda cancelada não pode ser alterada.")
-    if sale.has_authorized_fiscal_document:
+    if sale.fiscal_documents or sale.fiscal_document_links:
         raise HTTPException(
             status_code=409,
-            detail="Venda com nota fiscal autorizada não pode ter os itens alterados.",
+            detail="Venda com nota fiscal não pode ter os itens alterados.",
         )
 
     financial_payments = [

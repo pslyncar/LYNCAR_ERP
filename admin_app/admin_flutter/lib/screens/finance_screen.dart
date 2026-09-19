@@ -2476,7 +2476,10 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                   'Saldo ${_money(entry.balanceAmount)}',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
-                if (widget.canPay && entry.first.saleId != null)
+                if (widget.canPay &&
+                    _statementView == 'open' &&
+                    entry.first.saleId != null &&
+                    entry.first.fiscalDocumentId == null)
                   OutlinedButton.icon(
                     onPressed: () async {
                       final navigator = Navigator.of(context);
@@ -2562,7 +2565,10 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                 _receivableBalanceLabel(receivable),
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
-              if (widget.canPay && receivable.saleId != null)
+              if (widget.canPay &&
+                  _statementView == 'open' &&
+                  receivable.saleId != null &&
+                  receivable.fiscalDocumentId == null)
                 OutlinedButton.icon(
                   onPressed: () async {
                     final navigator = Navigator.of(context);
