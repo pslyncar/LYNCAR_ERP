@@ -1,0 +1,11 @@
+[Unit]
+Description=Executa a sincronizacao fiscal do Lyncar todos os dias as 04:00
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+AccuracySec=1min
+Unit=lyncar-fiscal-sync.service
+
+[Install]
+WantedBy=timers.target

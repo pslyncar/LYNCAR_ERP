@@ -6,7 +6,7 @@ Uso manual no servidor:
 
 Horario sugerido para agendamento diario:
 
-    03:15 da manha, horario local do servidor.
+    04:00 da manha, horario local do servidor (America/Sao_Paulo).
 
 Se a primeira tentativa falhar porque Siscomex/CONFAZ/internet esta fora,
 o modo --retry-until-success tenta novamente de hora em hora ate conseguir

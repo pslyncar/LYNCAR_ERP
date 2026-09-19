@@ -1,0 +1,12 @@
+[Unit]
+Description=Lyncar - sincronizacao das referencias fiscais oficiais
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=lyncar
+Group=lyncar
+WorkingDirectory=/opt/lyncar/backend
+EnvironmentFile=/etc/lyncar/lyncar.env
+ExecStart=/opt/lyncar/venv/bin/python scripts/sync_fiscal_sources.py --strict --retry-until-success --max-retry-hours 23 --retry-interval-minutes 60
