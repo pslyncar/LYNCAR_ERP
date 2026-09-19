@@ -5,6 +5,7 @@ import unittest
 
 from app.services.rtc_compliance import (
     RTC_HOMOLOGATION_CRT3_MANDATORY_FROM,
+    RTC_PRODUCTION_CRT3_MANDATORY_FROM,
     RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM,
     RtcComplianceError,
     fiscal_product_issues,
@@ -110,10 +111,26 @@ class RtcComplianceTests(unittest.TestCase):
         )
         self.assertTrue(is_rtc_mandatory(issuer, RTC_HOMOLOGATION_CRT3_MANDATORY_FROM))
 
-    def test_crt3_production_ub12_10_has_no_fixed_mandatory_date(self) -> None:
+    def test_crt3_production_follows_official_start_date(self) -> None:
         issuer = setting(crt="3", tax_regime="regime_normal")
 
-        self.assertFalse(is_rtc_mandatory(issuer, date(2026, 8, 9)))
+        self.assertFalse(
+            is_rtc_mandatory(
+                issuer,
+                RTC_PRODUCTION_CRT3_MANDATORY_FROM.replace(day=2),
+            )
+        )
+        self.assertTrue(is_rtc_mandatory(issuer, RTC_PRODUCTION_CRT3_MANDATORY_FROM))
+
+    def test_production_keeps_emission_available_during_validation_flexibility(self) -> None:
+        issuer = setting(crt="3", tax_regime="regime_normal")
+
+        validate_rtc_document(
+            issuer,
+            sale(product("Produto sem classificacao IBS/CBS")),
+            model="55",
+            issue_date=date(2026, 8, 9),
+        )
 
     def test_mei_and_simples_are_not_promoted_to_crt3(self) -> None:
         issue_date = date(2026, 8, 8)

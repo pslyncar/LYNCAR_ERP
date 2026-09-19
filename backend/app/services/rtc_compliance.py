@@ -11,8 +11,8 @@ from app.services.fiscal_resolver import fiscal_blocking_messages, resolve_fisca
 
 
 RTC_HOMOLOGATION_CRT3_MANDATORY_FROM = date(2026, 7, 1)
-RTC_PRODUCTION_CRT3_MANDATORY_FROM: date | None = None
-RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM = date(2027, 1, 4)
+RTC_PRODUCTION_CRT3_MANDATORY_FROM = date(2026, 8, 3)
+RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM = date(2027, 1, 1)
 
 
 @dataclass(frozen=True)
@@ -105,16 +105,31 @@ def validate_rtc_document(
     """Valida dados fiscais exigíveis antes de reservar número e transmitir."""
 
     current_date = issue_date or date.today()
-    if is_rtc_mandatory(setting, current_date):
+    mandatory = is_rtc_mandatory(setting, current_date)
+    if mandatory and current_date.year == 2026:
         rtc_rates_for(current_date)
     issues = fiscal_blocking_messages(
         setting,
         list(getattr(sale, "items", None) or []),
         model=model,
         issue_date=current_date,
-        rtc_mandatory=is_rtc_mandatory(setting, current_date),
+        rtc_mandatory=mandatory,
     )
 
+    # O cronograma torna os campos exigiveis, mas as regras de validacao da
+    # autorizacao podem estar flexibilizadas no ambiente de producao. Nesse
+    # caso, preservamos a emissao e deixamos somente as pendencias de IBS/CBS
+    # para o pre-flight/painel fiscal. As demais pendencias continuam
+    # bloqueando normalmente. A homologacao continua bloqueando para permitir
+    # testes completos antes da virada operacional.
+    environment = str(getattr(setting, "environment", "") or "").lower()
+    if environment != "homologacao":
+        issues = [
+            issue
+            for issue in issues
+            if "CST IBS/CBS deve ter" not in issue
+            and "cClassTrib IBS/CBS deve ter" not in issue
+        ]
     if issues:
         raise RtcComplianceError(
             "Emissão aguardando configuração fiscal. "

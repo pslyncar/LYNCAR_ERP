@@ -3255,9 +3255,20 @@ class _ProductDialogState extends State<_ProductDialog> {
                     _area(_fiscalNotes, 'Observações fiscais'),
                     const SizedBox(height: 16),
                     _Section('Reforma Tributaria - IBS/CBS/IS'),
+                    const Text(
+                      'Os dados IBS/CBS da nota de entrada ficam somente no histórico da compra. '
+                      'Na saída, o motor fiscal recalcula a tributação conforme o regime da empresa, '
+                      'a operação, o destino, o produto e a data da emissão.',
+                      style: TextStyle(color: Color(0xFF526581)),
+                    ),
+                    const SizedBox(height: 10),
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Preparado para novo regime IBS/CBS'),
+                      title: const Text('Aplicar Imposto Seletivo na saída'),
+                      subtitle: const Text(
+                        'Use somente quando o produto tiver CST IS, cClassTrib IS e alíquota do Imposto Seletivo. '
+                        'Isso não ativa IBS/CBS automaticamente.',
+                      ),
                       value: _newTaxSystem,
                       onChanged: (value) =>
                           setState(() => _newTaxSystem = value),
@@ -3266,18 +3277,32 @@ class _ProductDialogState extends State<_ProductDialog> {
                       children: [
                         _catalogDropdown(
                           _ibsCbsCst,
-                          'CST IBS/CBS',
+                          'CST IBS/CBS da saída',
                           _ibsCbsCstOptions,
                         ),
-                        _field(_ibsCbsClassification, 'cClassTrib'),
-                        _field(_cbsRate, 'CBS %', number: true),
-                        _field(_ibsStateRate, 'IBS estadual %', number: true),
-                        _field(_ibsCityRate, 'IBS municipal %', number: true),
-                        _field(_selectiveTaxCst, 'CST IS'),
-                        _field(_selectiveTaxClassification, 'cClassTrib IS'),
+                        _field(
+                          _ibsCbsClassification,
+                          'cClassTrib IBS/CBS da saída',
+                        ),
+                        _field(_cbsRate, 'CBS da saída %', number: true),
+                        _field(
+                          _ibsStateRate,
+                          'IBS estadual da saída %',
+                          number: true,
+                        ),
+                        _field(
+                          _ibsCityRate,
+                          'IBS municipal da saída %',
+                          number: true,
+                        ),
+                        _field(_selectiveTaxCst, 'CST IS da saída'),
+                        _field(
+                          _selectiveTaxClassification,
+                          'cClassTrib IS da saída',
+                        ),
                         _field(
                           _selectiveTaxRate,
-                          'Imposto Seletivo %',
+                          'Imposto Seletivo da saída %',
                           number: true,
                         ),
                       ],

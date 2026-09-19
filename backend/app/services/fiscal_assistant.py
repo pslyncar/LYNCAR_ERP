@@ -1188,7 +1188,17 @@ def fiscal_alerts_for_product(
         or _clean(suggestion.selective_tax_cst)
         for suggestion in suggestions
     ):
-        alerts.append(FiscalAlert(severity="info", field="new_tax_system", message="XML/importacoes possuem campos IBS/CBS/IS para produto parecido."))
+        alerts.append(
+            FiscalAlert(
+                severity="info",
+                field="ibs_cbs_reference",
+                message=(
+                    "XML/importacoes possuem dados IBS/CBS/IS para produto parecido. "
+                    "Eles ficam como referencia e nao ativam a tributacao da saida automaticamente; "
+                    "a saida sera recalculada pelo motor fiscal."
+                ),
+            )
+        )
     if db is not None and _clean(product.ibs_cbs_cst) and _clean(product.ibs_cbs_classification):
         reference_count = db.scalar(select(func.count(MasterIbsCbsClassTrib.id))) or 0
         if reference_count:
