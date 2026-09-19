@@ -343,23 +343,12 @@ class _CatalogBodyState extends State<_CatalogBody> {
   final ScrollController _scrollController = ScrollController();
   final Map<int, GlobalKey> _sectionKeys = {};
   List<_CatalogSection> _currentSections = const [];
-  bool _programmaticScroll = false;
-  bool _categoryUpdateScheduled = false;
-  DateTime? _lastCategoryResolve;
 
   StorefrontViewModel get viewModel => widget.viewModel;
 
   @override
-  void initState() {
-    super.initState();
-    _scrollController.addListener(_updateActiveCategory);
-  }
-
-  @override
   void dispose() {
-    _scrollController
-      ..removeListener(_updateActiveCategory)
-      ..dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -371,88 +360,94 @@ class _CatalogBodyState extends State<_CatalogBody> {
     final compact = MediaQuery.sizeOf(context).width < 700;
     return RefreshIndicator.adaptive(
       onRefresh: viewModel.load,
-      child: CustomScrollView(
-        key: const Key('catalog-scroll'),
-        controller: _scrollController,
-        physics: compact
-            ? const AlwaysScrollableScrollPhysics(
-                parent: BouncingScrollPhysics(),
-              )
-            : null,
-        scrollCacheExtent: ScrollCacheExtent.pixels(compact ? 650 : 900),
-        slivers: [
-          SliverToBoxAdapter(
-            child: _StoreHero(
-              store: store,
-              viewModel: viewModel,
-              onOpenCart: widget.onOpenCart,
-              onCustomerAccess: widget.onCustomerAccess,
-            ),
-          ),
-          if (sections.any((section) => section.category != null))
-            SliverPersistentHeader(
-              pinned: true,
-              delegate: _CategoryHeaderDelegate(
-                categories: sections
-                    .map((section) => section.category)
-                    .whereType<CatalogCategory>()
-                    .toList(growable: false),
-                selectedCategory: viewModel.selectedCategory,
-                onTap: _scrollToCategory,
-              ),
-            ),
-          if (viewModel.loading)
-            const SliverToBoxAdapter(
-              child: LinearProgressIndicator(minHeight: 2),
-            ),
-          if (viewModel.products.isEmpty && !viewModel.loading)
-            const SliverFillRemaining(
-              hasScrollBody: false,
-              child: _EmptyCatalog(),
-            ),
-          for (
-            var sectionIndex = 0;
-            sectionIndex < sections.length;
-            sectionIndex++
-          ) ...[
+      child: NotificationListener<ScrollEndNotification>(
+        onNotification: (_) {
+          _resolveActiveCategory();
+          return false;
+        },
+        child: CustomScrollView(
+          key: const Key('catalog-scroll'),
+          controller: _scrollController,
+          physics: compact
+              ? const AlwaysScrollableScrollPhysics(
+                  parent: BouncingScrollPhysics(),
+                )
+              : null,
+          scrollCacheExtent: ScrollCacheExtent.pixels(compact ? 650 : 900),
+          slivers: [
             SliverToBoxAdapter(
-              child: _CategorySectionTitle(
-                key: _sectionKeys.putIfAbsent(
-                  sections[sectionIndex].key,
-                  GlobalKey.new,
-                ),
-                title: sections[sectionIndex].title,
-                itemCount: sections[sectionIndex].products.length,
+              child: _StoreHero(
+                store: store,
+                viewModel: viewModel,
+                onOpenCart: widget.onOpenCart,
+                onCustomerAccess: widget.onCustomerAccess,
               ),
             ),
-            SliverPadding(
-              padding: EdgeInsets.fromLTRB(
-                MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
-                0,
-                MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
-                sectionIndex == sections.length - 1 ? 120 : 28,
-              ),
-              sliver: SliverGrid.builder(
-                itemCount: sections[sectionIndex].products.length,
-                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                  maxCrossAxisExtent: 350,
-                  mainAxisExtent: 390,
-                  crossAxisSpacing: 18,
-                  mainAxisSpacing: 18,
+            if (sections.any((section) => section.category != null))
+              SliverPersistentHeader(
+                pinned: true,
+                delegate: _CategoryHeaderDelegate(
+                  categories: sections
+                      .map((section) => section.category)
+                      .whereType<CatalogCategory>()
+                      .toList(growable: false),
+                  selectedCategory: viewModel.selectedCategory,
+                  onTap: _scrollToCategory,
                 ),
-                itemBuilder: (context, index) {
-                  final product = sections[sectionIndex].products[index];
-                  return _ProductCard(
-                    key: ValueKey('catalog-product-${product.id}'),
-                    product: product,
-                    imageUrl: viewModel.imageUrl(product.imageUrl),
-                    onAdd: widget.onAdd,
-                  );
-                },
               ),
-            ),
+            if (viewModel.loading)
+              const SliverToBoxAdapter(
+                child: LinearProgressIndicator(minHeight: 2),
+              ),
+            if (viewModel.products.isEmpty && !viewModel.loading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: _EmptyCatalog(),
+              ),
+            for (
+              var sectionIndex = 0;
+              sectionIndex < sections.length;
+              sectionIndex++
+            ) ...[
+              SliverToBoxAdapter(
+                child: _CategorySectionTitle(
+                  key: _sectionKeys.putIfAbsent(
+                    sections[sectionIndex].key,
+                    GlobalKey.new,
+                  ),
+                  title: sections[sectionIndex].title,
+                  itemCount: sections[sectionIndex].products.length,
+                ),
+              ),
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(
+                  MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
+                  0,
+                  MediaQuery.sizeOf(context).width < 600 ? 16 : 32,
+                  sectionIndex == sections.length - 1 ? 120 : 28,
+                ),
+                sliver: SliverGrid.builder(
+                  itemCount: sections[sectionIndex].products.length,
+                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 350,
+                    mainAxisExtent: 390,
+                    crossAxisSpacing: 18,
+                    mainAxisSpacing: 18,
+                  ),
+                  itemBuilder: (context, index) {
+                    final product = sections[sectionIndex].products[index];
+                    return _ProductCard(
+                      key: ValueKey('catalog-product-${product.id}'),
+                      product: product,
+                      imageUrl: viewModel.imageUrl(product.imageUrl),
+                      onAdd: widget.onAdd,
+                    );
+                  },
+                ),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -489,7 +484,6 @@ class _CatalogBodyState extends State<_CatalogBody> {
     }
     final targetContext = _sectionKeys[target.key]?.currentContext;
     if (targetContext != null) {
-      _programmaticScroll = true;
       await Scrollable.ensureVisible(
         targetContext,
         duration: const Duration(milliseconds: 420),
@@ -498,35 +492,9 @@ class _CatalogBodyState extends State<_CatalogBody> {
       );
     }
     viewModel.selectCategory(slug);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _programmaticScroll = false;
-    });
-  }
-
-  void _updateActiveCategory() {
-    if (_programmaticScroll || !_scrollController.hasClients) return;
-    if (_categoryUpdateScheduled) return;
-    _categoryUpdateScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _categoryUpdateScheduled = false;
-      if (!mounted || _programmaticScroll || !_scrollController.hasClients) {
-        return;
-      }
-      _resolveActiveCategory();
-    });
   }
 
   void _resolveActiveCategory() {
-    // Do not perform a render-object lookup for every scroll tick. This work
-    // is only needed often enough for the selected category to follow the
-    // user's position without competing with the browser's paint frames.
-    final now = DateTime.now();
-    final lastResolve = _lastCategoryResolve;
-    if (lastResolve != null &&
-        now.difference(lastResolve).inMilliseconds < 80) {
-      return;
-    }
-    _lastCategoryResolve = now;
     String? active;
     var closestTop = double.negativeInfinity;
     for (final section in _currentSections) {
@@ -1211,27 +1179,15 @@ class _ProductImage extends StatelessWidget {
           ),
         )
       else
-        ColoredBox(
-          color: Theme.of(context).brightness == Brightness.dark
-              ? const Color(0xFF242424)
-              : const Color(0xFFF1ECE4),
-          child: Padding(
-            padding: const EdgeInsets.all(10),
-            child: Image.network(
-              url,
-              // Product photos have different proportions. Contain keeps the
-              // entire package/photo visible instead of cropping or stretching
-              // it to the fixed card area.
-              fit: BoxFit.contain,
-              alignment: Alignment.center,
-              cacheWidth: (350 * MediaQuery.devicePixelRatioOf(context))
-                  .round(),
-              filterQuality: FilterQuality.medium,
-              errorBuilder: (_, _, _) => const ColoredBox(
-                color: Color(0xFFF1ECE4),
-                child: Icon(Icons.bakery_dining_rounded, size: 58),
-              ),
-            ),
+        Image.network(
+          url,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          cacheWidth: (350 * MediaQuery.devicePixelRatioOf(context)).round(),
+          filterQuality: FilterQuality.low,
+          errorBuilder: (_, _, _) => const ColoredBox(
+            color: Color(0xFFF1ECE4),
+            child: Icon(Icons.bakery_dining_rounded, size: 58),
           ),
         ),
       if (!available)
