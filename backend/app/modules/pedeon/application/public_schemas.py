@@ -33,7 +33,7 @@ class PublicCustomerAuthInput(BaseModel):
 class PublicCustomerAuthRead(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    customer: PublicCustomerRead
+    customer: "PublicCustomerRead"
 
 
 class PublicPaymentMethodRead(BaseModel):

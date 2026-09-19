@@ -75,7 +75,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
     try {
       final results = await Future.wait([
         _api.listClients(widget.session.token),
-        _api.listReceivables(widget.session.token, limit: 500),
+        _loadAllReceivables(),
         _api.listSuppliers(widget.session.token),
         _api.listPayables(widget.session.token, limit: 500),
         _api.listProducts(widget.session.token, active: true, limit: 500),
@@ -93,6 +93,22 @@ class _FinanceScreenState extends State<FinanceScreen> {
       setState(() => _error = 'Não foi possível carregar o financeiro.');
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<List<Receivable>> _loadAllReceivables() async {
+    const pageSize = 500;
+    final all = <Receivable>[];
+    var offset = 0;
+    while (true) {
+      final page = await _api.listReceivables(
+        widget.session.token,
+        limit: pageSize,
+        offset: offset,
+      );
+      all.addAll(page);
+      if (page.length < pageSize) return all;
+      offset += page.length;
     }
   }
 

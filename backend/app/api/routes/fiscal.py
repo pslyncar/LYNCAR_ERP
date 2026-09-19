@@ -34,6 +34,7 @@ from app.schemas.fiscal import (
     FiscalDocumentPrepare,
     FiscalDocumentPrepareFromSales,
     FiscalDocumentDraftRead,
+    FiscalDocumentItemOverride,
     FiscalDocumentItemDraftRead,
     FiscalDocumentPrepareWithItems,
     FiscalDocumentPrepareManual,
