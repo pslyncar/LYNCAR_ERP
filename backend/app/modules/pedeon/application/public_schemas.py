@@ -84,6 +84,7 @@ class PublicProductRead(BaseModel):
     name: str
     description: str | None = None
     image_url: str | None = None
+    detail_image_url: str | None = None
     price: Decimal
     normal_price: Decimal
     on_offer: bool

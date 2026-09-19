@@ -39,9 +39,17 @@ def _validate_production_configuration() -> None:
             "MASTER_ADMIN_PASSWORD de producao ainda usa o valor padrao; configure a credencial fora do codigo."
         )
 
+class PublicStaticFiles(StaticFiles):
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
+
+
 upload_dir = Path(__file__).resolve().parents[2] / "uploads"
 upload_dir.mkdir(parents=True, exist_ok=True)
-app.mount("/public", StaticFiles(directory=str(upload_dir)), name="public")
+app.mount("/public", PublicStaticFiles(directory=str(upload_dir)), name="public")
 
 
 @app.on_event("startup")

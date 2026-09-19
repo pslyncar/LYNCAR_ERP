@@ -107,6 +107,7 @@ class CatalogProduct {
     this.categoryId,
     this.description,
     this.imageUrl,
+    this.detailImageUrl,
     this.modifierGroups = const [],
   });
   factory CatalogProduct.fromJson(Map<String, dynamic> json) => CatalogProduct(
@@ -115,6 +116,7 @@ class CatalogProduct {
     name: json['name'] as String,
     description: json['description'] as String?,
     imageUrl: json['image_url'] as String?,
+    detailImageUrl: json['detail_image_url'] as String?,
     price: _money(json['price']),
     normalPrice: _money(json['normal_price']),
     onOffer: json['on_offer'] as bool? ?? false,
@@ -130,6 +132,7 @@ class CatalogProduct {
   final String name;
   final String? description;
   final String? imageUrl;
+  final String? detailImageUrl;
   final double price;
   final double normalPrice;
   final bool onOffer;

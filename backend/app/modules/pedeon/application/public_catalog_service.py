@@ -38,6 +38,7 @@ from app.modules.pedeon.infrastructure.database.models import (
     PedeOnStore,
 )
 from app.services.tenancy import get_enabled_modules_for_company, session_for_company
+from app.services.uploads import image_variant_url
 
 
 MONEY = Decimal("0.01")
@@ -490,7 +491,7 @@ class PedeOnPublicCatalogService:
                 name=item.name,
                 slug=item.slug,
                 description=item.description,
-                image_url=item.image_url,
+                image_url=image_variant_url(item.image_url, "card"),
             )
             for item in db.scalars(
                 select(PedeOnCategory)
@@ -514,7 +515,12 @@ class PedeOnPublicCatalogService:
             category_id=category_id if category_id is not None else publication.category_id,
             name=publication.display_name or product.name,
             description=publication.description or product.description,
-            image_url=publication.image_url or product.image_url,
+            image_url=image_variant_url(
+                publication.image_url or product.image_url, "card"
+            ),
+            detail_image_url=image_variant_url(
+                publication.image_url or product.image_url, "detail"
+            ),
             price=price,
             normal_price=Decimal(product.sale_price).quantize(MONEY),
             on_offer=on_offer,
@@ -898,8 +904,8 @@ class PedeOnPublicCatalogService:
                 slug=store.public_slug,
                 display_name=store.display_name,
                 description=store.description,
-                logo_url=store.logo_url,
-                cover_url=store.cover_url,
+                logo_url=image_variant_url(store.logo_url, "card"),
+                cover_url=image_variant_url(store.cover_url, "detail"),
                 accent_color=(store.settings or {}).get("accent_color", "#075E6F"),
                 dark_mode=(store.settings or {}).get("dark_mode", False),
                 delivery_fee=delivery_fee,

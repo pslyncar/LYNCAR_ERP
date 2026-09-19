@@ -151,7 +151,9 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
     final configuration = await showProductDetail(
       context,
       product: product,
-      imageUrl: viewModel.imageUrl(product.imageUrl),
+      imageUrl: viewModel.imageUrl(
+        product.detailImageUrl ?? product.imageUrl,
+      ),
       storeSlug: widget.slug,
     );
     if (configuration == null || !context.mounted) return;
@@ -249,7 +251,9 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
     final configuration = await showProductDetail(
       context,
       product: line.product,
-      imageUrl: viewModel.imageUrl(line.product.imageUrl),
+      imageUrl: viewModel.imageUrl(
+        line.product.detailImageUrl ?? line.product.imageUrl,
+      ),
       storeSlug: widget.slug,
       initialConfiguration: ProductConfiguration(
         quantity: line.quantity,
