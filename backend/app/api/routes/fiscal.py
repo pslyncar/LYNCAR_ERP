@@ -59,13 +59,20 @@ from app.services.fiscal_stock import refresh_many_product_fiscal_balances
 from app.services.fiscal_certificate import encrypt_certificate_bytes, encrypt_secret, sha256_hex
 from app.services.nfce_sp import (
     NfceValidationError,
+    _require_sale as _require_nfce_sale,
+    _require_setting as _require_nfce_setting,
     authorize_nfce,
     prepare_nfce_offline_contingency,
     transmit_nfce_offline_contingency,
 )
 from app.services.nfce_listagem_chaves_sp import sync_nfce_next_number_from_sefaz
 from app.services.fiscal_recovery import RecoveredFiscalDocument, recover_fiscal_documents
-from app.services.nfe_sp import _duplicate_nfe_key, authorize_nfe
+from app.services.nfe_sp import (
+    _duplicate_nfe_key,
+    _require_recipient as _require_nfe_recipient,
+    _require_setting as _require_nfe_setting,
+    authorize_nfe,
+)
 from app.services.nfe_protocol_sp import query_nfe_protocol
 from app.services.fiscal_xml import build_processed_nfe_xml, is_processed_nfe_xml
 from app.services.fiscal_assistant import fiscal_suggestions_for_product, learn_from_product
@@ -2409,6 +2416,16 @@ def update_fiscal_document(
                 f"Item {item_index} ({item.fiscal_description or 'produto'}): faltam {', '.join(missing)}."
             )
     try:
+        if document.document_type == 'nfce':
+            _require_nfce_setting(setting)
+            _require_nfce_sale(fiscal_sale, setting, model='65')
+        else:
+            _require_nfe_setting(setting)
+            _require_nfce_sale(fiscal_sale, setting, model='55')
+            _require_nfe_recipient(fiscal_sale)
+    except NfceValidationError as exc:
+        preflight_warnings.append(str(exc))
+    try:
         validate_rtc_document(
             setting,
             fiscal_sale,
@@ -2583,6 +2600,19 @@ def authorize_fiscal_document(
                 + " ".join(cfop_issues)
             ),
         )
+    try:
+        if document.document_type == 'nfce':
+            _require_nfce_setting(setting)
+            _require_nfce_sale(fiscal_sale, setting, model='65')
+        else:
+            _require_nfe_setting(setting)
+            _require_nfce_sale(fiscal_sale, setting, model='55')
+            _require_nfe_recipient(fiscal_sale)
+    except NfceValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f'Pré-validação fiscal bloqueou a emissão antes da numeração: {exc}',
+        ) from exc
     # Never send a padded chapter (for example 00001006) to SEFAZ.  It can
     # look like an eight-digit value but is not a valid NCM item code.
     for item_index, item in enumerate(document.fiscal_items, start=1):
