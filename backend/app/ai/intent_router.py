@@ -23,11 +23,14 @@ def classify(message: str) -> Intent:
     text = normalize(message)
     if not text:
         return Intent("unknown", 0.0)
-    if re.fullmatch(r"(oi|ola|oie|opa|bom dia|boa tarde|boa noite|tudo bem|tudo bem com voce)[!.? ]*", text):
+    greeting_words = {"oi", "ola", "oie", "opa", "eae", "fala", "blz"}
+    if re.fullmatch(r"(oi|ola|oie|opa|eae|e ai|fala|bom dia|boa tarde|boa noite|tudo bem|tudo bem com voce|blz)[!.? ]*", text):
         return Intent("greeting", 0.99)
-    if any(term in text for term in ("obrigado", "obrigada", "valeu", "agradeco")):
+    if text.split() and text.split()[0] in greeting_words and len(text.split()) <= 3:
+        return Intent("greeting", 0.96)
+    if any(term in text for term in ("obrigado", "obrigada", "obg", "valeu", "vlw", "agradeco")):
         return Intent("thanks", 0.95)
-    if any(term in text for term in ("quem e voce", "o que voce faz", "como voce pode ajudar", "o que vc pode fazer")):
+    if any(term in text for term in ("quem e voce", "o que voce faz", "como voce pode ajudar", "o que vc pode fazer", "me ajuda", "pode me ajudar")):
         return Intent("help", 0.95)
     if any(term in text for term in ("onde estou", "qual tela", "que tela estou", "tela atual")):
         return Intent("current_screen", 0.95)
@@ -40,6 +43,21 @@ def classify(message: str) -> Intent:
     if any(term in text for term in ("crediario", "conta a receber", "extrato", "cliente", "fornecedor", "estoque", "produto")):
         return Intent("authorized_data", 0.8)
     return Intent("general_help", 0.45)
+
+
+def speech_acts(message: str) -> tuple[str, ...]:
+    """Recognize conversational acts without replacing ERP intent routing."""
+    text = normalize(message)
+    acts: list[str] = []
+    if any(term in text for term in ("oi", "ola", "bom dia", "boa tarde", "boa noite", "eae")):
+        acts.append("greeting")
+    if "?" in message or any(term in text for term in ("como", "qual", "onde", "por que", "porque", "tem", "pode")):
+        acts.append("question")
+    if any(term in text for term in ("por favor", "preciso", "quero", "pode", "me ajuda")):
+        acts.append("request")
+    if any(term in text for term in ("obrigado", "obrigada", "obg", "valeu")):
+        acts.append("thanks")
+    return tuple(dict.fromkeys(acts))
 
 
 def fast_reply(message: str, *, user_name: str, screen: str = "", module: str = "") -> str | None:
