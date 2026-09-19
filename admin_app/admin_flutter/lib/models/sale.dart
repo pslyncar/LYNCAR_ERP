@@ -22,6 +22,7 @@ class Sale {
     this.offlineClientId,
     this.notes,
     this.canceledAt,
+    this.lastEditedAt,
   });
 
   final int id;
@@ -42,6 +43,7 @@ class Sale {
   final String? notes;
   final DateTime soldAt;
   final DateTime? canceledAt;
+  final DateTime? lastEditedAt;
   final bool hasFiscalDocument;
   final bool hasAuthorizedFiscalDocument;
   final List<SaleItem> items;
@@ -69,6 +71,9 @@ class Sale {
       canceledAt: json['canceled_at'] == null
           ? null
           : _parseBackendDateTime(json['canceled_at'] as String),
+      lastEditedAt: json['last_edited_at'] == null
+          ? null
+          : _parseBackendDateTime(json['last_edited_at'] as String),
       hasFiscalDocument: json['has_fiscal_document'] as bool? ?? false,
       hasAuthorizedFiscalDocument:
           json['has_authorized_fiscal_document'] as bool? ?? false,

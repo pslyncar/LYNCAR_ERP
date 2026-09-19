@@ -22,6 +22,7 @@ from app.models.stock_movement import StockMovement
 from app.models.user import User
 from app.schemas.sale import (
     SaleCreate,
+    SaleItemsUpdate,
     SalePaymentsUpdate,
     SaleRead,
     SaleSellerRead,
@@ -939,5 +940,206 @@ def update_sale_payments(
         payment_payload["amount"] = money(payment_in.amount)
         sale.payments.append(SalePayment(**payment_payload))
     sync_sale_financial_receivable(db, sale, current_user)
+    db.commit()
+    return get_sale_or_404(db, sale_id)
+
+
+@router.put("/{sale_id}/items", response_model=SaleRead)
+def update_sale_items(
+    sale_id: int,
+    payload: SaleItemsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(
+        require_any_permission("finance:receivables:pay", "sales:manual")
+    ),
+) -> Sale:
+    """Edit items from a financial sale without changing its original sale date."""
+    sale = get_sale_or_404(db, sale_id)
+    if sale.status == "cancelada":
+        raise HTTPException(status_code=400, detail="Venda cancelada não pode ser alterada.")
+    if sale.has_authorized_fiscal_document:
+        raise HTTPException(
+            status_code=409,
+            detail="Venda com nota fiscal autorizada não pode ter os itens alterados.",
+        )
+
+    financial_payments = [
+        payment for payment in sale.payments if is_financial_payment(payment.method)
+    ]
+    if not financial_payments or any(
+        not is_financial_payment(payment.method) for payment in sale.payments
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="A edição pelo extrato está disponível para vendas somente no crediário/boleto.",
+        )
+
+    products: dict[int, Product] = {}
+    for item_in in payload.items:
+        if item_in.product_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Cada item novo precisa ser vinculado a um produto do cadastro.",
+            )
+        product = db.get(Product, item_in.product_id)
+        if product is None or not product.active:
+            raise HTTPException(status_code=404, detail=f"Produto #{item_in.product_id} não encontrado ou inativo.")
+        products[item_in.product_id] = product
+
+    old_quantities: dict[int, Decimal] = {}
+    for item in sale.items:
+        if item.product_id is None:
+            raise HTTPException(
+                status_code=409,
+                detail="Esta venda possui item antigo sem produto vinculado e não pode ser editada com segurança.",
+            )
+        old_quantities[item.product_id] = old_quantities.get(item.product_id, Decimal("0")) + item.quantity
+    new_quantities: dict[int, Decimal] = {}
+    for item in payload.items:
+        assert item.product_id is not None
+        new_quantities[item.product_id] = new_quantities.get(item.product_id, Decimal("0")) + item.quantity
+
+    for product_id in set(old_quantities) | set(new_quantities):
+        product = products.get(product_id) or db.get(Product, product_id)
+        if product is None:
+            continue
+        delta = new_quantities.get(product_id, Decimal("0")) - old_quantities.get(product_id, Decimal("0"))
+        if delta > 0:
+            quantity_before = product.stock_quantity
+            unit_cost, total_cost = apply_stock_out(product, delta)
+            apply_batch_out(
+                db,
+                product,
+                delta,
+                source_type="sale_edit",
+                source_id=sale.id,
+                source_number=sale.number,
+            )
+            db.add(
+                StockMovement(
+                    product_id=product.id,
+                    user_id=current_user.id,
+                    movement_type="sale_edit_out",
+                    source_type=sale.source,
+                    source_id=sale.id,
+                    source_number=sale.number,
+                    quantity_delta=-delta,
+                    quantity_before=quantity_before,
+                    quantity_after=product.stock_quantity,
+                    unit=product.unit,
+                    unit_price=unit_cost,
+                    total_value=total_cost,
+                    reason="Ajuste de itens da venda pelo financeiro",
+                )
+            )
+        elif delta < 0:
+            returned = -delta
+            quantity_before = product.stock_quantity
+            unit_cost, total_cost = apply_stock_in(product, returned, None)
+            return_to_batch(
+                db,
+                product,
+                returned,
+                source_type="sale_edit",
+                source_id=sale.id,
+                source_number=sale.number,
+            )
+            db.add(
+                StockMovement(
+                    product_id=product.id,
+                    user_id=current_user.id,
+                    movement_type="sale_edit_return",
+                    source_type=sale.source,
+                    source_id=sale.id,
+                    source_number=sale.number,
+                    quantity_delta=returned,
+                    quantity_before=quantity_before,
+                    quantity_after=product.stock_quantity,
+                    unit=product.unit,
+                    unit_price=unit_cost,
+                    total_value=total_cost,
+                    reason="Estorno de itens da venda pelo financeiro",
+                )
+            )
+
+    subtotal = money(
+        sum(
+            (money(item.quantity * item.unit_price - item.discount_amount) for item in payload.items),
+            Decimal("0"),
+        )
+    )
+    total = money(subtotal - sale.discount_amount)
+    if total < 0:
+        raise HTTPException(status_code=400, detail="Desconto maior que o total da venda.")
+
+    receivables = list(
+        db.scalars(
+            select(Receivable)
+            .where(Receivable.sale_id == sale.id, Receivable.status != "canceled")
+            .order_by(Receivable.id.asc())
+        ).all()
+    )
+    paid_receivable = money(sum((item.paid_amount for item in receivables), Decimal("0")))
+    if paid_receivable > total + MONEY_TOLERANCE:
+        raise HTTPException(
+            status_code=409,
+            detail="O novo total não pode ficar abaixo do valor já recebido deste crediário.",
+        )
+
+    old_financial_total = money(sum((item.original_amount for item in receivables), Decimal("0")))
+    sale.items.clear()
+    for item_in in payload.items:
+        product = products[item_in.product_id]
+        line_total = money(item_in.quantity * item_in.unit_price - item_in.discount_amount)
+        sale.items.append(
+            SaleItem(
+                product_id=product.id,
+                description=item_in.description,
+                quantity=item_in.quantity,
+                unit=product.unit,
+                unit_price=item_in.unit_price,
+                discount_amount=item_in.discount_amount,
+                total_price=line_total,
+                barcode=item_in.barcode or product.barcode,
+            )
+        )
+    remaining_payment = total
+    original_payment_total = money(
+        sum((payment.amount for payment in financial_payments), Decimal("0"))
+    )
+    for index, payment in enumerate(financial_payments):
+        if index == len(financial_payments) - 1:
+            payment.amount = remaining_payment
+        elif original_payment_total > 0:
+            payment.amount = money(total * payment.amount / original_payment_total)
+            remaining_payment -= payment.amount
+    sale.subtotal_amount = subtotal
+    sale.total_amount = total
+    sale.amount_paid = total
+    sale.change_amount = Decimal("0.00")
+    sale.last_edited_at = datetime.utcnow()
+    audit = (
+        f"Venda editada no financeiro em {sale.last_edited_at.strftime('%d/%m/%Y %H:%M')}. "
+        f"Data original preservada: {sale.sold_at.strftime('%d/%m/%Y %H:%M')}."
+    )
+    sale.notes = f"{sale.notes}\n{audit}" if sale.notes else audit
+
+    if receivables:
+        remaining = total
+        for index, receivable in enumerate(receivables):
+            if index == len(receivables) - 1:
+                target = remaining
+            elif old_financial_total > 0:
+                target = money(total * receivable.original_amount / old_financial_total)
+            else:
+                target = money(total / len(receivables))
+            remaining -= target
+            receivable.original_amount = target
+            receivable.balance_amount = max(Decimal("0"), target - receivable.paid_amount)
+            receivable.status = "paid" if receivable.balance_amount <= 0 else ("partial" if receivable.paid_amount > 0 else "open")
+            receivable.settled_at = datetime.utcnow() if receivable.status == "paid" else None
+            edit_note = f"Itens ajustados no financeiro em {sale.last_edited_at.strftime('%d/%m/%Y %H:%M')}; data da venda preservada."
+            receivable.notes = f"{receivable.notes}\n{edit_note}" if receivable.notes else edit_note
+
     db.commit()
     return get_sale_or_404(db, sale_id)

@@ -15,6 +15,7 @@ class Receivable {
     this.clientName,
     this.saleNumber,
     this.saleSoldAt,
+    this.saleLastEditedAt,
     this.dueDate,
     this.settledAt,
     this.notes,
@@ -33,6 +34,7 @@ class Receivable {
   final String? clientName;
   final String? saleNumber;
   final DateTime? saleSoldAt;
+  final DateTime? saleLastEditedAt;
   final String description;
   final double originalAmount;
   final double paidAmount;
@@ -62,6 +64,9 @@ class Receivable {
       saleSoldAt: json['sale_sold_at'] == null
           ? null
           : DateTime.parse(json['sale_sold_at'] as String).toLocal(),
+      saleLastEditedAt: json['sale_last_edited_at'] == null
+          ? null
+          : DateTime.parse(json['sale_last_edited_at'] as String).toLocal(),
       description: json['description'] as String,
       originalAmount: _toDouble(json['original_amount']),
       paidAmount: _toDouble(json['paid_amount']),
@@ -98,6 +103,8 @@ class Receivable {
 class ReceivableSaleItem {
   const ReceivableSaleItem({
     required this.id,
+    this.productId,
+    this.barcode,
     required this.description,
     required this.quantity,
     required this.unit,
@@ -106,6 +113,8 @@ class ReceivableSaleItem {
   });
 
   final int id;
+  final int? productId;
+  final String? barcode;
   final String description;
   final double quantity;
   final String unit;
@@ -115,6 +124,8 @@ class ReceivableSaleItem {
   factory ReceivableSaleItem.fromJson(Map<String, dynamic> json) {
     return ReceivableSaleItem(
       id: json['id'] as int,
+      productId: json['product_id'] as int?,
+      barcode: json['barcode'] as String?,
       description: json['description'] as String? ?? '-',
       quantity: _toDouble(json['quantity']),
       unit: json['unit'] as String? ?? 'un',

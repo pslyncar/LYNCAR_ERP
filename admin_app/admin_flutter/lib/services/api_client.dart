@@ -2200,6 +2200,19 @@ class ApiClient {
     return Receivable.fromJson(_decodeResponse(response));
   }
 
+  Future<Sale> updateSaleItems(
+    String token, {
+    required int saleId,
+    required List<SaleItemPayload> items,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/sales/$saleId/items'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'items': items.map((item) => item.toJson()).toList()}),
+    );
+    return Sale.fromJson(_decodeResponse(response));
+  }
+
   Future<List<Receivable>> payClientReceivables(
     String token,
     int clientId,

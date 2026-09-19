@@ -52,12 +52,18 @@ class Receivable(Base):
         return self.sale.sold_at if self.sale is not None else None
 
     @property
+    def sale_last_edited_at(self) -> datetime | None:
+        return self.sale.last_edited_at if self.sale is not None else None
+
+    @property
     def sale_items(self) -> list[dict[str, object]]:
         if self.sale is None:
             return []
         return [
             {
                 "id": item.id,
+                "product_id": item.product_id,
+                "barcode": item.barcode,
                 "description": item.description,
                 "quantity": item.quantity,
                 "unit": item.unit,

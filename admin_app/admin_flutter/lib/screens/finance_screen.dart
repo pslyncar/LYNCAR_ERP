@@ -119,6 +119,7 @@ class _FinanceScreenState extends State<FinanceScreen> {
         api: _api,
         token: widget.session.token,
         account: account,
+        products: _products,
         canPay: widget.session.can('finance:receivables:pay'),
         canEmitFiscal:
             widget.session.canUseFiscal && widget.session.can('fiscal:emit'),
@@ -677,6 +678,305 @@ class _FinanceScreenState extends State<FinanceScreen> {
       );
       return haystack.contains(term);
     }).toList();
+  }
+}
+
+class _SaleItemsEditDialog extends StatefulWidget {
+  const _SaleItemsEditDialog({
+    required this.api,
+    required this.token,
+    required this.receivable,
+    required this.products,
+  });
+
+  final ApiClient api;
+  final String token;
+  final Receivable receivable;
+  final List<Product> products;
+
+  @override
+  State<_SaleItemsEditDialog> createState() => _SaleItemsEditDialogState();
+}
+
+class _SaleItemsEditDialogState extends State<_SaleItemsEditDialog> {
+  final List<_EditableSaleLine> _lines = [];
+  TextEditingController? _productSearchController;
+  bool _saving = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final item in widget.receivable.saleItems) {
+      final product = widget.products
+          .where((candidate) => candidate.id == item.productId)
+          .firstOrNull;
+      if (product != null) {
+        _lines.add(
+          _EditableSaleLine(
+            product: product,
+            description: item.description,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+          ),
+        );
+      }
+    }
+    if (_lines.length != widget.receivable.saleItems.length) {
+      _error = 'Um item antigo não foi encontrado no cadastro de produtos.';
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final line in _lines) {
+      line.dispose();
+    }
+    super.dispose();
+  }
+
+  double get _total => _lines.fold<double>(
+    0,
+    (sum, line) => sum + ((line.quantity ?? 0) * line.unitPrice),
+  );
+
+  Future<void> _save() async {
+    final invalid = _lines.where((line) {
+      final quantity = line.quantity;
+      return quantity == null ||
+          quantity <= 0 ||
+          (_isUnitProduct(line.product) &&
+              quantity != quantity.roundToDouble());
+    }).firstOrNull;
+    if (_lines.isEmpty) {
+      setState(() => _error = 'A venda precisa ter pelo menos um item.');
+      return;
+    }
+    if (invalid != null) {
+      setState(
+        () => _error = _isUnitProduct(invalid.product)
+            ? 'Informe uma quantidade inteira para ${invalid.product.name}.'
+            : 'Informe uma quantidade válida para ${invalid.product.name}.',
+      );
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await widget.api.updateSaleItems(
+        widget.token,
+        saleId: widget.receivable.saleId!,
+        items: [
+          for (final line in _lines)
+            SaleItemPayload(
+              productId: line.product.id,
+              barcode: line.product.barcode,
+              description: line.description.text.trim().isEmpty
+                  ? line.product.name
+                  : line.description.text.trim(),
+              quantity: line.quantity!,
+              unitPrice: line.unitPrice,
+              discountAmount: 0,
+            ),
+        ],
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    } on ApiException catch (error) {
+      setState(() => _error = error.message);
+    } catch (_) {
+      setState(() => _error = 'Não foi possível editar os itens da venda.');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final originalDate =
+        widget.receivable.saleSoldAt ?? widget.receivable.createdAt;
+    return AlertDialog(
+      title: Text('Editar venda ${widget.receivable.saleNumber ?? ''}'),
+      content: SizedBox(
+        width: 760,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF7ED),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFFDBA74)),
+                ),
+                child: Text(
+                  'A data original da venda é ${_dateTime(originalDate)} e será preservada. '
+                  'Esta edição será registrada agora.',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Autocomplete<Product>(
+                displayStringForOption: (product) => product.name,
+                optionsBuilder: (value) {
+                  final term = _normalize(value.text);
+                  return widget.products
+                      .where((product) {
+                        return product.productType != 'servico' &&
+                            !_lines.any(
+                              (line) => line.product.id == product.id,
+                            ) &&
+                            (term.isEmpty ||
+                                _normalize(
+                                  '${product.name} ${product.internalCode ?? ''} ${product.barcode ?? ''}',
+                                ).contains(term));
+                      })
+                      .take(20);
+                },
+                onSelected: (product) => setState(() {
+                  _lines.add(
+                    _EditableSaleLine(
+                      product: product,
+                      description: product.name,
+                      quantity: _isUnitProduct(product) ? 1 : 0.001,
+                      unitPrice: _effectiveProductPrice(product),
+                    ),
+                  );
+                  _productSearchController?.clear();
+                }),
+                fieldViewBuilder:
+                    (context, controller, focusNode, onFieldSubmitted) {
+                      _productSearchController = controller;
+                      return TextField(
+                        controller: controller,
+                        focusNode: focusNode,
+                        decoration: const InputDecoration(
+                          labelText: 'Adicionar item à mesma venda',
+                          hintText: 'Pesquise produto, código ou EAN',
+                          prefixIcon: Icon(Icons.add_shopping_cart_outlined),
+                          border: OutlineInputBorder(),
+                        ),
+                      );
+                    },
+              ),
+              const SizedBox(height: 12),
+              for (final line in _lines)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 270,
+                          child: TextField(
+                            controller: line.description,
+                            decoration: const InputDecoration(
+                              labelText: 'Descrição',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 150,
+                          child: TextField(
+                            controller: line.quantityController,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [
+                              _QuantityInputFormatter(
+                                decimal: !_isUnitProduct(line.product),
+                              ),
+                            ],
+                            decoration: InputDecoration(
+                              labelText: 'Quantidade (${line.product.unit})',
+                              border: const OutlineInputBorder(),
+                            ),
+                            onChanged: (_) => setState(() => _error = null),
+                          ),
+                        ),
+                        Text(_money((line.quantity ?? 0) * line.unitPrice)),
+                        IconButton(
+                          tooltip: 'Remover item',
+                          onPressed: _saving
+                              ? null
+                              : () => setState(() {
+                                  _lines.remove(line);
+                                  line.dispose();
+                                }),
+                          icon: const Icon(Icons.delete_outline),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  'Novo total: ${_money(_total)}',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 10),
+                Text(_error!, style: const TextStyle(color: Colors.red)),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton.icon(
+          onPressed: _saving ? null : _save,
+          icon: const Icon(Icons.save_outlined),
+          label: Text(_saving ? 'Salvando...' : 'Salvar alterações'),
+        ),
+      ],
+    );
+  }
+}
+
+class _EditableSaleLine {
+  _EditableSaleLine({
+    required this.product,
+    required String description,
+    required double quantity,
+    required this.unitPrice,
+  }) : description = TextEditingController(text: description),
+       quantityController = TextEditingController(
+         text: _isUnitProduct(product)
+             ? quantity.toStringAsFixed(0)
+             : quantity.toStringAsFixed(3).replaceAll('.', ','),
+       );
+
+  final Product product;
+  final TextEditingController description;
+  final TextEditingController quantityController;
+  final double unitPrice;
+
+  double? get quantity =>
+      double.tryParse(quantityController.text.replaceAll(',', '.'));
+
+  void dispose() {
+    description.dispose();
+    quantityController.dispose();
   }
 }
 
@@ -1808,6 +2108,7 @@ class _ClientStatementDialog extends StatefulWidget {
     required this.api,
     required this.token,
     required this.account,
+    required this.products,
     required this.canPay,
     required this.canEmitFiscal,
   });
@@ -1815,6 +2116,7 @@ class _ClientStatementDialog extends StatefulWidget {
   final ApiClient api;
   final String token;
   final _ClientReceivables account;
+  final List<Product> products;
   final bool canPay;
   final bool canEmitFiscal;
 
@@ -1914,6 +2216,20 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
         token: widget.token,
         receivable: receivable,
         payment: payment,
+      ),
+    );
+    return changed == true;
+  }
+
+  Future<bool> _editSale(Receivable receivable) async {
+    if (receivable.saleId == null || receivable.saleItems.isEmpty) return false;
+    final changed = await showDialog<bool>(
+      context: context,
+      builder: (context) => _SaleItemsEditDialog(
+        api: widget.api,
+        token: widget.token,
+        receivable: receivable,
+        products: widget.products,
       ),
     );
     return changed == true;
@@ -2127,6 +2443,17 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                   'Saldo ${_money(entry.balanceAmount)}',
                   style: const TextStyle(fontWeight: FontWeight.w900),
                 ),
+                if (widget.canPay && entry.first.saleId != null)
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final navigator = Navigator.of(context);
+                      final changed = await _editSale(entry.first);
+                      if (!mounted) return;
+                      if (changed) navigator.pop(true);
+                    },
+                    icon: const Icon(Icons.edit_outlined),
+                    label: const Text('Editar venda'),
+                  ),
                 if (entry.first.fiscalDocumentId != null)
                   _FiscalDocumentBadge(receivable: entry.first)
                 else if (widget.canEmitFiscal)
@@ -2185,6 +2512,17 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                 _receivableBalanceLabel(receivable),
                 style: const TextStyle(fontWeight: FontWeight.w900),
               ),
+              if (widget.canPay && receivable.saleId != null)
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final changed = await _editSale(receivable);
+                    if (!mounted) return;
+                    if (changed) navigator.pop(true);
+                  },
+                  icon: const Icon(Icons.edit_outlined),
+                  label: const Text('Editar venda'),
+                ),
               if (receivable.fiscalDocumentId != null)
                 _FiscalDocumentBadge(receivable: receivable),
               if (widget.canEmitFiscal &&
@@ -3387,6 +3725,24 @@ class _ReceivableSaleSummary extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
+          if (receivable.saleLastEditedAt != null)
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF7ED),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFFDBA74)),
+              ),
+              child: Text(
+                'Itens alterados em ${_dateTime(receivable.saleLastEditedAt!)}. '
+                'A data original da venda foi preservada: ${_dateTime(receivable.saleSoldAt ?? receivable.createdAt)}.',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
           _StatementTextLine(
             'Título em aberto',
             '${receivable.number ?? 'CR${receivable.id}'} - ${_money(receivable.originalAmount)}',

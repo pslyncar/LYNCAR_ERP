@@ -52,6 +52,8 @@ class ReceivablePaymentRead(BaseModel):
 
 class ReceivableSaleItemRead(BaseModel):
     id: int
+    product_id: int | None = None
+    barcode: str | None = None
     description: str
     quantity: Decimal
     unit: str
@@ -82,6 +84,7 @@ class ReceivableRead(BaseModel):
     client_name: str | None = None
     sale_number: str | None = None
     sale_sold_at: datetime | None = None
+    sale_last_edited_at: datetime | None = None
     sale_items: list[ReceivableSaleItemRead] = []
     payments: list[ReceivablePaymentRead] = []
 

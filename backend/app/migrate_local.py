@@ -170,6 +170,7 @@ SALE_COLUMNS = [
     ("consumer_cpf", "VARCHAR(14)"),
     ("offline_client_id", "VARCHAR(80)"),
     ("cash_register_number", "VARCHAR(10)"),
+    ("last_edited_at", "TIMESTAMP WITH TIME ZONE"),
 ]
 
 PDV_TERMINAL_COLUMNS = [

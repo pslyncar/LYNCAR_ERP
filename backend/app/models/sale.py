@@ -35,6 +35,7 @@ class Sale(Base):
         nullable=False,
         server_default=func.now(),
     )
+    last_edited_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     canceled_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
     client = relationship("Client", back_populates="sales")

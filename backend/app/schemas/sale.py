@@ -66,6 +66,10 @@ class SalePaymentsUpdate(BaseModel):
     payments: list[SalePaymentCreate] = Field(min_length=1)
 
 
+class SaleItemsUpdate(BaseModel):
+    items: list[SaleItemCreate] = Field(min_length=1)
+
+
 class SalePaymentRead(SalePaymentCreate):
     id: int
 
@@ -105,6 +109,7 @@ class SaleRead(BaseModel):
     offline_client_id: str | None = None
     notes: str | None
     sold_at: datetime
+    last_edited_at: datetime | None = None
     canceled_at: datetime | None
     has_fiscal_document: bool = False
     has_authorized_fiscal_document: bool = False
