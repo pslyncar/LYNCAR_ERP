@@ -132,6 +132,17 @@ class _FiscalDocumentCorrectionScreenState
   double _decimal(TextEditingController controller) =>
       double.tryParse(controller.text.trim().replaceAll(',', '.')) ?? 0;
 
+  double get _productsTotal =>
+      _itemControllers.fold<double>(0, (sum, item) => sum + item.total);
+
+  double get _additionalChargesTotal =>
+      _decimal(_freight) + _decimal(_insurance) + _decimal(_expenses);
+
+  double get _documentTotal => _productsTotal + _additionalChargesTotal;
+
+  String _formatMoney(double value) =>
+      value.toStringAsFixed(2).replaceAll('.', ',');
+
   String? _optionalText(TextEditingController controller) {
     final value = controller.text.trim();
     return value.isEmpty ? null : value;
@@ -738,11 +749,47 @@ class _FiscalDocumentCorrectionScreenState
                         const SizedBox(height: 4),
                         Align(
                           alignment: Alignment.centerRight,
-                          child: Text(
-                            'Total da nota: R\$ ${_itemControllers.fold<double>(0, (sum, item) => sum + item.total).toStringAsFixed(2).replaceAll('.', ',')}',
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
+                          child: Container(
+                            constraints: const BoxConstraints(maxWidth: 420),
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF5F8FA),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: const Color(0xFFD6E0E5),
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Text(
+                                  'Total dos produtos: R\$ ${_formatMoney(_productsTotal)}',
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                if (_decimal(_freight) > 0)
+                                  Text(
+                                    'Frete: + R\$ ${_formatMoney(_decimal(_freight))}',
+                                  ),
+                                if (_decimal(_insurance) > 0)
+                                  Text(
+                                    'Seguro: + R\$ ${_formatMoney(_decimal(_insurance))}',
+                                  ),
+                                if (_decimal(_expenses) > 0)
+                                  Text(
+                                    'Outras despesas: + R\$ ${_formatMoney(_decimal(_expenses))}',
+                                  ),
+                                const Divider(height: 18),
+                                Text(
+                                  'Total da nota: R\$ ${_formatMoney(_documentTotal)}',
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
@@ -903,6 +950,7 @@ class _FiscalDocumentCorrectionScreenState
       labelText: label,
       border: const OutlineInputBorder(),
     ),
+    onChanged: (_) => setState(() {}),
   );
 }
 
