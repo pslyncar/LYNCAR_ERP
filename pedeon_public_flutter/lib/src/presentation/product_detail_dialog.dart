@@ -138,11 +138,11 @@ class _ProductDetailState extends State<_ProductDetail> {
               children: [
                 LayoutBuilder(
                   builder: (context, constraints) {
-                    final aspectRatio = constraints.maxWidth < 700
-                        ? 1.2
-                        : 16 / 9;
                     return AspectRatio(
-                      aspectRatio: aspectRatio,
+                      // Product photos can be portrait or landscape. A
+                      // square frame plus contain preserves the whole photo
+                      // without distortion or desktop-only cropping.
+                      aspectRatio: 1,
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
@@ -160,8 +160,10 @@ class _ProductDetailState extends State<_ProductDetail> {
                                     tag: 'product-image-${widget.product.id}',
                                     child: Image.network(
                                       widget.imageUrl,
-                                      fit: BoxFit.cover,
+                                      fit: BoxFit.contain,
                                       alignment: Alignment.center,
+                                      color: const Color(0xFFF1ECE4),
+                                      colorBlendMode: BlendMode.dstOver,
                                       errorBuilder: (_, _, _) =>
                                           const ColoredBox(
                                             color: Color(0xFFF1ECE4),

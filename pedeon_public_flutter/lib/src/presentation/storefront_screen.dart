@@ -373,7 +373,10 @@ class _CatalogBodyState extends State<_CatalogBody> {
                   parent: BouncingScrollPhysics(),
                 )
               : null,
-          scrollCacheExtent: ScrollCacheExtent.pixels(compact ? 650 : 900),
+          // Do not decode several off-screen product photos on mobile while
+          // the user is dragging. The API/server still needs thumbnails for
+          // the original files, but this keeps the browser work bounded.
+          scrollCacheExtent: ScrollCacheExtent.pixels(compact ? 350 : 700),
           slivers: [
             SliverToBoxAdapter(
               child: _StoreHero(
@@ -428,9 +431,9 @@ class _CatalogBodyState extends State<_CatalogBody> {
                 ),
                 sliver: SliverGrid.builder(
                   itemCount: sections[sectionIndex].products.length,
-                  gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  gridDelegate: SliverGridDelegateWithMaxCrossAxisExtent(
                     maxCrossAxisExtent: 350,
-                    mainAxisExtent: 390,
+                    mainAxisExtent: compact ? 390 : 500,
                     crossAxisSpacing: 18,
                     mainAxisSpacing: 18,
                   ),
@@ -1078,87 +1081,106 @@ class _ProductCard extends StatelessWidget {
   final ValueChanged<CatalogProduct> onAdd;
 
   @override
-  Widget build(BuildContext context) => Card(
-    clipBehavior: Clip.antiAlias,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-    child: InkWell(
-      onTap: product.available ? () => onAdd(product) : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: _ProductImage(url: imageUrl, available: product.available),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(17),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                  ),
+  Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).width < 700;
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+      child: InkWell(
+        onTap: product.available ? () => onAdd(product) : null,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (compact)
+              Expanded(
+                child: _ProductImage(
+                  url: imageUrl,
+                  available: product.available,
                 ),
-                const SizedBox(height: 7),
-                Text(
-                  product.description?.trim().isNotEmpty == true
-                      ? product.description!
-                      : 'Preparado para você',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF6E7474),
-                    height: 1.35,
-                  ),
+              )
+            else
+              AspectRatio(
+                // A square desktop frame prevents wide cards from cropping
+                // portrait product photos.
+                aspectRatio: 1,
+                child: _ProductImage(
+                  url: imageUrl,
+                  available: product.available,
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (product.onOffer)
+              ),
+            Padding(
+              padding: const EdgeInsets.all(17),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    product.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    product.description?.trim().isNotEmpty == true
+                        ? product.description!
+                        : 'Preparado para você',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF6E7474),
+                      height: 1.35,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (product.onOffer)
+                              Text(
+                                _currency(product.normalPrice),
+                                style: const TextStyle(
+                                  decoration: TextDecoration.lineThrough,
+                                  color: Colors.black45,
+                                  fontSize: 12,
+                                ),
+                              ),
                             Text(
-                              _currency(product.normalPrice),
-                              style: const TextStyle(
-                                decoration: TextDecoration.lineThrough,
-                                color: Colors.black45,
-                                fontSize: 12,
+                              _currency(product.price),
+                              style: TextStyle(
+                                color: Theme.of(context).colorScheme.primary,
+                                fontSize: 19,
+                                fontWeight: FontWeight.w900,
                               ),
                             ),
-                          Text(
-                            _currency(product.price),
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.primary,
-                              fontSize: 19,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                    IconButton.filled(
-                      key: Key('add-product-${product.id}'),
-                      tooltip: product.available ? 'Adicionar' : 'Indisponível',
-                      onPressed: product.available
-                          ? () => onAdd(product)
-                          : null,
-                      icon: const Icon(Icons.add_rounded),
-                    ),
-                  ],
-                ),
-              ],
+                      IconButton.filled(
+                        key: Key('add-product-${product.id}'),
+                        tooltip: product.available
+                            ? 'Adicionar'
+                            : 'Indisponível',
+                        onPressed: product.available
+                            ? () => onAdd(product)
+                            : null,
+                        icon: const Icon(Icons.add_rounded),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ProductImage extends StatelessWidget {
@@ -1181,8 +1203,18 @@ class _ProductImage extends StatelessWidget {
       else
         Image.network(
           url,
-          fit: BoxFit.cover,
+          // Keep the current mobile crop, but show the complete product in
+          // the square desktop frame instead of cutting bottles/packages.
+          fit: MediaQuery.sizeOf(context).width < 700
+              ? BoxFit.cover
+              : BoxFit.contain,
           alignment: Alignment.center,
+          color: MediaQuery.sizeOf(context).width < 700
+              ? null
+              : const Color(0xFFF1ECE4),
+          colorBlendMode: MediaQuery.sizeOf(context).width < 700
+              ? null
+              : BlendMode.dstOver,
           cacheWidth: (350 * MediaQuery.devicePixelRatioOf(context)).round(),
           filterQuality: FilterQuality.low,
           errorBuilder: (_, _, _) => const ColoredBox(
