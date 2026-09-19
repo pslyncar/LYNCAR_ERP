@@ -2128,10 +2128,14 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
   String _statementView = 'open';
 
   List<Receivable> get _eligibleFiscalSales {
+    if (_statementView != 'open') return const [];
     final bySale = <int, Receivable>{};
     for (final receivable in widget.account.receivables) {
       final saleId = receivable.saleId;
-      if (saleId != null && receivable.fiscalDocumentId == null) {
+      if (saleId != null &&
+          receivable.fiscalDocumentId == null &&
+          receivable.status != 'canceled' &&
+          receivable.balanceAmount > 0.009) {
         bySale.putIfAbsent(saleId, () => receivable);
       }
     }
@@ -2233,6 +2237,35 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
       ),
     );
     return changed == true;
+  }
+
+  Future<bool> _reopenSaleForFiscal(Receivable receivable) async {
+    if (receivable.saleId == null || receivable.fiscalDocumentId != null) {
+      return false;
+    }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reabrir extrato?'),
+        content: const Text(
+          'As baixas desta venda serão estornadas, os títulos voltarão para Em aberto e a data original será preservada. Isso não será permitido se a venda já tiver nota fiscal.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.of(context).pop(true),
+            icon: const Icon(Icons.lock_open_outlined),
+            label: const Text('Reabrir extrato'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return false;
+    await widget.api.reopenSaleForFiscal(widget.token, receivable.saleId!);
+    return true;
   }
 
   @override
@@ -2454,9 +2487,26 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                     icon: const Icon(Icons.edit_outlined),
                     label: const Text('Editar venda'),
                   ),
+                if (_statementView == 'history' &&
+                    widget.canPay &&
+                    entry.first.saleId != null &&
+                    entry.first.fiscalDocumentId == null)
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final navigator = Navigator.of(context);
+                      final changed = await _reopenSaleForFiscal(entry.first);
+                      if (!mounted) return;
+                      if (changed) navigator.pop(true);
+                    },
+                    icon: const Icon(Icons.lock_open_outlined),
+                    label: const Text('Reabrir extrato'),
+                  ),
                 if (entry.first.fiscalDocumentId != null)
                   _FiscalDocumentBadge(receivable: entry.first)
-                else if (widget.canEmitFiscal)
+                else if (widget.canEmitFiscal &&
+                    _statementView == 'open' &&
+                    entry.first.status != 'canceled' &&
+                    entry.first.balanceAmount > 0.009)
                   OutlinedButton.icon(
                     onPressed: () async {
                       final navigator = Navigator.of(context);
@@ -2523,11 +2573,28 @@ class _ClientStatementDialogState extends State<_ClientStatementDialog> {
                   icon: const Icon(Icons.edit_outlined),
                   label: const Text('Editar venda'),
                 ),
+              if (_statementView == 'history' &&
+                  widget.canPay &&
+                  receivable.saleId != null &&
+                  receivable.fiscalDocumentId == null)
+                OutlinedButton.icon(
+                  onPressed: () async {
+                    final navigator = Navigator.of(context);
+                    final changed = await _reopenSaleForFiscal(receivable);
+                    if (!mounted) return;
+                    if (changed) navigator.pop(true);
+                  },
+                  icon: const Icon(Icons.lock_open_outlined),
+                  label: const Text('Reabrir extrato'),
+                ),
               if (receivable.fiscalDocumentId != null)
                 _FiscalDocumentBadge(receivable: receivable),
               if (widget.canEmitFiscal &&
+                  _statementView == 'open' &&
                   receivable.saleId != null &&
-                  receivable.fiscalDocumentId == null)
+                  receivable.fiscalDocumentId == null &&
+                  receivable.status != 'canceled' &&
+                  receivable.balanceAmount > 0.009)
                 OutlinedButton.icon(
                   onPressed: () async {
                     final navigator = Navigator.of(context);

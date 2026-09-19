@@ -2200,6 +2200,17 @@ class ApiClient {
     return Receivable.fromJson(_decodeResponse(response));
   }
 
+  Future<List<Receivable>> reopenSaleForFiscal(String token, int saleId) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/receivables/sales/$saleId/reopen-for-fiscal'),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeListResponse(response);
+    return data
+        .map((item) => Receivable.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
   Future<Sale> updateSaleItems(
     String token, {
     required int saleId,

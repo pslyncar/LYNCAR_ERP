@@ -251,6 +251,57 @@ def cancel_receivable(
     return get_receivable_or_404(db, receivable.id)
 
 
+@router.post("/sales/{sale_id}/reopen-for-fiscal", response_model=list[ReceivableRead])
+def reopen_sale_for_fiscal(
+    sale_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_permission("finance:receivables:pay")),
+) -> list[Receivable]:
+    sale = db.scalar(
+        select(Sale)
+        .options(selectinload(Sale.fiscal_documents), selectinload(Sale.fiscal_document_links))
+        .where(Sale.id == sale_id)
+    )
+    if sale is None:
+        raise HTTPException(status_code=404, detail="Venda não encontrada.")
+    if sale.fiscal_documents or sale.fiscal_document_links:
+        raise HTTPException(
+            status_code=409,
+            detail="Venda que já possui nota fiscal não pode ser reaberta.",
+        )
+
+    receivables = list(
+        db.scalars(
+            select(Receivable)
+            .options(selectinload(Receivable.payments))
+            .where(Receivable.sale_id == sale_id)
+            .order_by(Receivable.id.asc())
+        ).all()
+    )
+    if not receivables:
+        raise HTTPException(status_code=404, detail="A venda não possui título financeiro.")
+
+    now = datetime.utcnow()
+    note = (
+        f"Reaberto para emissão de nota em {now.strftime('%d/%m/%Y %H:%M')} "
+        f"por {current_user.name or 'usuário'}; data da venda preservada."
+    )
+    for receivable in receivables:
+        for payment in receivable.payments:
+            if payment.reversed_at is None:
+                payment.reversed_at = now
+                payment.reversed_by_user_id = current_user.id
+                payment.reversal_reason = "Título reaberto para emissão de nota fiscal."
+        receivable.paid_amount = Decimal("0")
+        receivable.balance_amount = _money(receivable.original_amount)
+        receivable.status = "open"
+        receivable.settled_at = None
+        receivable.notes = f"{receivable.notes}\n{note}" if receivable.notes else note
+
+    db.commit()
+    return [get_receivable_or_404(db, item.id) for item in receivables]
+
+
 @router.post(
     "/clients/{client_id}/payments",
     response_model=list[ReceivableRead],
