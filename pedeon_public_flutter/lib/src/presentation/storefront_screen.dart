@@ -338,6 +338,7 @@ class _CatalogBodyState extends State<_CatalogBody> {
   List<_CatalogSection> _currentSections = const [];
   bool _programmaticScroll = false;
   bool _categoryUpdateScheduled = false;
+  DateTime? _lastCategoryResolve;
 
   StorefrontViewModel get viewModel => widget.viewModel;
 
@@ -509,6 +510,16 @@ class _CatalogBodyState extends State<_CatalogBody> {
   }
 
   void _resolveActiveCategory() {
+    // Do not perform a render-object lookup for every scroll tick. This work
+    // is only needed often enough for the selected category to follow the
+    // user's position without competing with the browser's paint frames.
+    final now = DateTime.now();
+    final lastResolve = _lastCategoryResolve;
+    if (lastResolve != null &&
+        now.difference(lastResolve).inMilliseconds < 80) {
+      return;
+    }
+    _lastCategoryResolve = now;
     String? active;
     var closestTop = double.negativeInfinity;
     for (final section in _currentSections) {
@@ -671,6 +682,10 @@ class _StoreHero extends StatelessWidget {
                                   viewModel.imageUrl(coverUrl),
                                   fit: BoxFit.cover,
                                   alignment: Alignment.center,
+                                  cacheWidth: (constraints.maxWidth *
+                                          MediaQuery.devicePixelRatioOf(context))
+                                      .round(),
+                                  filterQuality: FilterQuality.low,
                                   errorBuilder: (_, _, _) =>
                                       ColoredBox(color: scheme.primary),
                                 ),
@@ -947,7 +962,22 @@ class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
   );
 
   @override
-  bool shouldRebuild(covariant _CategoryHeaderDelegate oldDelegate) => true;
+  bool shouldRebuild(covariant _CategoryHeaderDelegate oldDelegate) {
+    if (selectedCategory != oldDelegate.selectedCategory ||
+        categories.length != oldDelegate.categories.length) {
+      return true;
+    }
+    for (var index = 0; index < categories.length; index++) {
+      final current = categories[index];
+      final previous = oldDelegate.categories[index];
+      if (current.id != previous.id ||
+          current.name != previous.name ||
+          current.slug != previous.slug) {
+        return true;
+      }
+    }
+    return false;
+  }
 }
 
 class _CategoryNavigation extends StatefulWidget {
@@ -1176,6 +1206,7 @@ class _ProductImage extends StatelessWidget {
           fit: BoxFit.cover,
           alignment: Alignment.center,
           cacheWidth: (350 * MediaQuery.devicePixelRatioOf(context)).round(),
+          cacheHeight: (240 * MediaQuery.devicePixelRatioOf(context)).round(),
           filterQuality: FilterQuality.low,
           errorBuilder: (_, _, _) => const ColoredBox(
             color: Color(0xFFF1ECE4),
