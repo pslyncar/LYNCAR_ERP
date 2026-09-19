@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../models/session.dart';
 import '../../../services/api_client.dart';
 import '../data/lyna_repository.dart';
+import '../services/lyna_speech_service.dart';
 import 'lyna_view_model.dart';
 
 class LynaChatOverlay extends StatefulWidget {
@@ -21,15 +24,28 @@ class LynaChatOverlay extends StatefulWidget {
   State<LynaChatOverlay> createState() => _LynaChatOverlayState();
 }
 
-class _LynaChatOverlayState extends State<LynaChatOverlay> {
+class _LynaChatOverlayState extends State<LynaChatOverlay>
+    with SingleTickerProviderStateMixin {
   late final LynaViewModel _viewModel;
   final _inputController = TextEditingController();
+  final _inputFocusNode = FocusNode();
   final _scrollController = ScrollController();
+  final _speechService = LynaSpeechService();
+  late final AnimationController _greetingAnimation;
   bool _open = false;
+  bool _showGreeting = true;
+  bool _listening = false;
+  String? _speechMessage;
 
   @override
   void initState() {
     super.initState();
+    _greetingAnimation = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+      lowerBound: .96,
+      upperBound: 1.0,
+    )..repeat(reverse: true);
     _viewModel = LynaViewModel(
       repository: LynaRepository(
         apiClient: ApiClient(widget.session.apiBaseUrl),
@@ -52,7 +68,10 @@ class _LynaChatOverlayState extends State<LynaChatOverlay> {
     _viewModel.removeListener(_scrollToEnd);
     _viewModel.dispose();
     _inputController.dispose();
+    _inputFocusNode.dispose();
     _scrollController.dispose();
+    _greetingAnimation.dispose();
+    unawaited(_speechService.dispose());
     super.dispose();
   }
 
@@ -68,9 +87,21 @@ class _LynaChatOverlayState extends State<LynaChatOverlay> {
     });
   }
 
+  void _openChat() {
+    setState(() => _open = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _scrollToEnd();
+      _inputFocusNode.requestFocus();
+    });
+  }
+
   void _send() {
+    if (_viewModel.busy) return;
     final text = _inputController.text;
+    if (text.trim().isEmpty) return;
     _inputController.clear();
+    _inputFocusNode.requestFocus();
     _viewModel.ask(
       widget.session,
       text: text,
@@ -78,6 +109,52 @@ class _LynaChatOverlayState extends State<LynaChatOverlay> {
       module: widget.module,
     );
   }
+
+  Future<void> _toggleListening() async {
+    if (_listening || _speechService.isListening) {
+      await _speechService.stopListening();
+      if (mounted) setState(() => _listening = false);
+      _inputFocusNode.requestFocus();
+      return;
+    }
+    setState(() => _speechMessage = null);
+    final started = await _speechService.startListening(
+      onResult: (result) {
+        if (!mounted) return;
+        _inputController.value = TextEditingValue(
+          text: result.recognizedWords,
+          selection: TextSelection.collapsed(
+            offset: result.recognizedWords.length,
+          ),
+        );
+        _inputFocusNode.requestFocus();
+      },
+      onStatus: (status) {
+        if (!mounted) return;
+        if (status == 'notListening' || status == 'done') {
+          setState(() => _listening = false);
+        }
+      },
+      onError: (message) {
+        if (!mounted) return;
+        setState(() {
+          _listening = false;
+          _speechMessage = 'Não consegui acessar o microfone. Tente novamente.';
+        });
+      },
+    );
+    if (!mounted) return;
+    setState(() {
+      _listening = started;
+      if (!started) {
+        _speechMessage =
+            'O reconhecimento de voz não está disponível neste aparelho.';
+      }
+    });
+    if (started) _inputFocusNode.requestFocus();
+  }
+
+  Future<void> _speak(String text) => _speechService.speak(text);
 
   @override
   Widget build(BuildContext context) {
@@ -89,12 +166,68 @@ class _LynaChatOverlayState extends State<LynaChatOverlay> {
         color: Colors.transparent,
         child: _open
             ? _buildPanel(context, compact)
-            : FloatingActionButton.extended(
-                heroTag: 'lyna-open-chat',
-                onPressed: () => setState(() => _open = true),
-                icon: const _LynaAvatar(size: 28),
-                label: const Text('Lyna'),
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  if (_showGreeting)
+                    ScaleTransition(
+                      scale: _greetingAnimation,
+                      child: _buildGreeting(compact),
+                    ),
+                  const SizedBox(width: 8),
+                  ScaleTransition(
+                    scale: _greetingAnimation,
+                    child: _LynaLauncher(onPressed: _openChat),
+                  ),
+                ],
               ),
+      ),
+    );
+  }
+
+  Widget _buildGreeting(bool compact) {
+    return Container(
+      constraints: BoxConstraints(maxWidth: compact ? 190 : 230),
+      padding: const EdgeInsets.fromLTRB(13, 10, 5, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9F1FF),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x30000000),
+            blurRadius: 12,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Flexible(
+            child: Text(
+              'Oi! Sou a Lyna. Posso ajudar? 👋',
+              style: TextStyle(
+                color: Color(0xFF243B63),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Ocultar mensagem da Lyna',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 26, minHeight: 26),
+            onPressed: () => setState(() => _showGreeting = false),
+            icon: const Icon(
+              Icons.close_rounded,
+              size: 16,
+              color: Color(0xFF526989),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -205,14 +338,40 @@ class _LynaChatOverlayState extends State<LynaChatOverlay> {
                             : const Color(0xFFF2F6FB),
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Text(
-                        line.text,
-                        style: TextStyle(
-                          color: line.fromUser
-                              ? Colors.white
-                              : const Color(0xFF26364A),
-                          height: 1.35,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Flexible(
+                            child: Text(
+                              line.text,
+                              style: TextStyle(
+                                color: line.fromUser
+                                    ? Colors.white
+                                    : const Color(0xFF26364A),
+                                height: 1.35,
+                              ),
+                            ),
+                          ),
+                          if (!line.fromUser) ...[
+                            const SizedBox(width: 4),
+                            IconButton(
+                              tooltip: 'Ouvir resposta da Lyna',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 28,
+                                minHeight: 28,
+                              ),
+                              onPressed: () => _speak(line.text),
+                              icon: const Icon(
+                                Icons.volume_up_outlined,
+                                size: 18,
+                                color: Color(0xFF135A77),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                     ),
                   );
@@ -220,6 +379,17 @@ class _LynaChatOverlayState extends State<LynaChatOverlay> {
               ),
             ),
             if (_viewModel.busy) const LinearProgressIndicator(minHeight: 2),
+            if (_speechMessage != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 4, 14, 0),
+                child: Text(
+                  _speechMessage!,
+                  style: const TextStyle(
+                    color: Color(0xFF9A4B22),
+                    fontSize: 11,
+                  ),
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
               child: Row(
@@ -228,14 +398,27 @@ class _LynaChatOverlayState extends State<LynaChatOverlay> {
                   Expanded(
                     child: TextField(
                       controller: _inputController,
+                      focusNode: _inputFocusNode,
+                      autofocus: true,
                       minLines: 1,
                       maxLines: 4,
-                      enabled: !_viewModel.busy,
                       textInputAction: TextInputAction.send,
-                      onSubmitted: (_) => _send(),
+                      onSubmitted: (_) {
+                        if (!_viewModel.busy) _send();
+                      },
                       decoration: const InputDecoration(
                         hintText: 'Pergunte sobre esta tela...',
                       ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: _listening ? 'Parar ditado' : 'Ditado por voz',
+                    onPressed: _toggleListening,
+                    color: _listening
+                        ? const Color(0xFFC23B3B)
+                        : const Color(0xFF135A77),
+                    icon: Icon(
+                      _listening ? Icons.stop_circle_outlined : Icons.mic_none,
                     ),
                   ),
                   const SizedBox(width: 8),
@@ -262,16 +445,66 @@ class _LynaAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipOval(
-      child: ColoredBox(
-        color: const Color(0xFFF7FAFF),
-        child: Padding(
-          padding: const EdgeInsets.all(2),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Transform.scale(
+          scale: 2.15,
+          alignment: const Alignment(0, -0.72),
           child: Image.asset(
             'assets/lyna/LYNA_SEM_FUNDO.png',
-            width: size,
-            height: size,
             fit: BoxFit.contain,
             filterQuality: FilterQuality.medium,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _LynaLauncher extends StatelessWidget {
+  const _LynaLauncher({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onPressed,
+        child: SizedBox(
+          width: 124,
+          height: 76,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 48,
+                right: 0,
+                top: 6,
+                bottom: 6,
+                child: Ink(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0E9FF),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFC2D2FF)),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      'Lyna',
+                      style: TextStyle(
+                        color: Color(0xFF243B63),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const Positioned(left: 0, top: 11, child: _LynaAvatar(size: 58)),
+            ],
           ),
         ),
       ),
