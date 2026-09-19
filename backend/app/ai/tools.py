@@ -24,6 +24,7 @@ from app.models.sale import Sale
 from app.models.supplier import Supplier
 from app.models.user import User
 from app.services.access_control import user_has_permission
+from app.ai.fiscal_explanations import explanation_for
 
 
 MAX_RESULTS = 5
@@ -190,6 +191,11 @@ def _fiscal_context(db: Session, user: User, message: str) -> str | None:
     for row in rows:
         reason = row.sefaz_message or "sem mensagem da SEFAZ"
         lines.append(f"- {row.document_type.upper()} nº {row.number or 'sem número'} | status: {row.status} | ambiente: {row.environment} | retorno: {reason[:220]}")
+        match = re.search(r"\b(518|519|531)\b", reason)
+        if match:
+            hint = explanation_for(match.group(1))
+            if hint:
+                lines.append(f"  Explicação preliminar: {hint}")
     return "\n".join(lines)
 
 

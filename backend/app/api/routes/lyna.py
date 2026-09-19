@@ -16,6 +16,9 @@ from app.ai.knowledge import format_knowledge, retrieve_knowledge
 from app.ai.learning import record_learning_event
 from app.ai.tools import build_authorized_context
 from app.ai.web_research import format_for_prompt, search as web_search
+from app.ai.cache import public_knowledge_cache
+from app.ai.fiscal_explanations import explanation_for
+from app.ai.intent_router import classify, fast_reply
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.models.user import User
@@ -159,13 +162,23 @@ def _ollama_message(payload: LynaChatRequest, user: User, db: Session) -> str | 
             payload.screen,
             payload.module,
         )
-        web_context = web_search(
-            payload.message,
-            enabled=settings.lyna_web_search_enabled,
-            base_url=settings.lyna_search_url,
-            timeout=settings.lyna_search_timeout_seconds,
-            max_results=settings.lyna_search_max_results,
-        )
+        search_key = f"{payload.message.strip().lower()}|{settings.lyna_search_url}"
+        web_context = public_knowledge_cache.get(search_key)
+        if web_context is None:
+            web_context = web_search(
+                payload.message,
+                enabled=settings.lyna_web_search_enabled,
+                base_url=settings.lyna_search_url,
+                timeout=settings.lyna_search_timeout_seconds,
+                max_results=settings.lyna_search_max_results,
+            )
+            public_knowledge_cache.set(search_key, web_context, 900)
+        intent = classify(payload.message)
+        rejection_hint = ""
+        for code in ("518", "519", "531"):
+            if code in payload.message:
+                rejection_hint = explanation_for(code) or ""
+                break
         system = (
             "Você é a Lyna, assistente somente leitura do ERP Lyncar. "
             "Responda em português claro e curto. Use o contexto da tela, mas "
@@ -175,6 +188,8 @@ def _ollama_message(payload: LynaChatRequest, user: User, db: Session) -> str | 
             "com base neles; nunca diga que a tela está vazia sem conferir esses dados. "
             "Use o histórico para entender perguntas de continuidade como 'e agora?' "
             "ou 'qual deles?'. Se faltar informação, diga exatamente o que falta. "
+            f"A intenção detectada para roteamento é: {intent.name}. "
+            f"Explicação determinística adicional, se houver: {rejection_hint or 'nenhuma'}. "
             "Só use pesquisa externa quando ela tiver sido solicitada; nunca crie radar, "
             "alerta, push ou mensagem proativa de impacto. Quando houver fontes, cite "
             "os títulos e URLs, sem tratar a pesquisa como regra automática do motor fiscal.\n\n"
@@ -228,6 +243,14 @@ def chat(
     safety_message = _safety_block(payload.message)
     if safety_message:
         return LynaChatResponse(message=safety_message, source="safety_guard")
+    instant_message = fast_reply(
+        payload.message,
+        user_name=getattr(current_user, "name", ""),
+        screen=payload.screen,
+        module=payload.module,
+    )
+    if instant_message:
+        return LynaChatResponse(message=instant_message, source="fast_path")
     required_permission = _required_permission(payload)
     area = _normalize(" ".join((payload.screen, payload.module, payload.message)))
     if required_permission and not _has_read_permission(db, current_user, area):
@@ -255,6 +278,21 @@ def chat(
             source="ollama",
             model=get_settings().lyna_model,
         )
+    routed_intent = classify(payload.message)
+    if routed_intent.name in {"authorized_data", "fiscal"}:
+        deterministic_data = build_authorized_context(
+            db,
+            current_user,
+            payload.message,
+            payload.screen,
+            payload.module,
+        )
+        if not deterministic_data.startswith("Nenhum dado operacional foi consultado"):
+            return LynaChatResponse(
+                message=deterministic_data,
+                source="authorized_data",
+                model=get_settings().lyna_model if get_settings().lyna_enabled else None,
+            )
     return LynaChatResponse(
         message=_fallback_message(payload.screen, payload.module),
         source="fallback",
