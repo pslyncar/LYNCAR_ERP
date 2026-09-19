@@ -19,6 +19,7 @@ from app.ai.web_research import format_for_prompt, search as web_search
 from app.ai.cache import public_knowledge_cache
 from app.ai.fiscal_explanations import explanation_for
 from app.ai.intent_router import classify, fast_reply
+from app.ai.module_guides import guide_for
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.models.user import User
@@ -46,11 +47,9 @@ class LynaChatResponse(BaseModel):
 def _fallback_message(screen: str, module: str) -> str:
     location = screen or module or "a tela atual"
     return (
-        f"Estou pronta para ajudar em {location}. O chat está funcionando, "
-        "mas o modelo local da Lyna ainda não foi conectado neste ambiente. "
-        "Quando o Ollama/Qwen estiver configurado, vou consultar a documentação "
-        "e os dados autorizados dessa tela. Por segurança, nesta primeira fase "
-        "não executo alterações."
+        f"Estou pronta para ajudar em {location}. Não encontrei uma resposta exata "
+        "para essa pergunta ainda. Tente informar o nome do cadastro, número da nota "
+        "ou código do retorno; também posso explicar os campos e o fluxo dessa tela."
     )
 
 
@@ -293,6 +292,13 @@ def chat(
                 source="authorized_data",
                 model=get_settings().lyna_model if get_settings().lyna_enabled else None,
             )
+    guide = guide_for(payload.message, payload.screen, payload.module)
+    if guide:
+        return LynaChatResponse(
+            message=f"{guide.name}: {guide.text}",
+            source="internal_knowledge",
+            model=get_settings().lyna_model if get_settings().lyna_enabled else None,
+        )
     return LynaChatResponse(
         message=_fallback_message(payload.screen, payload.module),
         source="fallback",

@@ -25,6 +25,8 @@ from app.models.supplier import Supplier
 from app.models.user import User
 from app.services.access_control import user_has_permission
 from app.ai.fiscal_explanations import explanation_for
+from app.core.master_database import MasterSessionLocal
+from app.services.fiscal_assistant import ncm_suggestions
 
 
 MAX_RESULTS = 5
@@ -120,6 +122,40 @@ def _product_context(db: Session, user: User, message: str) -> str | None:
     return "\n".join(lines)
 
 
+def _ncm_query_term(message: str) -> str | None:
+    match = re.search(r"\bncm\s+(?:de\s+|da\s+|do\s+|para\s+)?(.+?)(?:\?|$)", message, re.IGNORECASE)
+    if not match:
+        return None
+    term = re.sub(r"\b(?:original|produto|item|codigo|qual|do|da|de)\b", " ", match.group(1), flags=re.IGNORECASE)
+    term = re.sub(r"\b\d+(?:[,.]\d+)?\s*(?:l|ml|kg|g|un|unidades?)\b", " ", term, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", term).strip(" .,:;?!") or None
+
+
+def _ncm_context(db: Session, user: User, message: str) -> str | None:
+    if not _has_any(db, user, "products:view", "stock:view", "fiscal:view", "fiscal:documents:view"):
+        return "Consulta de NCM bloqueada: o usuário não possui permissão para consultar produtos ou referências fiscais."
+    term = _ncm_query_term(message)
+    if not term:
+        return "Informe o nome ou a descrição do produto para eu consultar o NCM."
+    product_query = select(Product).where(
+        Product.active.is_(True),
+        or_(Product.name.ilike(f"%{term}%"), Product.description.ilike(f"%{term}%"), Product.brand.ilike(f"%{term}%")),
+    )
+    products = list(db.scalars(product_query.limit(MAX_RESULTS)).all())
+    lines: list[str] = []
+    for product in products:
+        if product.ncm:
+            lines.append(f"- Cadastro do produto '{product.name}': NCM {product.ncm}.")
+    with MasterSessionLocal() as reference_db:
+        suggestions = ncm_suggestions(reference_db, term, limit=5)
+    if suggestions:
+        lines.append("Sugestões encontradas na base oficial NCM/Classif; confirme a descrição completa antes de emitir:")
+        lines.extend(f"- NCM {row.code}: {row.description}" for row in suggestions)
+    if not lines:
+        return f"Não localizei um NCM confirmado para '{term}'. Revise a descrição comercial e a classificação fiscal antes de emitir."
+    return "\n".join(lines)
+
+
 def _receivable_context(db: Session, user: User, message: str) -> str | None:
     if not _has_any(db, user, "finance:view", "finance:receivables:view"):
         return "Consulta de contas a receber bloqueada: o usuário não possui permissão de leitura financeira."
@@ -203,7 +239,11 @@ def build_authorized_context(db: Session, user: User, message: str, screen: str 
     """Return only the minimum read-only data relevant to the current request."""
     area = _normalize(f"{message} {screen} {module}")
     sections: list[str] = []
-    if any(term in area for term in ("financeiro", "extrato", "crediario", "conta a receber", "recebivel")):
+    if "ncm" in area:
+        result = _ncm_context(db, user, message)
+        if result:
+            sections.append(result)
+    elif any(term in area for term in ("financeiro", "extrato", "crediario", "conta a receber", "recebivel")):
         result = _receivable_context(db, user, message)
         if result:
             sections.append(result)
