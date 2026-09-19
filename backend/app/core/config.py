@@ -42,6 +42,16 @@ class Settings(BaseSettings):
     pedeon_api_public_url: str = "https://api.lyncar.com.br"
     pedeon_payment_timeout_seconds: int = 15
     pedeon_stock_reservation_minutes: int = 30
+    lyna_enabled: bool = True
+    lyna_ollama_url: str | None = None
+    lyna_model: str = "qwen3.5:4b"
+    lyna_context_tokens: int = 8192
+    lyna_max_output_tokens: int = 700
+    lyna_timeout_seconds: int = 45
+    lyna_web_search_enabled: bool = False
+    lyna_search_url: str | None = None
+    lyna_search_timeout_seconds: int = 8
+    lyna_search_max_results: int = 5
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

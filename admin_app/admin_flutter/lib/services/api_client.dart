@@ -45,6 +45,7 @@ import '../models/subscription_plan.dart';
 import '../models/supplier.dart';
 import '../models/system_user.dart';
 import '../models/website_contact_request.dart';
+import '../features/lyna/domain/lyna_models.dart';
 
 class ApiClient {
   ApiClient(String baseUrl) : baseUrl = _normalizeBaseUrl(baseUrl);
@@ -3284,6 +3285,28 @@ class ApiClient {
       if (token.isNotEmpty) 'Authorization': 'Bearer $token',
       'Content-Type': 'application/json',
     };
+  }
+
+  Future<LynaReply> askLyna(
+    String token, {
+    required String message,
+    required String screen,
+    required String module,
+    Map<String, String> context = const {},
+  }) async {
+    final response = await http
+        .post(
+          Uri.parse('$baseUrl/ai/chat'),
+          headers: _authHeaders(token),
+          body: jsonEncode({
+            'message': message,
+            'screen': screen,
+            'module': module,
+            'context': context,
+          }),
+        )
+        .timeout(const Duration(seconds: 55));
+    return LynaReply.fromJson(_decodeResponse(response));
   }
 
   Future<MasterEmailSetting> getMasterEmailSetting(String token) async {

@@ -44,6 +44,7 @@ import 'support_screen.dart';
 import 'suppliers_screen.dart';
 import 'users_screen.dart';
 import '../features/pedeon/presentation/pedeon_settings_screen.dart';
+import '../features/lyna/presentation/lyna_chat_overlay.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({
@@ -772,6 +773,14 @@ class _AppShellState extends State<AppShell> {
                       ),
                     ),
                   ],
+                  if (!_pdvFullscreen &&
+                      selectedDestination.label != 'Vendas' &&
+                      selectedDestination.label != 'PDV')
+                    LynaChatOverlay(
+                      session: widget.session,
+                      screen: selectedDestination.label,
+                      module: selectedDestination.category.label,
+                    ),
                 ],
               );
             },

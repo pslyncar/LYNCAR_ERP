@@ -93,6 +93,7 @@ flutter:
     - assets/brand/lyncar_y_detail.png
     - assets/brand/lyncar_ps_logo.png
     - assets/brand/lyncar_ps_logo_clean.png
+    - assets/lyna/LYNA_SEM_FUNDO.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:
