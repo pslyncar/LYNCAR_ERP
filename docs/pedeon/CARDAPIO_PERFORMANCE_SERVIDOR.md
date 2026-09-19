@@ -11,6 +11,9 @@ da API nem o fluxo de pedidos.
 - Evitar entregar fotos originais grandes para o celular. Gerar versões
   otimizadas (por exemplo, WebP/AVIF ou JPEG progressivo) próximas do tamanho
   exibido, mantendo a original apenas para consulta/edição.
+- No Flutter Web, `cacheWidth` e `cacheHeight` não reduzem o download nem o
+  decode feito pelo navegador. Por isso o redimensionamento precisa acontecer
+  no upload, no endpoint de imagens ou no proxy/CDN do servidor.
 - Confirmar que as URLs públicas retornam `Content-Type` correto e compressão
   adequada quando aplicável.
 - Configurar cache de longa duração para arquivos versionados, por exemplo

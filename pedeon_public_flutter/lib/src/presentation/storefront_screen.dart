@@ -91,31 +91,38 @@ class _StorefrontScreenState extends State<StorefrontScreen> {
       final theme = _storeTheme(context, store);
       return Theme(
         data: theme,
-        child: Scaffold(
-          body: _CatalogBody(
-            viewModel: viewModel,
-            onOpenCart: () => _openCart(context),
-            onAdd: (product) => _addProduct(context, product),
-            onCustomerAccess: () => _openCustomerAccess(context),
+        child: Listener(
+          onPointerDown: (_) => viewModel.recordCustomerActivity(),
+          onPointerMove: (_) => viewModel.recordCustomerActivity(),
+          onPointerSignal: (_) => viewModel.recordCustomerActivity(),
+          child: Scaffold(
+            body: _CatalogBody(
+              viewModel: viewModel,
+              onOpenCart: () => _openCart(context),
+              onAdd: (product) => _addProduct(context, product),
+              onCustomerAccess: () => _openCustomerAccess(context),
+            ),
+            floatingActionButton: !compact && viewModel.itemCount > 0
+                ? FloatingActionButton.extended(
+                    key: const Key('open-cart-floating'),
+                    onPressed: () => _openCart(context),
+                    icon: Badge(
+                      label: Text('${viewModel.itemCount}'),
+                      child: const Icon(Icons.shopping_bag_outlined),
+                    ),
+                    label: Text(
+                      'Ver pedido • ${_currency(viewModel.subtotal)}',
+                    ),
+                  )
+                : null,
+            bottomNavigationBar: compact && viewModel.itemCount > 0
+                ? _MobileCartBar(
+                    count: viewModel.itemCount,
+                    subtotal: viewModel.subtotal,
+                    onTap: () => _openCart(context),
+                  )
+                : null,
           ),
-          floatingActionButton: !compact && viewModel.itemCount > 0
-              ? FloatingActionButton.extended(
-                  key: const Key('open-cart-floating'),
-                  onPressed: () => _openCart(context),
-                  icon: Badge(
-                    label: Text('${viewModel.itemCount}'),
-                    child: const Icon(Icons.shopping_bag_outlined),
-                  ),
-                  label: Text('Ver pedido • ${_currency(viewModel.subtotal)}'),
-                )
-              : null,
-          bottomNavigationBar: compact && viewModel.itemCount > 0
-              ? _MobileCartBar(
-                  count: viewModel.itemCount,
-                  subtotal: viewModel.subtotal,
-                  onTap: () => _openCart(context),
-                )
-              : null,
         ),
       );
     },
@@ -682,9 +689,12 @@ class _StoreHero extends StatelessWidget {
                                   viewModel.imageUrl(coverUrl),
                                   fit: BoxFit.cover,
                                   alignment: Alignment.center,
-                                  cacheWidth: (constraints.maxWidth *
-                                          MediaQuery.devicePixelRatioOf(context))
-                                      .round(),
+                                  cacheWidth:
+                                      (constraints.maxWidth *
+                                              MediaQuery.devicePixelRatioOf(
+                                                context,
+                                              ))
+                                          .round(),
                                   filterQuality: FilterQuality.low,
                                   errorBuilder: (_, _, _) =>
                                       ColoredBox(color: scheme.primary),
@@ -1201,16 +1211,27 @@ class _ProductImage extends StatelessWidget {
           ),
         )
       else
-        Image.network(
-          url,
-          fit: BoxFit.cover,
-          alignment: Alignment.center,
-          cacheWidth: (350 * MediaQuery.devicePixelRatioOf(context)).round(),
-          cacheHeight: (240 * MediaQuery.devicePixelRatioOf(context)).round(),
-          filterQuality: FilterQuality.low,
-          errorBuilder: (_, _, _) => const ColoredBox(
-            color: Color(0xFFF1ECE4),
-            child: Icon(Icons.bakery_dining_rounded, size: 58),
+        ColoredBox(
+          color: Theme.of(context).brightness == Brightness.dark
+              ? const Color(0xFF242424)
+              : const Color(0xFFF1ECE4),
+          child: Padding(
+            padding: const EdgeInsets.all(10),
+            child: Image.network(
+              url,
+              // Product photos have different proportions. Contain keeps the
+              // entire package/photo visible instead of cropping or stretching
+              // it to the fixed card area.
+              fit: BoxFit.contain,
+              alignment: Alignment.center,
+              cacheWidth: (350 * MediaQuery.devicePixelRatioOf(context))
+                  .round(),
+              filterQuality: FilterQuality.medium,
+              errorBuilder: (_, _, _) => const ColoredBox(
+                color: Color(0xFFF1ECE4),
+                child: Icon(Icons.bakery_dining_rounded, size: 58),
+              ),
+            ),
           ),
         ),
       if (!available)

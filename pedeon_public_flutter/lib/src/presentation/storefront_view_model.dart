@@ -14,12 +14,19 @@ import '../domain/customer_auth.dart';
 class StorefrontViewModel extends ChangeNotifier {
   StorefrontViewModel({required this.slug, required this.repository});
 
+  static const customerIdleTimeout = Duration(minutes: 30);
+  static const _activityPersistInterval = Duration(minutes: 1);
+
   final String slug;
   final CatalogRepository repository;
   final Map<String, CartLine> _cart = {};
   Timer? _searchTimer;
+  Timer? _customerIdleTimer;
   Future<void> _cartWrite = Future.value();
   int _loadGeneration = 0;
+  DateTime? _lastCustomerActivity;
+  DateTime? _lastPersistedActivity;
+  bool _loggingOutForInactivity = false;
 
   Storefront? store;
   List<CatalogCategory> categories = const [];
@@ -83,6 +90,7 @@ class StorefrontViewModel extends ChangeNotifier {
       await _restoreCustomer();
       await _refreshCustomerFromServer();
       await _restoreCustomerProfile();
+      _startCustomerSessionGuard();
     } catch (exception) {
       if (generation != _loadGeneration) return;
       error = _friendlyLoadError(exception);
@@ -381,10 +389,15 @@ class StorefrontViewModel extends ChangeNotifier {
       exchangeSocialCode(code, 'google');
 
   Future<void> logoutCustomer() async {
+    _customerIdleTimer?.cancel();
+    _customerIdleTimer = null;
     final profileStorageKey = _customerProfileStorageKey;
     final token = customer?.token;
     customer = null;
     customerProfile = null;
+    _lastCustomerActivity = null;
+    _lastPersistedActivity = null;
+    _loggingOutForInactivity = false;
     notifyListeners();
     try {
       await repository.logoutCustomer(slug, token: token);
@@ -406,6 +419,8 @@ class StorefrontViewModel extends ChangeNotifier {
     if (session == null) {
       customer = null;
       customerProfile = null;
+      _lastCustomerActivity = null;
+      _lastPersistedActivity = null;
       final preferences = await SharedPreferences.getInstance();
       await preferences.remove(_customerStorageKey);
       return;
@@ -445,6 +460,16 @@ class StorefrontViewModel extends ChangeNotifier {
     if (encoded == null) return;
     try {
       final saved = (jsonDecode(encoded) as Map).cast<String, dynamic>();
+      final lastActivity = DateTime.tryParse(
+        saved['last_activity_at']?.toString() ?? '',
+      );
+      if (lastActivity == null ||
+          DateTime.now().difference(lastActivity) >= customerIdleTimeout) {
+        await preferences.remove(_customerStorageKey);
+        return;
+      }
+      _lastCustomerActivity = lastActivity;
+      _lastPersistedActivity = lastActivity;
       customer = CustomerSession(
         token: saved['token'] as String,
         id: saved['id'] as int,
@@ -465,6 +490,8 @@ class StorefrontViewModel extends ChangeNotifier {
 
   Future<void> _persistCustomer() async {
     if (!kIsWeb || customer == null) return;
+    final activity = _lastCustomerActivity ?? DateTime.now();
+    _lastCustomerActivity = activity;
     final preferences = await SharedPreferences.getInstance();
     await preferences.setString(
       _customerStorageKey,
@@ -476,8 +503,44 @@ class StorefrontViewModel extends ChangeNotifier {
         'phone': customer!.phone,
         'document': customer!.document,
         'delivery_address': customer!.deliveryAddress?.toJson(),
+        'last_activity_at': activity.toIso8601String(),
       }),
     );
+    _lastPersistedActivity = activity;
+  }
+
+  void _startCustomerSessionGuard() {
+    _customerIdleTimer?.cancel();
+    if (customer == null) return;
+    _lastCustomerActivity ??= DateTime.now();
+    _customerIdleTimer = Timer.periodic(const Duration(minutes: 1), (_) {
+      final activity = _lastCustomerActivity;
+      if (customer == null || activity == null) return;
+      if (DateTime.now().difference(activity) >= customerIdleTimeout &&
+          !_loggingOutForInactivity) {
+        _loggingOutForInactivity = true;
+        unawaited(logoutCustomer());
+      }
+    });
+  }
+
+  void recordCustomerActivity() {
+    if (customer == null) return;
+    final now = DateTime.now();
+    final last = _lastCustomerActivity;
+    if (last != null && now.difference(last) >= customerIdleTimeout) {
+      if (!_loggingOutForInactivity) {
+        _loggingOutForInactivity = true;
+        unawaited(logoutCustomer());
+      }
+      return;
+    }
+    _lastCustomerActivity = now;
+    final persisted = _lastPersistedActivity;
+    if (persisted == null ||
+        now.difference(persisted) >= _activityPersistInterval) {
+      unawaited(_persistCustomer());
+    }
   }
 
   Future<void> _restoreCustomerProfile() async {
@@ -568,6 +631,7 @@ class StorefrontViewModel extends ChangeNotifier {
   @override
   void dispose() {
     _searchTimer?.cancel();
+    _customerIdleTimer?.cancel();
     super.dispose();
   }
 }
