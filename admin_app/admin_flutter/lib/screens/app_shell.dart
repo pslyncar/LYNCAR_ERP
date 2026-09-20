@@ -46,6 +46,9 @@ import 'users_screen.dart';
 import '../features/pedeon/presentation/pedeon_settings_screen.dart';
 import '../features/lyna/presentation/lyna_chat_overlay.dart';
 
+// A Lyna permanece no código, mas pode ser ocultada no build sem afetar o ERP.
+const _lynaVisible = bool.fromEnvironment('LYNA_VISIBLE', defaultValue: true);
+
 class AppShell extends StatefulWidget {
   const AppShell({
     super.key,
@@ -773,7 +776,8 @@ class _AppShellState extends State<AppShell> {
                       ),
                     ),
                   ],
-                  if (!_pdvFullscreen &&
+                  if (_lynaVisible &&
+                      !_pdvFullscreen &&
                       selectedDestination.label != 'Vendas' &&
                       selectedDestination.label != 'PDV')
                     LynaChatOverlay(
