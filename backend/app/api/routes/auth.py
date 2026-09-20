@@ -1,4 +1,6 @@
 from datetime import UTC, datetime, timedelta
+import hashlib
+import logging
 import secrets
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
@@ -10,7 +12,7 @@ from app.api.dependencies import bearer_scheme, get_current_user
 from app.core.database import get_db
 from app.core.config import get_settings
 from app.core.errors import api_error
-from app.core.master_database import MasterSessionLocal
+from app.core.master_database import MasterBase, MasterSessionLocal, master_engine
 from app.core.security import (
     create_access_token,
     decode_access_token,
@@ -20,6 +22,7 @@ from app.core.security import (
     verify_password,
 )
 from app.models.master_user import MasterUser
+from app.models.password_reset import PasswordResetToken
 from app.models.company import Company
 from app.models.pdv_terminal import PdvTerminal
 from app.models.user import User
@@ -29,6 +32,8 @@ from app.schemas.auth import (
     ChangePasswordResponse,
     CurrentUserRead,
     LoginRequest,
+    PasswordResetConfirm,
+    PasswordResetRequest,
     TokenResponse,
 )
 from app.schemas.pdv_terminal import PdvTerminalActivationRequest
@@ -63,8 +68,123 @@ from app.services.web_sessions import (
     rotate_session,
     session_from_request,
 )
+from app.services.master_email import send_password_reset_email
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+def _reset_code_hash(code: str) -> str:
+    secret = get_settings().secret_key
+    return hashlib.sha256(f"{secret}:password-reset:{code}".encode()).hexdigest()
+
+
+def _ensure_password_reset_table() -> None:
+    PasswordResetToken.__table__.create(bind=master_engine, checkfirst=True)
+
+
+@router.post("/password-reset/request")
+def request_password_reset(payload: PasswordResetRequest) -> dict:
+    """Request a one-time reset code without revealing whether an account exists."""
+    _ensure_password_reset_table()
+    company_code = normalize_company_code(payload.company_code)
+    email = str(payload.email).strip().lower()
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    expires_at = datetime.now(UTC) + timedelta(minutes=15)
+    account_scope = "tenant"
+    user_id: int | None = None
+    company_name: str | None = None
+    try:
+        settings = get_settings()
+        if company_code == normalize_company_code(settings.master_company_code):
+            with MasterSessionLocal() as db:
+                user = db.scalar(select(MasterUser).where(MasterUser.email == email))
+                if user and user.active:
+                    user_id = user.id
+                    account_scope = "master"
+                    company_name = settings.master_company_name
+        else:
+            company = require_active_company(company_code)
+            company_name = company.name
+            with session_for_company(company_code) as db:
+                user = db.scalar(
+                    select(User).where(User.email == email, User.active.is_(True))
+                )
+                if user:
+                    user_id = user.id
+    except LookupError:
+        user_id = None
+
+    if user_id is not None:
+        with MasterSessionLocal() as db:
+            db.query(PasswordResetToken).filter(
+                PasswordResetToken.company_code == company_code,
+                PasswordResetToken.email == email,
+                PasswordResetToken.used_at.is_(None),
+            ).update({PasswordResetToken.used_at: datetime.now(UTC)})
+            db.add(
+                PasswordResetToken(
+                    account_scope=account_scope,
+                    company_code=company_code,
+                    user_id=user_id,
+                    email=email,
+                    code_hash=_reset_code_hash(code),
+                    expires_at=expires_at,
+                )
+            )
+            db.commit()
+        try:
+            send_password_reset_email(
+                recipient=email, code=code, company_name=company_name
+            )
+        except Exception:
+            logger.exception("Falha ao enviar código de recuperação")
+
+    return {
+        "ok": True,
+        "message": "Se os dados estiverem cadastrados, enviaremos um código para o e-mail informado.",
+    }
+
+
+@router.post("/password-reset/confirm")
+def confirm_password_reset(payload: PasswordResetConfirm) -> dict:
+    _ensure_password_reset_table()
+    company_code = normalize_company_code(payload.company_code)
+    email = str(payload.email).strip().lower()
+    now = datetime.now(UTC)
+    with MasterSessionLocal() as db:
+        reset = db.scalar(
+            select(PasswordResetToken).where(
+                PasswordResetToken.company_code == company_code,
+                PasswordResetToken.email == email,
+                PasswordResetToken.used_at.is_(None),
+                PasswordResetToken.expires_at >= now,
+            ).order_by(PasswordResetToken.created_at.desc())
+        )
+        if reset is None or not secrets.compare_digest(
+            reset.code_hash, _reset_code_hash(payload.code)
+        ):
+            raise HTTPException(status_code=400, detail="Código inválido ou expirado.")
+        if reset.account_scope == "master":
+            user = db.get(MasterUser, reset.user_id)
+            if user is None or not user.active:
+                raise HTTPException(status_code=400, detail="Código inválido ou expirado.")
+            user.password_hash = hash_password(payload.new_password)
+            user.must_change_password = False
+            user.password_changed_at = now
+        else:
+            with session_for_company(company_code) as tenant_db:
+                user = tenant_db.get(User, reset.user_id)
+                if user is None or not user.active or user.email.lower() != email:
+                    raise HTTPException(status_code=400, detail="Código inválido ou expirado.")
+                user.password_hash = hash_password(payload.new_password)
+                user.must_change_password = False
+                user.password_changed_at = now
+                tenant_db.commit()
+        reset.used_at = now
+        db.commit()
+    return {"ok": True, "message": "Senha redefinida com sucesso."}
 
 PDV_ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 180
 PDV_REFRESH_MAX_AGE_DAYS = 365

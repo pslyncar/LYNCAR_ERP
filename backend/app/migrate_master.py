@@ -17,6 +17,7 @@ from app.models.master_pedeon_customer import (  # noqa: F401
     MasterPedeOnCustomerStoreLink,
 )
 from app.models.master_email_setting import MasterEmailSetting  # noqa: F401
+from app.models.password_reset import PasswordResetToken  # noqa: F401
 from app.models.master_support import MasterSupportTicket, MasterSupportMessage  # noqa: F401
 from app.models.master_user_index import MasterUserIndex  # noqa: F401
 from app.models.master_fiscal_reference import (  # noqa: F401
