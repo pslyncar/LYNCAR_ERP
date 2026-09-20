@@ -379,6 +379,7 @@ class _LoginScreenState extends State<LoginScreen> {
         loading: _loading,
         error: _error,
         onLogin: _login,
+        onForgotPassword: _showPasswordRecovery,
         onComingSoon: _showComingSoon,
       ),
     );
@@ -388,5 +389,252 @@ class _LoginScreenState extends State<LoginScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Este recurso estará disponível em breve.')),
     );
+  }
+
+  Future<void> _showPasswordRecovery() async {
+    final email = TextEditingController(text: _emailController.text.trim());
+    final company = TextEditingController(
+      text:
+          (_showTechnicalLoginFields
+                  ? _companyController.text
+                  : _companyCodeFromHost)
+              .trim()
+              .toLowerCase(),
+    );
+    String? error;
+    bool sending = false;
+    final api = ApiClient(_apiController.text.trim());
+    final requested = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> send() async {
+            if (email.text.trim().isEmpty || company.text.trim().isEmpty) {
+              setDialogState(() => error = 'Informe empresa e e-mail.');
+              return;
+            }
+            setDialogState(() {
+              sending = true;
+              error = null;
+            });
+            try {
+              await api.requestPasswordReset(
+                companyCode: company.text.trim(),
+                email: email.text.trim(),
+              );
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop(true);
+            } on ApiException catch (apiError) {
+              setDialogState(() {
+                sending = false;
+                error = apiError.message;
+              });
+            } catch (_) {
+              setDialogState(() {
+                sending = false;
+                error = 'Não foi possível solicitar o código.';
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Esqueci minha senha'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Informe seus dados. Se estiverem cadastrados, enviaremos um código por e-mail.',
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: company,
+                    decoration: const InputDecoration(
+                      labelText: 'Empresa / código',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: email,
+                    keyboardType: TextInputType.emailAddress,
+                    decoration: const InputDecoration(
+                      labelText: 'E-mail de acesso',
+                    ),
+                    onSubmitted: (_) => send(),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      error!,
+                      style: const TextStyle(color: Color(0xFFB91C1C)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: sending
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: sending ? null : send,
+                child: sending
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Enviar código'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    final recoveryEmail = email.text.trim();
+    final recoveryCompany = company.text.trim();
+    email.dispose();
+    company.dispose();
+    if (requested == true && mounted) {
+      await _showPasswordResetConfirmation(
+        api: api,
+        email: recoveryEmail,
+        companyCode: recoveryCompany,
+      );
+    }
+  }
+
+  Future<void> _showPasswordResetConfirmation({
+    required ApiClient api,
+    required String email,
+    required String companyCode,
+  }) async {
+    final code = TextEditingController();
+    final password = TextEditingController();
+    final confirmation = TextEditingController();
+    String? error;
+    bool saving = false;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          Future<void> confirm() async {
+            if (code.text.trim().length != 6 || password.text.length < 8) {
+              setDialogState(
+                () => error =
+                    'Informe o código de 6 dígitos e uma senha com pelo menos 8 caracteres.',
+              );
+              return;
+            }
+            if (password.text != confirmation.text) {
+              setDialogState(() => error = 'As senhas não conferem.');
+              return;
+            }
+            setDialogState(() {
+              saving = true;
+              error = null;
+            });
+            try {
+              await api.confirmPasswordReset(
+                companyCode: companyCode,
+                email: email,
+                code: code.text.trim(),
+                newPassword: password.text,
+              );
+              if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+              if (mounted) {
+                ScaffoldMessenger.of(this.context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Senha redefinida. Agora você já pode entrar.',
+                    ),
+                  ),
+                );
+              }
+            } on ApiException catch (apiError) {
+              setDialogState(() {
+                saving = false;
+                error = apiError.message;
+              });
+            } catch (_) {
+              setDialogState(() {
+                saving = false;
+                error = 'Não foi possível redefinir a senha.';
+              });
+            }
+          }
+
+          return AlertDialog(
+            title: const Text('Digite o código recebido'),
+            content: SizedBox(
+              width: 420,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Enviamos o código para $email.'),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: code,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                      labelText: 'Código de 6 dígitos',
+                    ),
+                  ),
+                  TextField(
+                    controller: password,
+                    obscureText: true,
+                    decoration: const InputDecoration(labelText: 'Nova senha'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: confirmation,
+                    obscureText: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Confirmar nova senha',
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      error!,
+                      style: const TextStyle(color: Color(0xFFB91C1C)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: saving
+                    ? null
+                    : () => Navigator.of(dialogContext).pop(),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                onPressed: saving ? null : confirm,
+                child: saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Text('Redefinir senha'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    code.dispose();
+    password.dispose();
+    confirmation.dispose();
   }
 }

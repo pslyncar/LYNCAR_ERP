@@ -50,3 +50,15 @@ class ChangePasswordRequest(BaseModel):
 
 class ChangePasswordResponse(BaseModel):
     ok: bool = True
+
+
+class PasswordResetRequest(BaseModel):
+    company_code: str = Field(min_length=2, max_length=64)
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    company_code: str = Field(min_length=2, max_length=64)
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern=r"^[0-9]{6}$")
+    new_password: str = Field(min_length=8, max_length=128)

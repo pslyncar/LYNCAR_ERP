@@ -11,6 +11,7 @@ class NewLoginScreen extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onLogin,
+    required this.onForgotPassword,
     required this.onComingSoon,
     required this.showTechnicalFields,
     required this.companyController,
@@ -27,6 +28,7 @@ class NewLoginScreen extends StatelessWidget {
   final bool loading;
   final String? error;
   final VoidCallback onLogin;
+  final VoidCallback onForgotPassword;
   final VoidCallback onComingSoon;
   final bool showTechnicalFields;
   final TextEditingController companyController;
@@ -53,6 +55,7 @@ class NewLoginScreen extends StatelessWidget {
               loading: loading,
               error: error,
               onLogin: onLogin,
+              onForgotPassword: onForgotPassword,
               onComingSoon: onComingSoon,
               showTechnicalFields: showTechnicalFields,
               companyController: companyController,
@@ -80,6 +83,7 @@ class NewLoginScreen extends StatelessWidget {
                   loading: loading,
                   error: error,
                   onLogin: onLogin,
+                  onForgotPassword: onForgotPassword,
                   onComingSoon: onComingSoon,
                   showTechnicalFields: showTechnicalFields,
                   companyController: companyController,
@@ -485,6 +489,7 @@ class _FormPanel extends StatelessWidget {
     required this.loading,
     required this.error,
     required this.onLogin,
+    required this.onForgotPassword,
     required this.onComingSoon,
     required this.showTechnicalFields,
     required this.companyController,
@@ -502,6 +507,7 @@ class _FormPanel extends StatelessWidget {
   final bool loading;
   final String? error;
   final VoidCallback onLogin;
+  final VoidCallback onForgotPassword;
   final VoidCallback onComingSoon;
   final bool showTechnicalFields;
   final TextEditingController companyController;
@@ -613,7 +619,7 @@ class _FormPanel extends StatelessWidget {
                             Align(
                               alignment: Alignment.centerRight,
                               child: TextButton(
-                                onPressed: onComingSoon,
+                                onPressed: onForgotPassword,
                                 style: TextButton.styleFrom(
                                   foregroundColor: const Color(0xFF0867D9),
                                   padding: EdgeInsets.only(

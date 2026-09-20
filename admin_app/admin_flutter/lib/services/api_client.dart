@@ -190,6 +190,37 @@ class ApiClient {
     _decodeResponse(response);
   }
 
+  Future<void> requestPasswordReset({
+    required String companyCode,
+    required String email,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/password-reset/request'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'company_code': companyCode, 'email': email}),
+    );
+    _decodeResponse(response);
+  }
+
+  Future<void> confirmPasswordReset({
+    required String companyCode,
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/password-reset/confirm'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'company_code': companyCode,
+        'email': email,
+        'code': code,
+        'new_password': newPassword,
+      }),
+    );
+    _decodeResponse(response);
+  }
+
   Future<void> heartbeat(String token, {String clientType = 'web'}) async {
     final response = await http.post(
       Uri.parse('$baseUrl/auth/heartbeat?client_type=$clientType'),
