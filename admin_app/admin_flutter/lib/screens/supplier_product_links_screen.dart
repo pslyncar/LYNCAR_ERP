@@ -55,6 +55,12 @@ class _SupplierProductLinksScreenState
         _loading = false;
         _error = error.message;
       });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Não foi possível carregar os vínculos: $error';
+      });
     }
   }
 

@@ -1693,8 +1693,10 @@ class ApiClient {
       ).replace(queryParameters: params),
       headers: _authHeaders(token),
     );
-    final data = _decodeResponse(response) as List<dynamic>;
-    return data.cast<Map<String, dynamic>>();
+    final data = _decodeListResponse(response);
+    return data
+        .whereType<Map<String, dynamic>>()
+        .toList(growable: false);
   }
 
   Future<Map<String, dynamic>> updateSupplierProductLink(
