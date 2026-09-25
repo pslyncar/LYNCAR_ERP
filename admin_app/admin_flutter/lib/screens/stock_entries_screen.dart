@@ -30,10 +30,7 @@ const _stockEntryUnitOptions = {
 };
 
 class StockEntriesScreen extends StatefulWidget {
-  const StockEntriesScreen({
-    super.key,
-    required this.session,
-  });
+  const StockEntriesScreen({super.key, required this.session});
 
   final Session session;
 
@@ -1170,10 +1167,18 @@ class _StockEntriesScreenState extends State<StockEntriesScreen> {
       setState(() => _error = 'Adicione pelo menos um item para dar entrada.');
       return;
     }
+    if (source == 'xml' && _supplierId == null) {
+      setState(
+        () => _error =
+            'Cadastre o fornecedor identificado no XML antes de finalizar a entrada.',
+      );
+      return;
+    }
     final blocked = _items.where((item) {
       final accepted = item.checkStatus == 'accepted';
       return accepted &&
-          (item.productId == null || (item.receivedQuantity ?? 0) <= 0);
+          item.productId == null &&
+          (item.receivedQuantity ?? 0) > 0;
     }).length;
     if (blocked > 0) {
       setState(
@@ -1802,7 +1807,7 @@ class _StockEntriesScreenState extends State<StockEntriesScreen> {
     String? supplierWarning;
     if (xmlSupplierDocument != null && _supplierId == null) {
       supplierWarning =
-          'Fornecedor do XML nao foi identificado pelo CNPJ $xmlSupplierDocument. Voce pode cadastrar o fornecedor ou seguir sem bloquear a entrada.';
+          'Fornecedor do XML nao foi identificado pelo CNPJ $xmlSupplierDocument. Cadastre-o para liberar a finalizacao da entrada.';
     } else if (xmlSupplierDocument != null &&
         currentSupplierDocument != null &&
         xmlSupplierDocument != currentSupplierDocument) {

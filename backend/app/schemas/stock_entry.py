@@ -215,7 +215,7 @@ class StockEntryRead(BaseModel):
 
 class StockDevolutionDraftItemRead(BaseModel):
     stock_entry_item_id: int
-    product_id: int
+    product_id: int | None = None
     description: str
     quantity: Decimal
     unit: str

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nfeProc xmlns="http://www.portalfiscal.inf.br/nfe" versao="4.00">
+  <NFe>
+    <infNFe versao="4.00" Id="NFe35260911222333000181550010000990991234567890">
+      <ide>
+        <cUF>35</cUF><cNF>12345678</cNF><natOp>Compra para revenda</natOp><mod>55</mod><serie>1</serie><nNF>990099</nNF><dhEmi>2026-09-25T09:00:00-03:00</dhEmi><tpNF>1</tpNF><idDest>1</idDest><cMunFG>3550308</cMunFG><tpImp>1</tpImp><tpEmis>1</tpEmis><cDV>0</cDV><tpAmb>2</tpAmb><finNFe>1</finNFe><indFinal>0</indFinal><indPres>9</indPres><procEmi>0</procEmi><verProc>Lyncar Teste</verProc>
+      </ide>
+      <emit><CNPJ>11222333000181</CNPJ><xNome>Fornecedor Novo Teste Ltda</xNome><enderEmit><xLgr>Rua do Fornecedor Novo</xLgr><nro>250</nro><xBairro>Centro</xBairro><cMun>3550308</cMun><xMun>Sao Paulo</xMun><UF>SP</UF><CEP>01002000</CEP><cPais>1058</cPais><xPais>Brasil</xPais></enderEmit><IE>987654321</IE><CRT>3</CRT></emit>
+      <dest><CNPJ>63816719000115</CNPJ><xNome>Drika Padaria</xNome><enderDest><xLgr>Rua Jose Benedicto de Moraes</xLgr><nro>81</nro><xBairro>Jardim Imperial II</xBairro><cMun>3526704</cMun><xMun>Leme</xMun><UF>SP</UF><CEP>13617888</CEP><cPais>1058</cPais><xPais>Brasil</xPais></enderDest><indIEDest>9</indIEDest></dest>
+      <det nItem="1"><prod><cProd>NOVO-CAF-500</cProd><cEAN>7891234500005</cEAN><xProd>Cafe Torrado Especial 500g</xProd><NCM>09012100</NCM><CFOP>5102</CFOP><uCom>UN</uCom><qCom>6.0000</qCom><vUnCom>19.9000</vUnCom><vProd>119.40</vProd><cEANTrib>7891234500005</cEANTrib><uTrib>UN</uTrib><qTrib>6.0000</qTrib><vUnTrib>19.9000</vUnTrib><indTot>1</indTot></prod><imposto><ICMS><ICMS00><orig>0</orig><CST>00</CST><modBC>3</modBC><vBC>119.40</vBC><pICMS>18.00</pICMS><vICMS>21.49</vICMS></ICMS00></ICMS></imposto></det>
+      <total><ICMSTot><vBC>119.40</vBC><vICMS>21.49</vICMS><vProd>119.40</vProd><vNF>119.40</vNF></ICMSTot></total>
+    </infNFe>
+  </NFe>
+</nfeProc>

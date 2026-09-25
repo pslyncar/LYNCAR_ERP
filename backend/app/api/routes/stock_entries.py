@@ -300,7 +300,7 @@ def _confirm_stock_entry(db: Session, entry: StockEntry, current_user: User) -> 
         product = db.get(Product, item.product_id) if item.product_id is not None else None
         if check_status == "accepted" and received_quantity <= 0:
             continue
-        if check_status == "accepted" and product is None:
+        if received_quantity > 0 and product is None:
             raise HTTPException(
                 status_code=400,
                 detail=f"Item '{item.description}' precisa estar vinculado a um produto antes de confirmar.",
@@ -1295,7 +1295,12 @@ def create_stock_devolution_draft(
         quantity = expected if mode == "full" else max(expected - received, Decimal("0"))
         if item.check_status == "return" and mode == "partial":
             quantity = expected
-        if quantity <= 0 or item.product_id is None:
+        # A missing product is allowed here only for a quantity that will be
+        # returned.  The receiving confirmation itself still blocks any
+        # positive quantity for an unassociated item.  Keeping the XML item in
+        # the draft preserves the fiscal description/codes so the return is
+        # visible and can be completed after the product is registered.
+        if quantity <= 0:
             continue
         unit_price = item.unit_cost or Decimal("0")
         reason = "Devolução integral da nota" if mode == "full" else "Diferença não recebida na conferência"

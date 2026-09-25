@@ -736,8 +736,15 @@ class _ReceivingConferenceScreenState extends State<ReceivingConferenceScreen> {
   Future<void> _confirm() async {
     final entry = _entry;
     if (entry == null) return;
-    if (entry.items.any((item) => item.productId == null)) {
-      _notice('Vincule todos os produtos antes de confirmar o recebimento.');
+    final unassociatedReceivedItems = entry.items.where((item) {
+      final received = item.receivedQuantity ?? 0;
+      return item.productId == null && received > 0;
+    }).toList();
+    if (unassociatedReceivedItems.isNotEmpty) {
+      _notice(
+        'Cadastre ou associe os produtos antes de confirmar: '
+        '${unassociatedReceivedItems.map((item) => item.description).join(', ')}.',
+      );
       return;
     }
     final partialReturns = entry.items.where((item) {
@@ -785,10 +792,28 @@ class _ReceivingConferenceScreenState extends State<ReceivingConferenceScreen> {
           entry.id,
           mode: _returnAll ? 'full' : 'partial',
         );
-        await _api.authorizeFiscalDocument(
-          widget.session.token,
-          devolutionDraft['fiscal_document_id'] as int,
-        );
+        try {
+          await _api.authorizeFiscalDocument(
+            widget.session.token,
+            devolutionDraft['fiscal_document_id'] as int,
+          );
+        } on ApiException catch (error) {
+          // A return containing an item that was not registered can be
+          // prepared from the XML, but cannot be authorized until the fiscal
+          // product is identified.  The receipt is already confirmed and the
+          // mandatory return draft remains available for completion.
+          if (devolutionDraft['items'] is List &&
+              (devolutionDraft['items'] as List).any(
+                (item) => item is Map && item['product_id'] == null,
+              )) {
+            _notice(
+              'Recebimento confirmado. A devolução foi preparada, mas aguarda '
+              'o cadastro/associação do produto para ser autorizada: ${error.message}',
+            );
+          } else {
+            rethrow;
+          }
+        }
       }
       if (mounted) Navigator.pop(context, true);
     } on ApiException catch (error) {
