@@ -15,6 +15,8 @@ from app.models.company import Company
 from app.models.fiscal import CompanyFiscalSetting
 from app.models.product import Product
 from app.models.stock_entry import StockEntry, StockEntryItem
+from app.services.stock_product_matching import resolve_product_match
+from app.api.routes.stock_entries import _apply_product_purchase_conversion_to_entry_item
 from app.models.supplier import Supplier
 from app.models.user import User
 from app.models.xml_inbox import XmlInboxMessage
@@ -42,6 +44,26 @@ def _normalize_product_code(value: str | None) -> str | None:
     if not normalized or normalized == "SEMGTIN":
         return None
     return normalized
+
+
+def _find_supplier_by_document(db: Session, document: str | None) -> Supplier | None:
+    """Localiza fornecedor ignorando pontuação, barras, hífens e espaços."""
+    normalized_document = _digits(document)
+    if not normalized_document:
+        return None
+    supplier = db.scalar(
+        select(Supplier).where(Supplier.document_number == normalized_document)
+    )
+    if supplier is not None:
+        return supplier
+    return next(
+        (
+            candidate
+            for candidate in db.scalars(select(Supplier)).all()
+            if _digits(candidate.document_number) == normalized_document
+        ),
+        None,
+    )
 
 
 def _find_product_by_code(db: Session, code: str | None) -> Product | None:
@@ -109,13 +131,28 @@ def list_xml_inbox_messages(
     db: Session = Depends(get_db),
     _: User = Depends(require_any_permission("stock:entries:view", "stock:entries:create")),
 ) -> list[XmlInboxMessage]:
-    return list(
+    messages = list(
         db.scalars(
             select(XmlInboxMessage)
             .order_by(XmlInboxMessage.received_at.desc(), XmlInboxMessage.id.desc())
             .limit(min(max(limit, 1), 200))
         ).all()
     )
+    # Um XML de fornecedor ainda não cadastrado permanece guardado. Assim que
+    # o cadastro com o mesmo CNPJ existir, ele é liberado sem reenviar o XML.
+    released = False
+    for message in messages:
+        if message.status != "pending_supplier" or not message.supplier_document:
+            continue
+        supplier = _find_supplier_by_document(db, message.supplier_document)
+        if supplier is not None:
+            message.status = "pending_receipt"
+            message.supplier_name = supplier.name
+            message.rejection_reason = None
+            released = True
+    if released:
+        db.commit()
+    return messages
 
 
 def _create_stock_entry_from_parsed_xml(
@@ -134,11 +171,7 @@ def _create_stock_entry_from_parsed_xml(
                 detail="Esta chave NF-e ja possui uma entrada de recebimento.",
             )
     supplier_document = _digits(parsed.get("supplier_document")) or None
-    supplier = (
-        db.scalar(select(Supplier).where(Supplier.document_number == supplier_document))
-        if supplier_document
-        else None
-    )
+    supplier = _find_supplier_by_document(db, supplier_document)
     entry = StockEntry(
         supplier_id=supplier.id if supplier else None,
         user_id=None,
@@ -155,7 +188,19 @@ def _create_stock_entry_from_parsed_xml(
     db.flush()
     for item in parsed["items"]:
         barcode = str(item.get("barcode") or "").strip() or None
-        product = _find_product_by_code(db, barcode)
+        tax_gtin = str(item.get("tax_gtin") or "").strip() or None
+        match = resolve_product_match(
+            db,
+            supplier_id=supplier.id if supplier else None,
+            supplier_product_code=str(item.get("supplier_product_code") or "") or None,
+            commercial_gtin=barcode,
+            tax_gtin=tax_gtin,
+            internal_code=None,
+            description=str(item.get("description") or ""),
+        )
+        # Correspondências determinísticas por vínculo do fornecedor ou GTIN
+        # podem ser aplicadas automaticamente. Descrição nunca associa sozinha.
+        product = match.product if match.status == "matched" else None
         expiration_date = item.get("expiration_date")
         if isinstance(expiration_date, str) and expiration_date:
             expiration_date = date.fromisoformat(expiration_date)
@@ -164,6 +209,12 @@ def _create_stock_entry_from_parsed_xml(
                 product_id=product.id if product else None,
                 description=str(item["description"]),
                 barcode=barcode,
+                tax_gtin=tax_gtin,
+                supplier_product_code=item.get("supplier_product_code"),
+                invoice_quantity=item["quantity"],
+                invoice_unit=str(item["unit"]),
+                tax_quantity=item.get("tax_quantity"),
+                tax_unit=item.get("tax_unit"),
                 quantity=item["quantity"],
                 received_quantity=Decimal("0"),
                 unit=str(item["unit"]),
@@ -171,12 +222,33 @@ def _create_stock_entry_from_parsed_xml(
                 total_cost=item["total_cost"],
                 ncm=item.get("ncm"),
                 cfop=item.get("cfop"),
+                origin=item.get("origin"),
+                cst=item.get("cst"),
+                csosn=item.get("csosn"),
+                icms_rate=item.get("icms_rate"),
+                pis_rate=item.get("pis_rate"),
+                cofins_rate=item.get("cofins_rate"),
+                ipi_rate=item.get("ipi_rate"),
+                ibs_cbs_cst=item.get("ibs_cbs_cst"),
+                ibs_cbs_classification=item.get("ibs_cbs_classification"),
+                cbs_rate=item.get("cbs_rate"),
+                ibs_state_rate=item.get("ibs_state_rate"),
+                ibs_city_rate=item.get("ibs_city_rate"),
+                selective_tax_cst=item.get("selective_tax_cst"),
+                selective_tax_classification=item.get("selective_tax_classification"),
+                selective_tax_rate=item.get("selective_tax_rate"),
                 batch_number=item.get("batch_number"),
                 expiration_date=expiration_date,
                 check_status="accepted" if product else "pending_product",
-                check_notes="Recebida por XML. Conferência iniciada pelo usuário.",
+                check_notes=(
+                    "Produto associado automaticamente por código/GTIN."
+                    if match.product is not None
+                    else "Produto aguardando associação pelo operador."
+                ),
             )
         )
+        if product is not None:
+            _apply_product_purchase_conversion_to_entry_item(entry.items[-1], product)
     return entry
 
 
@@ -283,6 +355,23 @@ def receive_xml_email(
                 message="XML rejeitado: CNPJ destinatario diferente da empresa.",
             )
 
+        supplier_document = _digits(parsed.get("supplier_document")) or None
+        supplier = _find_supplier_by_document(db, supplier_document)
+        if supplier is None:
+            db.add(
+                XmlInboxMessage(
+                    **base_message,
+                    status="pending_supplier",
+                    rejection_reason="Fornecedor do XML ainda nao esta cadastrado para este CNPJ.",
+                )
+            )
+            db.commit()
+            return XmlInboundResult(
+                accepted=True,
+                status="pending_supplier",
+                message="XML recebido. Cadastre o fornecedor pelo CNPJ para liberar a importacao.",
+            )
+
         invoice_key = str(parsed.get("invoice_key") or "").strip() or None
         if invoice_key:
             duplicate = db.scalar(
@@ -307,7 +396,9 @@ def receive_xml_email(
             pending_inbox = db.scalar(
                 select(XmlInboxMessage).where(
                     XmlInboxMessage.invoice_key == invoice_key,
-                    XmlInboxMessage.status.in_(["pending_receipt", "imported"]),
+                    XmlInboxMessage.status.in_(
+                        ["pending_receipt", "pending_supplier", "imported"]
+                    ),
                 )
             )
             if pending_inbox is not None:
@@ -330,6 +421,115 @@ def receive_xml_email(
             status="pending_receipt",
             message="XML importado para a Caixa de XML. Aguarde a decisao do usuario para gerar recebimento.",
         )
+        if product is not None:
+            _apply_product_purchase_conversion_to_entry_item(entry.items[-1], product)
+
+
+@router.post(
+    "/messages/upload",
+    response_model=XmlInboundResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def upload_xml_file(
+    payload: XmlInboundPayload,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_any_permission("stock:entries:create")),
+) -> XmlInboundResult:
+    """Recebe XML escolhido pelo usuário com as mesmas travas fiscais do e-mail."""
+    settings = get_settings()
+    if len(payload.xml_content.encode("utf-8")) > settings.xml_inbound_max_bytes:
+        raise HTTPException(status_code=413, detail="XML excede o tamanho permitido.")
+    try:
+        parsed = parse_nfe_xml(payload.xml_content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    fiscal = db.scalar(
+        select(CompanyFiscalSetting).order_by(CompanyFiscalSetting.id.asc())
+    )
+    expected_cnpj = _digits(fiscal.cnpj if fiscal is not None else None)
+    recipient_document = _digits(parsed.get("recipient_document"))
+    if len(expected_cnpj) != 14:
+        raise HTTPException(
+            status_code=400,
+            detail="Empresa sem CNPJ fiscal configurado.",
+        )
+    if recipient_document != expected_cnpj:
+        raise HTTPException(
+            status_code=400,
+            detail="O CNPJ destinatario do XML nao pertence a esta empresa.",
+        )
+
+    supplier_document = _digits(parsed.get("supplier_document")) or None
+    supplier = _find_supplier_by_document(db, supplier_document)
+    if supplier is None:
+        db.add(
+            XmlInboxMessage(
+                status="pending_supplier",
+                sender_email=None,
+                subject=payload.subject or "XML importado manualmente",
+                attachment_name=payload.attachment_name,
+                supplier_name=parsed.get("supplier_name"),
+                supplier_document=supplier_document,
+                recipient_document=recipient_document,
+                invoice_key=str(parsed.get("invoice_key") or "").strip() or None,
+                invoice_number=parsed.get("invoice_number"),
+                rejection_reason="Fornecedor do XML ainda nao esta cadastrado para este CNPJ.",
+                xml_content=payload.xml_content,
+            )
+        )
+        db.commit()
+        return XmlInboundResult(
+            accepted=True,
+            status="pending_supplier",
+            message="XML recebido. Cadastre o fornecedor pelo CNPJ para liberar a importacao.",
+        )
+
+    invoice_key = str(parsed.get("invoice_key") or "").strip() or None
+    if not invoice_key:
+        raise HTTPException(status_code=400, detail="XML sem chave de acesso da NF-e.")
+    duplicate_entry = db.scalar(
+        select(StockEntry).where(StockEntry.invoice_key == invoice_key)
+    )
+    if duplicate_entry is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta chave NF-e ja possui uma entrada de recebimento.",
+        )
+    duplicate_message = db.scalar(
+        select(XmlInboxMessage).where(
+            XmlInboxMessage.invoice_key == invoice_key,
+            XmlInboxMessage.status.in_(
+                ["pending_receipt", "pending_supplier", "imported"]
+            ),
+        )
+    )
+    if duplicate_message is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Esta chave NF-e ja esta aguardando importacao na Caixa de XML.",
+        )
+
+    db.add(
+        XmlInboxMessage(
+            status="pending_receipt",
+            sender_email=None,
+            subject=payload.subject or "XML importado manualmente",
+            attachment_name=payload.attachment_name,
+            supplier_name=supplier.name,
+            supplier_document=supplier.document_number,
+            recipient_document=recipient_document,
+            invoice_key=invoice_key,
+            invoice_number=parsed.get("invoice_number"),
+            xml_content=payload.xml_content,
+        )
+    )
+    db.commit()
+    return XmlInboundResult(
+        accepted=True,
+        status="pending_receipt",
+        message="XML validado e aguardando importacao para recebimento.",
+    )
 
 
 @router.post(
@@ -351,6 +551,11 @@ def create_receipt_from_xml_message(
             raise HTTPException(status_code=404, detail="Entrada vinculada nao encontrada.")
         return entry
     if message.status != "pending_receipt":
+        if message.status == "pending_supplier":
+            raise HTTPException(
+                status_code=409,
+                detail="Cadastre o fornecedor com o CNPJ do XML para liberar esta importacao.",
+            )
         raise HTTPException(
             status_code=409,
             detail="Este XML nao esta pendente para gerar recebimento.",

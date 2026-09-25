@@ -14,6 +14,8 @@ class StockEntry {
     required this.items,
     this.createdAt,
     this.confirmedAt,
+    this.reversedAt,
+    this.reversalReason,
   });
 
   final int id;
@@ -30,6 +32,8 @@ class StockEntry {
   final List<StockEntryItem> items;
   final DateTime? createdAt;
   final DateTime? confirmedAt;
+  final DateTime? reversedAt;
+  final String? reversalReason;
 
   factory StockEntry.fromJson(Map<String, dynamic> json) {
     return StockEntry(
@@ -49,20 +53,28 @@ class StockEntry {
           .toList(),
       createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
       confirmedAt: DateTime.tryParse(json['confirmed_at']?.toString() ?? ''),
+      reversedAt: DateTime.tryParse(json['reversed_at']?.toString() ?? ''),
+      reversalReason: json['reversal_reason'] as String?,
     );
   }
 }
 
 class StockEntryItem {
   const StockEntryItem({
+    this.id,
     this.productId,
     required this.description,
     this.barcode,
+    this.taxGtin,
+    this.supplierProductCode,
     this.invoiceQuantity,
     this.invoiceUnit,
+    this.taxQuantity,
+    this.taxUnit,
     this.packageConversionFactor,
     required this.quantity,
     this.receivedQuantity,
+    this.approvedQuantity,
     required this.unit,
     required this.unitCost,
     required this.totalCost,
@@ -78,18 +90,29 @@ class StockEntryItem {
     this.selectiveTaxRate,
     this.batchNumber,
     this.expirationDate,
+    this.manufacturingDate,
+    this.temperatureCelsius,
+    this.discrepancyReason,
+    this.storageLocation,
+    this.lots = const [],
     this.checkStatus = 'accepted',
     this.checkNotes,
   });
 
   final int? productId;
+  final int? id;
   final String description;
   final String? barcode;
+  final String? taxGtin;
+  final String? supplierProductCode;
   final double? invoiceQuantity;
   final String? invoiceUnit;
+  final double? taxQuantity;
+  final String? taxUnit;
   final double? packageConversionFactor;
   final double quantity;
   final double? receivedQuantity;
+  final double? approvedQuantity;
   final String unit;
   final double unitCost;
   final double totalCost;
@@ -105,21 +128,32 @@ class StockEntryItem {
   final double? selectiveTaxRate;
   final String? batchNumber;
   final String? expirationDate;
+  final String? manufacturingDate;
+  final double? temperatureCelsius;
+  final String? discrepancyReason;
+  final String? storageLocation;
+  final List<StockEntryItemLot> lots;
   final String checkStatus;
   final String? checkNotes;
 
   factory StockEntryItem.fromJson(Map<String, dynamic> json) {
     return StockEntryItem(
       productId: json['product_id'] as int?,
+      id: json['id'] as int?,
       description: json['description'] as String,
       barcode: json['barcode'] as String?,
+      taxGtin: json['tax_gtin'] as String?,
+      supplierProductCode: json['supplier_product_code'] as String?,
       invoiceQuantity: _toNullableDouble(json['invoice_quantity']),
       invoiceUnit: json['invoice_unit'] as String?,
+      taxQuantity: _toNullableDouble(json['tax_quantity']),
+      taxUnit: json['tax_unit'] as String?,
       packageConversionFactor: _toNullableDouble(
         json['package_conversion_factor'],
       ),
       quantity: _toDouble(json['quantity']),
       receivedQuantity: _toNullableDouble(json['received_quantity']),
+      approvedQuantity: _toNullableDouble(json['approved_quantity']),
       unit: json['unit'] as String? ?? 'un',
       unitCost: _toDouble(json['unit_cost']),
       totalCost: _toDouble(json['total_cost']),
@@ -131,10 +165,19 @@ class StockEntryItem {
       ibsStateRate: _toNullableDouble(json['ibs_state_rate']),
       ibsCityRate: _toNullableDouble(json['ibs_city_rate']),
       selectiveTaxCst: json['selective_tax_cst'] as String?,
-      selectiveTaxClassification: json['selective_tax_classification'] as String?,
+      selectiveTaxClassification:
+          json['selective_tax_classification'] as String?,
       selectiveTaxRate: _toNullableDouble(json['selective_tax_rate']),
       batchNumber: json['batch_number'] as String?,
       expirationDate: json['expiration_date'] as String?,
+      manufacturingDate: json['manufacturing_date'] as String?,
+      temperatureCelsius: _toNullableDouble(json['temperature_celsius']),
+      discrepancyReason: json['discrepancy_reason'] as String?,
+      storageLocation: json['storage_location'] as String?,
+      lots: (json['lots'] as List<dynamic>? ?? const [])
+          .whereType<Map<String, dynamic>>()
+          .map(StockEntryItemLot.fromJson)
+          .toList(),
       checkStatus: json['check_status'] as String? ?? 'accepted',
       checkNotes: json['check_notes'] as String?,
     );
@@ -143,13 +186,19 @@ class StockEntryItem {
   Map<String, dynamic> toJson() {
     return {
       'product_id': productId,
+      'id': id,
       'description': description,
       'barcode': barcode,
+      'tax_gtin': taxGtin,
+      'supplier_product_code': supplierProductCode,
       'invoice_quantity': invoiceQuantity,
       'invoice_unit': invoiceUnit,
+      'tax_quantity': taxQuantity,
+      'tax_unit': taxUnit,
       'package_conversion_factor': packageConversionFactor,
       'quantity': quantity,
       'received_quantity': receivedQuantity,
+      'approved_quantity': approvedQuantity,
       'unit': unit,
       'unit_cost': unitCost,
       'total_cost': totalCost,
@@ -165,10 +214,60 @@ class StockEntryItem {
       'selective_tax_rate': selectiveTaxRate,
       'batch_number': batchNumber,
       'expiration_date': expirationDate,
+      'manufacturing_date': manufacturingDate,
+      'temperature_celsius': temperatureCelsius,
+      'discrepancy_reason': discrepancyReason,
+      'storage_location': storageLocation,
+      'lots': lots.map((lot) => lot.toJson()).toList(),
       'check_status': checkStatus,
       'check_notes': checkNotes,
     };
   }
+}
+
+class StockEntryItemLot {
+  const StockEntryItemLot({
+    required this.id,
+    required this.stockEntryItemId,
+    this.lotNumber,
+    this.manufacturingDate,
+    this.expirationDate,
+    required this.quantity,
+    this.temperatureCelsius,
+    this.notes,
+  });
+
+  final int id;
+  final int stockEntryItemId;
+  final String? lotNumber;
+  final String? manufacturingDate;
+  final String? expirationDate;
+  final double quantity;
+  final double? temperatureCelsius;
+  final String? notes;
+
+  factory StockEntryItemLot.fromJson(Map<String, dynamic> json) =>
+      StockEntryItemLot(
+        id: json['id'] as int,
+        stockEntryItemId: json['stock_entry_item_id'] as int,
+        lotNumber: json['lot_number'] as String?,
+        manufacturingDate: json['manufacturing_date'] as String?,
+        expirationDate: json['expiration_date'] as String?,
+        quantity: _toDouble(json['quantity']),
+        temperatureCelsius: _toNullableDouble(json['temperature_celsius']),
+        notes: json['notes'] as String?,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'stock_entry_item_id': stockEntryItemId,
+    'lot_number': lotNumber,
+    'manufacturing_date': manufacturingDate,
+    'expiration_date': expirationDate,
+    'quantity': quantity,
+    'temperature_celsius': temperatureCelsius,
+    'notes': notes,
+  };
 }
 
 class StockEntryPayload {
@@ -230,6 +329,9 @@ class StockEntryMobileItemPayload {
     this.selectiveTaxRate,
     this.batchNumber,
     this.expirationDate,
+    this.manufacturingDate,
+    this.temperatureCelsius,
+    this.checkStatus = 'accepted',
     this.checkNotes,
   });
 
@@ -252,6 +354,9 @@ class StockEntryMobileItemPayload {
   final double? selectiveTaxRate;
   final String? batchNumber;
   final String? expirationDate;
+  final String? manufacturingDate;
+  final double? temperatureCelsius;
+  final String checkStatus;
   final String? checkNotes;
 
   Map<String, dynamic> toJson() {
@@ -275,6 +380,9 @@ class StockEntryMobileItemPayload {
       'selective_tax_rate': selectiveTaxRate,
       'batch_number': batchNumber,
       'expiration_date': expirationDate,
+      'manufacturing_date': manufacturingDate,
+      'temperature_celsius': temperatureCelsius,
+      'check_status': checkStatus,
       'check_notes': checkNotes,
     };
   }
@@ -379,7 +487,8 @@ class NfeXmlPreviewItem {
       ibsStateRate: _toNullableDouble(json['ibs_state_rate']),
       ibsCityRate: _toNullableDouble(json['ibs_city_rate']),
       selectiveTaxCst: json['selective_tax_cst'] as String?,
-      selectiveTaxClassification: json['selective_tax_classification'] as String?,
+      selectiveTaxClassification:
+          json['selective_tax_classification'] as String?,
       selectiveTaxRate: _toNullableDouble(json['selective_tax_rate']),
       batchNumber: json['batch_number'] as String?,
       expirationDate: json['expiration_date'] as String?,

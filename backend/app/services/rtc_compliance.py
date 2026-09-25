@@ -41,13 +41,8 @@ def is_rtc_mandatory(setting: Any, issue_date: date | None = None) -> bool:
     environment = str(getattr(setting, "environment", "") or "").lower()
     if environment == "homologacao":
         return crt == "3" and current_date >= RTC_HOMOLOGATION_CRT3_MANDATORY_FROM
-    if crt == "3":
-        return (
-            RTC_PRODUCTION_CRT3_MANDATORY_FROM is not None
-            and current_date >= RTC_PRODUCTION_CRT3_MANDATORY_FROM
-        )
-    if crt in {"1", "2", "4"}:
-        return current_date >= RTC_PRODUCTION_SIMPLE_MEI_MANDATORY_FROM
+    # Produção permanece opcional até a virada operacional definida pelo
+    # produto. Não bloquear emissão produtiva apenas por IBS/CBS ausente.
     return False
 
 

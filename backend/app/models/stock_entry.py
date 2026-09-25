@@ -24,6 +24,8 @@ class StockEntry(Base):
     notes: Mapped[str | None] = mapped_column(Text)
     issued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reversal_reason: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     supplier = relationship("Supplier", back_populates="stock_entries")
@@ -39,11 +41,16 @@ class StockEntryItem(Base):
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="RESTRICT"), index=True)
     description: Mapped[str] = mapped_column(String(220), nullable=False)
     barcode: Mapped[str | None] = mapped_column(String(80), index=True)
+    tax_gtin: Mapped[str | None] = mapped_column(String(80), index=True)
+    supplier_product_code: Mapped[str | None] = mapped_column(String(80), index=True)
     invoice_quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     invoice_unit: Mapped[str | None] = mapped_column(String(20))
+    tax_quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    tax_unit: Mapped[str | None] = mapped_column(String(20))
     package_conversion_factor: Mapped[Decimal | None] = mapped_column(Numeric(12, 4))
     quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
     received_quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
+    approved_quantity: Mapped[Decimal | None] = mapped_column(Numeric(12, 3))
     unit: Mapped[str] = mapped_column(String(20), nullable=False, default="un")
     unit_cost: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False)
     total_cost: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
@@ -66,9 +73,32 @@ class StockEntryItem(Base):
     selective_tax_rate: Mapped[Decimal | None] = mapped_column(Numeric(7, 4))
     batch_number: Mapped[str | None] = mapped_column(String(80))
     expiration_date: Mapped[datetime | None] = mapped_column(Date)
+    manufacturing_date: Mapped[datetime | None] = mapped_column(Date)
+    temperature_celsius: Mapped[Decimal | None] = mapped_column(Numeric(7, 2))
+    discrepancy_reason: Mapped[str | None] = mapped_column(String(120))
+    storage_location: Mapped[str | None] = mapped_column(String(120))
     check_status: Mapped[str] = mapped_column(String(30), nullable=False, default="accepted")
     check_notes: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
 
     entry = relationship("StockEntry", back_populates="items")
     product = relationship("Product")
+    lots = relationship("StockEntryItemLot", back_populates="item", cascade="all, delete-orphan")
+
+
+class StockEntryItemLot(Base):
+    __tablename__ = "stock_entry_item_lots"
+
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    stock_entry_item_id: Mapped[int] = mapped_column(
+        ForeignKey("stock_entry_items.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    lot_number: Mapped[str | None] = mapped_column(String(80))
+    manufacturing_date: Mapped[datetime | None] = mapped_column(Date)
+    expiration_date: Mapped[datetime | None] = mapped_column(Date)
+    quantity: Mapped[Decimal] = mapped_column(Numeric(12, 3), nullable=False)
+    temperature_celsius: Mapped[Decimal | None] = mapped_column(Numeric(7, 2))
+    notes: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+    item = relationship("StockEntryItem", back_populates="lots")

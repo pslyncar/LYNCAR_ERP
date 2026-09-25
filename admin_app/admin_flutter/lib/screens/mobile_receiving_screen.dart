@@ -40,6 +40,7 @@ class _MobileReceivingScreenState extends State<MobileReceivingScreen> {
   double _scannerZoom = 0;
   String? _error;
   String? _message;
+  int? _receivingSessionId;
 
   @override
   void initState() {
@@ -98,6 +99,26 @@ class _MobileReceivingScreenState extends State<MobileReceivingScreen> {
           current.id == updated.id ? updated : current,
       ];
     });
+  }
+
+  Future<void> _startReceivingSession(StockEntry entry) async {
+    try {
+      final data = await _api.startReceivingSession(
+        widget.session.token,
+        entry.id,
+        deviceId: 'mobile-${widget.session.userId ?? 'user'}',
+      );
+      if (mounted && _selectedEntry?.id == entry.id) {
+        setState(() => _receivingSessionId = (data['id'] as num?)?.toInt());
+      }
+    } on ApiException catch (error) {
+      if (mounted) {
+        setState(
+          () => _message =
+              'Conferência ativa; auditoria indisponível: ${error.message}',
+        );
+      }
+    }
   }
 
   void _handleDetect(BarcodeCapture capture) {
@@ -206,6 +227,20 @@ class _MobileReceivingScreenState extends State<MobileReceivingScreen> {
     if (entry == null) return;
     setState(() => _saving = true);
     try {
+      final sessionId = _receivingSessionId;
+      if (sessionId != null) {
+        await _api.registerReceivingScan(
+          widget.session.token,
+          sessionId,
+          idempotencyKey: '$sessionId-${DateTime.now().microsecondsSinceEpoch}',
+          barcode: payload.barcode,
+          quantity: payload.quantity,
+          unit: payload.unit,
+          batchNumber: payload.batchNumber,
+          expirationDate: payload.expirationDate,
+          notes: payload.checkNotes,
+        );
+      }
       await _api.receiveStockEntryMobileItem(
         widget.session.token,
         entry.id,
@@ -300,9 +335,11 @@ class _MobileReceivingScreenState extends State<MobileReceivingScreen> {
                       onSelect: (entry) {
                         setState(() {
                           _selectedEntry = entry;
+                          _receivingSessionId = null;
                           _error = null;
                           _message = null;
                         });
+                        _startReceivingSession(entry);
                       },
                     )
                   else ...[
@@ -369,6 +406,14 @@ class _MobileReceivingScreenState extends State<MobileReceivingScreen> {
                                 _message =
                                     'Leitura concluida. Finalize a conferência no computador.';
                               });
+                              final sessionId = _receivingSessionId;
+                              if (sessionId != null) {
+                                await _api.finishReceivingSession(
+                                  widget.session.token,
+                                  sessionId,
+                                );
+                              }
+                              _receivingSessionId = null;
                               await _load();
                             },
                       icon: const Icon(Icons.check_circle_outline),

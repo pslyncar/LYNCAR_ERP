@@ -382,11 +382,28 @@ class _SupplierDialogState extends State<_SupplierDialog> {
   late final _address = TextEditingController(
     text: widget.supplier?.addressLine ?? '',
   );
+  late final _addressNumber = TextEditingController(
+    text: widget.supplier?.addressNumber ?? '',
+  );
+  late final _addressComplement = TextEditingController(
+    text: widget.supplier?.addressComplement ?? '',
+  );
+  late final _neighborhood = TextEditingController(
+    text: widget.supplier?.neighborhood ?? '',
+  );
   late final _city = TextEditingController(text: widget.supplier?.city ?? '');
   late final _state = TextEditingController(text: widget.supplier?.state ?? '');
+  late final _cityCode = TextEditingController(
+    text: widget.supplier?.cityCode ?? '',
+  );
+  late final _zipCode = TextEditingController(
+    text: widget.supplier?.zipCode ?? '',
+  );
   late final _notes = TextEditingController(text: widget.supplier?.notes ?? '');
   late bool _active = widget.supplier?.active ?? true;
   bool _saving = false;
+  bool _lookingUpCep = false;
+  String? _lastCepLookup;
   String? _error;
 
   @override
@@ -399,8 +416,13 @@ class _SupplierDialogState extends State<_SupplierDialog> {
       _phone,
       _email,
       _address,
+      _addressNumber,
+      _addressComplement,
+      _neighborhood,
       _city,
       _state,
+      _cityCode,
+      _zipCode,
       _notes,
     ]) {
       controller.dispose();
@@ -422,8 +444,13 @@ class _SupplierDialogState extends State<_SupplierDialog> {
       phone: _phone.text,
       email: _email.text,
       addressLine: _address.text,
+      addressNumber: _addressNumber.text,
+      addressComplement: _addressComplement.text,
+      neighborhood: _neighborhood.text,
       city: _city.text,
       state: _state.text,
+      cityCode: _cityCode.text,
+      zipCode: _zipCode.text,
       notes: _notes.text,
       active: _active,
     );
@@ -442,6 +469,38 @@ class _SupplierDialogState extends State<_SupplierDialog> {
       setState(() => _error = error.message);
     } finally {
       if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _lookupCep() async {
+    if (_lookingUpCep) return;
+    final digits = _zipCode.text.replaceAll(RegExp(r'\D'), '');
+    if (digits.length != 8) {
+      setState(() => _error = 'Informe um CEP com 8 dígitos.');
+      return;
+    }
+    setState(() {
+      _lookingUpCep = true;
+      _error = null;
+    });
+    try {
+      final address = await widget.api.lookupCep(widget.token, digits);
+      if (!mounted) return;
+      if (address == null) {
+        setState(() => _error = 'CEP não encontrado.');
+        return;
+      }
+      setState(() {
+        _address.text = (address['logradouro'] as String? ?? '').trim();
+        _neighborhood.text = (address['bairro'] as String? ?? '').trim();
+        _city.text = (address['localidade'] as String? ?? '').trim();
+        _state.text = (address['uf'] as String? ?? '').trim().toUpperCase();
+        _cityCode.text = (address['ibge'] as String? ?? '').trim();
+      });
+    } on ApiException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      if (mounted) setState(() => _lookingUpCep = false);
     }
   }
 
@@ -534,6 +593,20 @@ class _SupplierDialogState extends State<_SupplierDialog> {
                       ),
                     ),
                     TextFormField(
+                      controller: _addressNumber,
+                      decoration: const InputDecoration(
+                        labelText: 'Número',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    TextFormField(
+                      controller: _neighborhood,
+                      decoration: const InputDecoration(
+                        labelText: 'Bairro',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    TextFormField(
                       controller: _city,
                       decoration: const InputDecoration(
                         labelText: 'Cidade',
@@ -547,6 +620,61 @@ class _SupplierDialogState extends State<_SupplierDialog> {
                         border: OutlineInputBorder(),
                       ),
                       maxLength: 2,
+                    ),
+                    TextFormField(
+                      controller: _zipCode,
+                      decoration: const InputDecoration(
+                        labelText: 'CEP',
+                        border: OutlineInputBorder(),
+                        suffixIcon: Icon(Icons.search),
+                      ),
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) {
+                        final digits = value.replaceAll(RegExp(r'\D'), '');
+                        if (digits.length == 8 && digits != _lastCepLookup) {
+                          _lastCepLookup = digits;
+                          _lookupCep();
+                        }
+                      },
+                      onFieldSubmitted: (_) => _lookupCep(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _lookingUpCep ? null : _lookupCep,
+                    icon: _lookingUpCep
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.location_searching),
+                    label: Text(
+                      _lookingUpCep
+                          ? 'Consultando CEP...'
+                          : 'Buscar endereço pelo CEP',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _ResponsiveFields(
+                  children: [
+                    TextFormField(
+                      controller: _addressComplement,
+                      decoration: const InputDecoration(
+                        labelText: 'Complemento',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    TextFormField(
+                      controller: _cityCode,
+                      decoration: const InputDecoration(
+                        labelText: 'Código IBGE da cidade',
+                        border: OutlineInputBorder(),
+                      ),
                     ),
                   ],
                 ),

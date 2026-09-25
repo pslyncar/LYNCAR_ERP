@@ -30,7 +30,10 @@ const _stockEntryUnitOptions = {
 };
 
 class StockEntriesScreen extends StatefulWidget {
-  const StockEntriesScreen({super.key, required this.session});
+  const StockEntriesScreen({
+    super.key,
+    required this.session,
+  });
 
   final Session session;
 

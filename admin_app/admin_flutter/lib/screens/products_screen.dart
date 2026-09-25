@@ -3189,9 +3189,9 @@ class _ProductDialogState extends State<_ProductDialog> {
                     ],
                     SwitchListTile(
                       contentPadding: EdgeInsets.zero,
-                      title: const Text('Controla lote e validade'),
+                      title: const Text('Rastreia lote e validade'),
                       subtitle: const Text(
-                        'Use para alimentos, mercado, farmacia, cosmeticos e itens com vencimento.',
+                        'Organiza saldos por lote quando essa informação estiver disponível; não bloqueia o recebimento.',
                       ),
                       value: _tracksBatch,
                       onChanged: (value) =>

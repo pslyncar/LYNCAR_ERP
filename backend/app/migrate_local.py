@@ -6,7 +6,7 @@ from app.core.database import Base, engine
 from app.core.master_database import MasterSessionLocal
 from app.modules.pedeon.infrastructure.database import models as pedeon_models  # noqa: F401
 from app.models.company import Company
-from app.models import access_control, cash_closing, client, company, equipment, equipment_status, fiscal, fiscal_assistant, marketplace, monitoring, payable, pdv_cash_session, pdv_operator, pdv_sync_event, pdv_terminal, product, product_batch, product_composition, production_order, receivable, sale, service_contract, service_order, stock_entry, stock_movement, supplier, ticket, user, xml_inbox  # noqa: F401
+from app.models import access_control, cash_closing, client, company, equipment, equipment_status, fiscal, fiscal_assistant, marketplace, monitoring, payable, pdv_cash_session, pdv_operator, pdv_sync_event, pdv_terminal, product, product_barcode, product_batch, product_composition, production_order, receivable, receiving_scan, receiving_session, sale, service_contract, service_order, stock_entry, stock_entry_audit, stock_movement, supplier, supplier_product_link, ticket, user, xml_inbox  # noqa: F401
 from app.services.access_control import seed_default_access_control
 from app.migrate_master import main as migrate_master
 from app.services.master_user_index import upsert_user_index
@@ -77,6 +77,10 @@ PRODUCT_COLUMNS = [
     ("tracks_batch", "BOOLEAN NOT NULL DEFAULT false"),
     ("initial_batch_number", "VARCHAR(80)"),
     ("initial_expiration_date", "DATE"),
+    ("requires_manufacturing_date", "BOOLEAN NOT NULL DEFAULT false"),
+    ("requires_expiration_date", "BOOLEAN NOT NULL DEFAULT false"),
+    ("requires_temperature", "BOOLEAN NOT NULL DEFAULT false"),
+    ("minimum_shelf_life_days", "INTEGER"),
     ("offer_price", "NUMERIC(12, 4)"),
     ("offer_start_at", "TIMESTAMP WITH TIME ZONE"),
     ("offer_end_at", "TIMESTAMP WITH TIME ZONE"),
@@ -122,15 +126,26 @@ PRODUCT_COLUMNS = [
 
 STOCK_ENTRY_COLUMNS = [
     ("confirmed_at", "TIMESTAMP WITH TIME ZONE"),
+    ("reversed_at", "TIMESTAMP WITH TIME ZONE"),
+    ("reversal_reason", "TEXT"),
 ]
 
 STOCK_ENTRY_ITEM_COLUMNS = [
+    ("tax_gtin", "VARCHAR(80)"),
+    ("supplier_product_code", "VARCHAR(80)"),
     ("invoice_quantity", "NUMERIC(12, 3)"),
     ("invoice_unit", "VARCHAR(20)"),
+    ("tax_quantity", "NUMERIC(12, 3)"),
+    ("tax_unit", "VARCHAR(20)"),
     ("package_conversion_factor", "NUMERIC(12, 4)"),
     ("received_quantity", "NUMERIC(12, 3)"),
+    ("approved_quantity", "NUMERIC(12, 3)"),
     ("batch_number", "VARCHAR(80)"),
     ("expiration_date", "DATE"),
+    ("manufacturing_date", "DATE"),
+    ("temperature_celsius", "NUMERIC(7, 2)"),
+    ("discrepancy_reason", "VARCHAR(120)"),
+    ("storage_location", "VARCHAR(120)"),
     ("check_status", "VARCHAR(30) NOT NULL DEFAULT 'accepted'"),
     ("check_notes", "TEXT"),
     ("origin", "VARCHAR(2)"),
@@ -217,6 +232,7 @@ FISCAL_SETTING_COLUMNS = [
 
 FISCAL_DOCUMENT_COLUMNS = [
     ("fiscal_client_id", "INTEGER REFERENCES clients(id) ON DELETE SET NULL"),
+    ("supplier_id", "INTEGER REFERENCES suppliers(id) ON DELETE SET NULL"),
     ("origin_document_id", "INTEGER REFERENCES fiscal_documents(id) ON DELETE SET NULL"),
     ("cancellation_reason", "VARCHAR(255)"),
     ("cancellation_protocol", "VARCHAR(80)"),
@@ -246,6 +262,18 @@ FISCAL_DOCUMENT_COLUMNS = [
     ("stock_deduction_on_authorize", "BOOLEAN NOT NULL DEFAULT false"),
 ]
 
+SUPPLIER_COLUMNS = [
+    ("address_number", "VARCHAR(20)"),
+    ("address_complement", "VARCHAR(120)"),
+    ("neighborhood", "VARCHAR(120)"),
+    ("city_code", "VARCHAR(20)"),
+    ("zip_code", "VARCHAR(20)"),
+]
+
+SUPPLIER_PRODUCT_LINK_COLUMNS = [
+    ("active", "BOOLEAN NOT NULL DEFAULT true"),
+]
+
 RECEIVABLE_COLUMNS = [
     ("entry_type", "VARCHAR(20) NOT NULL DEFAULT 'legacy'"),
 ]
@@ -262,8 +290,12 @@ FISCAL_DOCUMENT_ITEM_COLUMNS = [
     ("pis_cst", "VARCHAR(10)"), ("cofins_cst", "VARCHAR(10)"), ("cbenef", "VARCHAR(20)"),
     ("ibs_cbs_cst", "VARCHAR(10)"),
     ("ibs_cbs_classification", "VARCHAR(20)"),
+    ("cbs_rate", "NUMERIC(7, 4)"),
+    ("ibs_state_rate", "NUMERIC(7, 4)"),
+    ("ibs_city_rate", "NUMERIC(7, 4)"),
     ("selective_tax_cst", "VARCHAR(10)"),
     ("selective_tax_classification", "VARCHAR(20)"),
+    ("selective_tax_rate", "NUMERIC(7, 4)"),
 ]
 
 COMPANY_BILLING_COLUMNS = [
@@ -744,6 +776,26 @@ def add_stock_entry_columns(bind_engine=engine) -> None:
                 connection.execute(
                     text(f"ALTER TABLE stock_entry_items ADD COLUMN {column_name} {column_type}")
                 )
+        connection.execute(
+            text(
+                """
+                CREATE TABLE IF NOT EXISTS stock_entry_item_lots (
+                    id SERIAL PRIMARY KEY,
+                    stock_entry_item_id INTEGER NOT NULL REFERENCES stock_entry_items(id) ON DELETE CASCADE,
+                    lot_number VARCHAR(80),
+                    manufacturing_date DATE,
+                    expiration_date DATE,
+                    quantity NUMERIC(12, 3) NOT NULL,
+                    temperature_celsius NUMERIC(7, 2),
+                    notes TEXT,
+                    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+        connection.execute(
+            text("CREATE INDEX IF NOT EXISTS idx_stock_entry_item_lots_item ON stock_entry_item_lots(stock_entry_item_id)")
+        )
 
 
 def add_cash_closing_audit_columns(bind_engine=engine) -> None:
@@ -991,6 +1043,26 @@ def add_fiscal_setting_columns(bind_engine=engine) -> None:
                 "ON fiscal_documents(origin_document_id)"
             )
         )
+
+
+def add_supplier_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in SUPPLIER_COLUMNS:
+            if not column_exists_in_connection(connection, "suppliers", column_name):
+                connection.execute(
+                    text(f"ALTER TABLE suppliers ADD COLUMN {column_name} {column_type}")
+                )
+
+
+def add_supplier_product_link_columns(bind_engine=engine) -> None:
+    with bind_engine.begin() as connection:
+        for column_name, column_type in SUPPLIER_PRODUCT_LINK_COLUMNS:
+            if not column_exists_in_connection(connection, "supplier_product_links", column_name):
+                connection.execute(
+                    text(
+                        f"ALTER TABLE supplier_product_links ADD COLUMN {column_name} {column_type}"
+                    )
+                )
 
 
 def add_receivable_columns(bind_engine=engine) -> None:
@@ -1319,6 +1391,8 @@ def migrate_registered_tenants() -> None:
             add_user_seller_columns(tenant_engine)
             add_service_order_columns(tenant_engine)
             add_fiscal_setting_columns(tenant_engine)
+            add_supplier_columns(tenant_engine)
+            add_supplier_product_link_columns(tenant_engine)
             add_receivable_columns(tenant_engine)
             add_pedeon_order_columns(tenant_engine)
             add_pedeon_customer_columns(tenant_engine)
@@ -1430,6 +1504,8 @@ def main() -> None:
     normalize_sale_sources()
     add_user_seller_columns()
     add_fiscal_setting_columns()
+    add_supplier_columns()
+    add_supplier_product_link_columns()
     add_receivable_columns()
     add_production_order_columns()
     add_pedeon_order_columns()

@@ -745,7 +745,7 @@ def ncm_suggestions(db: Session, description: str | None, *, limit: int = 20) ->
             select(MasterFiscalNcmCode)
             .where(
                 *base_filter,
-                or_(*[MasterFiscalNcmCode.description.ilike(f"%{word}%") for word in words]),
+                and_(*[MasterFiscalNcmCode.description.ilike(f"%{word}%") for word in words]),
             )
             .order_by(MasterFiscalNcmCode.code.asc())
             .limit(limit * 5)
@@ -770,12 +770,10 @@ def ncm_suggestions(db: Session, description: str | None, *, limit: int = 20) ->
                 select(MasterFiscalNcmCode)
                 .where(
                     *base_filter,
-                    or_(
-                        *[
-                            MasterFiscalNcmCode.normalized_description.ilike(f"%{word}%")
-                            for word in words
-                        ],
-                    ),
+                    and_(*[
+                        MasterFiscalNcmCode.normalized_description.ilike(f"%{word}%")
+                        for word in words
+                    ]),
                 )
                 .order_by(MasterFiscalNcmCode.code.asc())
                 .limit(limit * 25)

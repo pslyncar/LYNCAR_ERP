@@ -23,6 +23,10 @@ class Product {
     this.category,
     this.stockLocation,
     this.tracksBatch = false,
+    this.requiresManufacturingDate = false,
+    this.requiresExpirationDate = false,
+    this.requiresTemperature = false,
+    this.minimumShelfLifeDays,
     this.initialBatchNumber,
     this.initialExpirationDate,
     this.purchaseTotalCost,
@@ -78,6 +82,10 @@ class Product {
   final String? category;
   final String? stockLocation;
   final bool tracksBatch;
+  final bool requiresManufacturingDate;
+  final bool requiresExpirationDate;
+  final bool requiresTemperature;
+  final int? minimumShelfLifeDays;
   final String? initialBatchNumber;
   final String? initialExpirationDate;
   final double salePrice;
@@ -145,6 +153,12 @@ class Product {
       category: json['category'] as String?,
       stockLocation: json['stock_location'] as String?,
       tracksBatch: json['tracks_batch'] as bool? ?? false,
+      requiresManufacturingDate:
+          json['requires_manufacturing_date'] as bool? ?? false,
+      requiresExpirationDate:
+          json['requires_expiration_date'] as bool? ?? false,
+      requiresTemperature: json['requires_temperature'] as bool? ?? false,
+      minimumShelfLifeDays: (json['minimum_shelf_life_days'] as num?)?.toInt(),
       initialBatchNumber: json['initial_batch_number'] as String?,
       initialExpirationDate: json['initial_expiration_date'] as String?,
       salePrice: _toDouble(json['sale_price']),
@@ -247,6 +261,10 @@ class ProductPayload {
     this.category,
     this.stockLocation,
     this.tracksBatch = false,
+    this.requiresManufacturingDate = false,
+    this.requiresExpirationDate = false,
+    this.requiresTemperature = false,
+    this.minimumShelfLifeDays,
     this.initialBatchNumber,
     this.initialExpirationDate,
     this.purchaseTotalCost,
@@ -295,6 +313,10 @@ class ProductPayload {
   final String? category;
   final String? stockLocation;
   final bool tracksBatch;
+  final bool requiresManufacturingDate;
+  final bool requiresExpirationDate;
+  final bool requiresTemperature;
+  final int? minimumShelfLifeDays;
   final String? initialBatchNumber;
   final String? initialExpirationDate;
   final double salePrice;
@@ -352,6 +374,10 @@ class ProductPayload {
       'category': _emptyToNull(category),
       'stock_location': _emptyToNull(stockLocation),
       'tracks_batch': tracksBatch,
+      'requires_manufacturing_date': requiresManufacturingDate,
+      'requires_expiration_date': requiresExpirationDate,
+      'requires_temperature': requiresTemperature,
+      'minimum_shelf_life_days': minimumShelfLifeDays,
       'initial_batch_number': _emptyToNull(initialBatchNumber),
       'initial_expiration_date': _emptyToNull(initialExpirationDate),
       'sale_price': _priceJson(salePrice),

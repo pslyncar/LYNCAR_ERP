@@ -1155,6 +1155,33 @@ class ApiClient {
     return Product.fromJson(_decodeResponse(response));
   }
 
+  Future<Product> updateProductIdentifiers(
+    String token,
+    int productId, {
+    String? description,
+    String? internalCode,
+    String? barcode,
+    String? purchasePackageBarcode,
+    double? purchasePackageFactor,
+    bool? purchaseConversionEnabled,
+    String? purchaseInvoiceUnit,
+  }) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/products/$productId'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'description': description,
+        'internal_code': internalCode,
+        'barcode': barcode,
+        'purchase_package_barcode': purchasePackageBarcode,
+        'purchase_package_factor': purchasePackageFactor,
+        'purchase_conversion_enabled': purchaseConversionEnabled,
+        'purchase_invoice_unit': purchaseInvoiceUnit,
+      }),
+    );
+    return Product.fromJson(_decodeResponse(response));
+  }
+
   Future<MercadoLivreStatus> getMercadoLivreStatus(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/marketplaces/mercado-livre/status'),
@@ -1536,6 +1563,18 @@ class ApiClient {
         .toList();
   }
 
+  Future<Map<String, dynamic>?> lookupCep(String token, String cep) async {
+    final digits = cep.replaceAll(RegExp(r'\D'), '');
+    if (digits.length != 8) return null;
+    final response = await http.get(
+      Uri.parse('$baseUrl/stock/cep/$digits'),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeResponse(response);
+    if (data['found'] != true) return null;
+    return data;
+  }
+
   Future<Supplier> createSupplier(String token, SupplierPayload payload) async {
     final response = await http.post(
       Uri.parse('$baseUrl/stock/suppliers'),
@@ -1582,6 +1621,179 @@ class ApiClient {
         .toList();
   }
 
+  Future<Map<String, dynamic>> listStockReceiptsPage(
+    String token, {
+    int page = 1,
+    int pageSize = 25,
+    String? status,
+    String? search,
+    String? source,
+    int? supplierId,
+    DateTime? createdFrom,
+    DateTime? createdTo,
+  }) async {
+    final query = <String, String>{'page': '$page', 'page_size': '$pageSize'};
+    if (status != null && status.trim().isNotEmpty) {
+      query['status'] = status.trim();
+    }
+    if (search != null && search.trim().isNotEmpty) {
+      query['search'] = search.trim();
+    }
+    if (source != null && source.trim().isNotEmpty)
+      query['source'] = source.trim();
+    if (supplierId != null) query['supplier_id'] = '$supplierId';
+    if (createdFrom != null)
+      query['created_from'] = createdFrom.toUtc().toIso8601String();
+    if (createdTo != null)
+      query['created_to'] = createdTo.toUtc().toIso8601String();
+    final response = await http.get(
+      Uri.parse('$baseUrl/stock/receipts').replace(queryParameters: query),
+      headers: _authHeaders(token),
+    );
+    return _decodeResponse(response);
+  }
+
+  Future<List<StockEntry>> findStockReceiptsByNumber(
+    String token,
+    String number,
+  ) async {
+    final data = await listStockReceiptsPage(
+      token,
+      page: 1,
+      pageSize: 10,
+      search: number,
+    );
+    final items = data['items'] as List<dynamic>? ?? const [];
+    return items
+        .map((item) => StockEntry.fromJson(item as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<Map<String, dynamic>> stockReceiptsSummary(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/stock/receipts/summary'),
+      headers: _authHeaders(token),
+    );
+    return _decodeResponse(response);
+  }
+
+  Future<List<Map<String, dynamic>>> listSupplierProductLinks(
+    String token, {
+    String? query,
+    bool? active,
+  }) async {
+    final params = <String, String>{'limit': '500'};
+    if (query != null && query.trim().isNotEmpty) {
+      params['q'] = query.trim();
+    }
+    if (active != null) params['active'] = '$active';
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/stock/supplier-links',
+      ).replace(queryParameters: params),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeResponse(response) as List<dynamic>;
+    return data.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> updateSupplierProductLink(
+    String token,
+    int linkId,
+    Map<String, dynamic> payload,
+  ) async {
+    final response = await http.put(
+      Uri.parse('$baseUrl/stock/supplier-links/$linkId'),
+      headers: _authHeaders(token),
+      body: jsonEncode(payload),
+    );
+    return _decodeResponse(response) as Map<String, dynamic>;
+  }
+
+  Future<void> deactivateSupplierProductLink(String token, int linkId) async {
+    final response = await http.delete(
+      Uri.parse('$baseUrl/stock/supplier-links/$linkId'),
+      headers: _authHeaders(token),
+    );
+    _decodeResponse(response);
+  }
+
+  Future<StockEntry> reprocessStockEntryMatching(
+    String token,
+    int entryId,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/entries/$entryId/reprocess-matching'),
+      headers: _authHeaders(token),
+    );
+    return StockEntry.fromJson(_decodeResponse(response));
+  }
+
+  Future<List<Map<String, dynamic>>> listStockEntryAudit(
+    String token,
+    int entryId,
+  ) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/stock/entries/$entryId/audit'),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeResponse(response) as List<dynamic>;
+    return data.cast<Map<String, dynamic>>();
+  }
+
+  Future<Map<String, dynamic>> startReceivingSession(
+    String token,
+    int entryId, {
+    String? deviceId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/entries/$entryId/receiving-sessions'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'device_id': deviceId}),
+    );
+    return _decodeResponse(response);
+  }
+
+  Future<Map<String, dynamic>> registerReceivingScan(
+    String token,
+    int sessionId, {
+    required String idempotencyKey,
+    String? barcode,
+    required double quantity,
+    required String unit,
+    String? batchNumber,
+    String? expirationDate,
+    String condition = 'ok',
+    String? notes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/receiving-sessions/$sessionId/scans'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'idempotency_key': idempotencyKey,
+        'barcode': barcode,
+        'quantity': quantity,
+        'unit': unit,
+        'batch_number': batchNumber,
+        'expiration_date': expirationDate,
+        'condition': condition,
+        'notes': notes,
+      }),
+    );
+    return _decodeResponse(response);
+  }
+
+  Future<Map<String, dynamic>> finishReceivingSession(
+    String token,
+    int sessionId,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/receiving-sessions/$sessionId/finish'),
+      headers: _authHeaders(token),
+    );
+    return _decodeResponse(response);
+  }
+
   Future<XmlInboxSettings> getXmlInboxSettings(String token) async {
     final response = await http.get(
       Uri.parse('$baseUrl/xml-inbox/settings'),
@@ -1601,6 +1813,23 @@ class ApiClient {
     return _decodeListResponse(response)
         .map((item) => XmlInboxMessage.fromJson(item as Map<String, dynamic>))
         .toList();
+  }
+
+  Future<Map<String, dynamic>> uploadXmlInboxFile(
+    String token, {
+    required String fileName,
+    required String xmlContent,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/xml-inbox/messages/upload'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'attachment_name': fileName,
+        'subject': 'XML importado manualmente',
+        'xml_content': xmlContent,
+      }),
+    );
+    return _decodeResponse(response);
   }
 
   Future<StockEntry> createReceiptFromXmlInbox(
@@ -1646,6 +1875,18 @@ class ApiClient {
     return StockEntry.fromJson(_decodeResponse(response));
   }
 
+  Future<StockEntry> createDraftStockEntry(
+    String token,
+    StockEntryPayload payload,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/entries/draft'),
+      headers: _authHeaders(token),
+      body: jsonEncode(payload.toJson()),
+    );
+    return StockEntry.fromJson(_decodeResponse(response));
+  }
+
   Future<StockEntry> updateOpenStockEntry(
     String token,
     int entryId,
@@ -1672,12 +1913,119 @@ class ApiClient {
     return StockEntry.fromJson(_decodeResponse(response));
   }
 
-  Future<StockEntry> confirmOpenStockEntry(String token, int entryId) async {
+  Future<StockEntry> confirmOpenStockEntry(
+    String token,
+    int entryId, {
+    bool returnAll = false,
+  }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/stock/entries/$entryId/confirm'),
+      Uri.parse(
+        '$baseUrl/stock/entries/$entryId/confirm?return_all=$returnAll',
+      ),
       headers: _authHeaders(token),
     );
     return StockEntry.fromJson(_decodeResponse(response));
+  }
+
+  Future<Map<String, dynamic>> createStockDevolutionDraft(
+    String token,
+    int entryId, {
+    String mode = 'partial',
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/entries/$entryId/devolution-draft?mode=$mode'),
+      headers: _authHeaders(token),
+    );
+    return _decodeResponse(response) as Map<String, dynamic>;
+  }
+
+  Future<StockEntryItemLot> addStockEntryItemLot(
+    String token,
+    int entryId,
+    int itemId, {
+    String? lotNumber,
+    String? manufacturingDate,
+    String? expirationDate,
+    required double quantity,
+    double? temperatureCelsius,
+    String? notes,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/entries/$entryId/items/$itemId/lots'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'lot_number': lotNumber,
+        'manufacturing_date': manufacturingDate,
+        'expiration_date': expirationDate,
+        'quantity': quantity,
+        'temperature_celsius': temperatureCelsius,
+        'notes': notes,
+      }),
+    );
+    return StockEntryItemLot.fromJson(_decodeResponse(response));
+  }
+
+  Future<StockEntry> reverseStockEntry(
+    String token,
+    int entryId,
+    String reason,
+  ) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/entries/$entryId/reverse'),
+      headers: _authHeaders(token),
+      body: jsonEncode({'reason': reason}),
+    );
+    return StockEntry.fromJson(_decodeResponse(response));
+  }
+
+  Future<StockEntry> matchStockEntryItem(
+    String token,
+    int entryId,
+    int itemId,
+    int productId, {
+    bool rememberSupplierLink = true,
+    String? supplierProductCode,
+    String? commercialGtin,
+    String? taxGtin,
+    String? supplierDescription,
+    String? supplierUnit,
+    String? stockUnit,
+    double? conversionFactor,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/stock/entries/$entryId/items/$itemId/match'),
+      headers: _authHeaders(token),
+      body: jsonEncode({
+        'product_id': productId,
+        'remember_supplier_link': rememberSupplierLink,
+        'supplier_product_code': supplierProductCode,
+        'commercial_gtin': commercialGtin,
+        'tax_gtin': taxGtin,
+        'supplier_description': supplierDescription,
+        'supplier_unit': supplierUnit,
+        'stock_unit': stockUnit,
+        'conversion_factor': conversionFactor,
+      }),
+    );
+    return StockEntry.fromJson(_decodeResponse(response));
+  }
+
+  Future<List<Map<String, dynamic>>> suggestProductsForStockEntryItem(
+    String token,
+    int entryId,
+    int itemId,
+  ) async {
+    final response = await http.get(
+      Uri.parse(
+        '$baseUrl/stock/entries/$entryId/items/$itemId/product-suggestions',
+      ),
+      headers: _authHeaders(token),
+    );
+    final data = _decodeListResponse(response);
+    return data
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
   }
 
   Future<NfeXmlPreview> previewNfeXml(String token, String xmlContent) async {

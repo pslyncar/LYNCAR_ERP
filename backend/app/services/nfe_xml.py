@@ -71,9 +71,13 @@ def parse_nfe_xml(xml_content: str) -> dict[str, object]:
             if xml_unit_cost > 0
             else (total / quantity if quantity > 0 else Decimal("0"))
         )
+        supplier_product_code = _text(prod, f"{ns}cProd")
         barcode = _text(prod, f"{ns}cEAN")
+        tax_gtin = _text(prod, f"{ns}cEANTrib")
         if barcode in {None, "SEM GTIN"}:
-            barcode = _text(prod, f"{ns}cProd")
+            barcode = None
+        if tax_gtin in {None, "SEM GTIN"}:
+            tax_gtin = None
         rastro = prod.find(f"{ns}rastro")
         imposto = det.find(f"{ns}imposto")
         icms_group = _first_tax_group(imposto, ns, "ICMS")
@@ -90,8 +94,12 @@ def parse_nfe_xml(xml_content: str) -> dict[str, object]:
             {
                 "description": _text(prod, f"{ns}xProd") or "Produto NF-e",
                 "barcode": barcode,
+                "tax_gtin": tax_gtin,
+                "supplier_product_code": supplier_product_code,
                 "quantity": quantity,
                 "unit": (_text(prod, f"{ns}uCom") or "un").lower(),
+                "tax_quantity": _decimal(_text(prod, f"{ns}qTrib")),
+                "tax_unit": (_text(prod, f"{ns}uTrib") or "").lower() or None,
                 "unit_cost": unit_cost,
                 "total_cost": total,
                 "ncm": _text(prod, f"{ns}NCM"),

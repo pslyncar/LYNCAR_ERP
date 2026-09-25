@@ -67,6 +67,12 @@ PERMISSIONS = [
     PermissionDefinition("stock:entries:view", "Ver entradas", "stock_entries", "Visualizar entradas e conferências de mercadoria."),
     PermissionDefinition("stock:entries:create", "Criar entradas", "stock_entries", "Criar entradas manuais ou por XML."),
     PermissionDefinition("stock:entries:confirm", "Confirmar conferência", "stock_entries", "Confirmar conferência e movimentar estoque."),
+    PermissionDefinition(
+        "stock:entries:reverse",
+        "Estornar entradas confirmadas",
+        "stock_entries",
+        "Solicitar e concluir o estorno de uma entrada confirmada após as validações de segurança.",
+    ),
     PermissionDefinition("stock:entries:return", "Marcar devolução", "stock_entries", "Marcar itens para devolução ao fornecedor."),
     PermissionDefinition("stock:entries:create_product_from_xml", "Cadastrar produto pelo XML", "stock_entries", "Criar produto a partir de item da NF-e."),
     PermissionDefinition("stock:batches:view", "Ver lotes", "stock", "Visualizar saldo por lote e validade."),

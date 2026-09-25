@@ -11,8 +11,13 @@ class SupplierCreate(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=180)
     address_line: str | None = Field(default=None, max_length=180)
+    address_number: str | None = Field(default=None, max_length=20)
+    address_complement: str | None = Field(default=None, max_length=120)
+    neighborhood: str | None = Field(default=None, max_length=120)
     city: str | None = Field(default=None, max_length=120)
     state: str | None = Field(default=None, max_length=2)
+    city_code: str | None = Field(default=None, max_length=20)
+    zip_code: str | None = Field(default=None, max_length=20)
     notes: str | None = None
     active: bool = True
 
@@ -25,8 +30,13 @@ class SupplierUpdate(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=180)
     address_line: str | None = Field(default=None, max_length=180)
+    address_number: str | None = Field(default=None, max_length=20)
+    address_complement: str | None = Field(default=None, max_length=120)
+    neighborhood: str | None = Field(default=None, max_length=120)
     city: str | None = Field(default=None, max_length=120)
     state: str | None = Field(default=None, max_length=2)
+    city_code: str | None = Field(default=None, max_length=20)
+    zip_code: str | None = Field(default=None, max_length=20)
     notes: str | None = None
     active: bool | None = None
 

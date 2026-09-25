@@ -8,8 +8,13 @@ class Supplier {
     this.phone,
     this.email,
     this.addressLine,
+    this.addressNumber,
+    this.addressComplement,
+    this.neighborhood,
     this.city,
     this.state,
+    this.cityCode,
+    this.zipCode,
     this.notes,
     required this.active,
   });
@@ -22,8 +27,13 @@ class Supplier {
   final String? phone;
   final String? email;
   final String? addressLine;
+  final String? addressNumber;
+  final String? addressComplement;
+  final String? neighborhood;
   final String? city;
   final String? state;
+  final String? cityCode;
+  final String? zipCode;
   final String? notes;
   final bool active;
 
@@ -37,8 +47,13 @@ class Supplier {
       phone: json['phone'] as String?,
       email: json['email'] as String?,
       addressLine: json['address_line'] as String?,
+      addressNumber: json['address_number'] as String?,
+      addressComplement: json['address_complement'] as String?,
+      neighborhood: json['neighborhood'] as String?,
       city: json['city'] as String?,
       state: json['state'] as String?,
+      cityCode: json['city_code'] as String?,
+      zipCode: json['zip_code'] as String?,
       notes: json['notes'] as String?,
       active: json['active'] as bool? ?? true,
     );
@@ -54,8 +69,13 @@ class SupplierPayload {
     this.phone,
     this.email,
     this.addressLine,
+    this.addressNumber,
+    this.addressComplement,
+    this.neighborhood,
     this.city,
     this.state,
+    this.cityCode,
+    this.zipCode,
     this.notes,
     this.active = true,
   });
@@ -67,8 +87,13 @@ class SupplierPayload {
   final String? phone;
   final String? email;
   final String? addressLine;
+  final String? addressNumber;
+  final String? addressComplement;
+  final String? neighborhood;
   final String? city;
   final String? state;
+  final String? cityCode;
+  final String? zipCode;
   final String? notes;
   final bool active;
 
@@ -81,8 +106,13 @@ class SupplierPayload {
       'phone': _emptyToNull(phone),
       'email': _emptyToNull(email),
       'address_line': _emptyToNull(addressLine),
+      'address_number': _emptyToNull(addressNumber),
+      'address_complement': _emptyToNull(addressComplement),
+      'neighborhood': _emptyToNull(neighborhood),
       'city': _emptyToNull(city),
       'state': _emptyToNull(state),
+      'city_code': _emptyToNull(cityCode),
+      'zip_code': _emptyToNull(zipCode),
       'notes': _emptyToNull(notes),
       'active': active,
     };

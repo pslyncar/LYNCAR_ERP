@@ -26,6 +26,7 @@ from app.models.client import Client
 from app.models.product import Product
 from app.models.sale import Sale, SaleItem
 from app.models.stock_movement import StockMovement
+from app.models.supplier import Supplier
 from app.models.user import User
 from app.schemas.fiscal import (
     CompanyFiscalSettingRead,
@@ -863,7 +864,31 @@ def _fiscal_sale_view(document: FiscalDocument, sale: Sale) -> Sale | SimpleName
     )
 
 
-def _manual_fiscal_sale_view(document: FiscalDocument) -> SimpleNamespace:
+def _supplier_recipient_view(supplier: Supplier) -> SimpleNamespace:
+    """Adapta o cadastro fiscal do fornecedor ao destinatário do XML da NF-e."""
+    return SimpleNamespace(
+        name=supplier.name,
+        document_number=supplier.document_number,
+        address=supplier.address_line,
+        address_number=supplier.address_number,
+        address_complement=supplier.address_complement,
+        neighborhood=supplier.neighborhood,
+        city=supplier.city,
+        state=supplier.state,
+        city_code=supplier.city_code,
+        zip_code=supplier.zip_code,
+        state_registration=supplier.state_registration,
+        email=supplier.email,
+        country_code="1058",
+        country_name="BRASIL",
+        suframa=None,
+    )
+
+
+def _manual_fiscal_sale_view(
+    document: FiscalDocument,
+    supplier: Supplier | None = None,
+) -> SimpleNamespace:
     included_items = [
         _document_item_to_sale_item_view(item)
         for item in document.fiscal_items
@@ -879,13 +904,14 @@ def _manual_fiscal_sale_view(document: FiscalDocument) -> SimpleNamespace:
         authorization_code=None,
         notes="Pagamento informado na nota manual.",
     )
+    recipient = _supplier_recipient_view(supplier) if supplier is not None else document.fiscal_client
     return SimpleNamespace(
         id=document.id,
         number=f"NF-MANUAL-{document.id}",
         status="finalizada",
         items=included_items,
         payments=[payment],
-        client=document.fiscal_client,
+        client=recipient,
         consumer_cpf=document.consumer_cpf
         or (document.fiscal_client.document_number if document.fiscal_client is not None else None),
         total_amount=fiscal_total,
@@ -2371,6 +2397,8 @@ def update_fiscal_document(
             selectinload(FiscalDocument.sale).selectinload(Sale.items).selectinload(SaleItem.product),
             selectinload(FiscalDocument.sale).selectinload(Sale.client),
             selectinload(FiscalDocument.fiscal_client),
+            selectinload(FiscalDocument.supplier),
+            selectinload(FiscalDocument.supplier),
             selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
         )
         .where(FiscalDocument.id == document_id)
@@ -2393,7 +2421,7 @@ def update_fiscal_document(
     fiscal_sale = (
         _fiscal_sale_view(document, document.sale)
         if document.sale is not None
-        else _manual_fiscal_sale_view(document)
+        else _manual_fiscal_sale_view(document, document.supplier)
     )
     preflight_warnings: list[str] = []
     preflight_warnings.extend(document_cfop_issues(document, setting, fiscal_sale))
@@ -2589,7 +2617,7 @@ def authorize_fiscal_document(
     fiscal_sale = (
         _fiscal_sale_view(document, document.sale)
         if document.sale is not None
-        else _manual_fiscal_sale_view(document)
+        else _manual_fiscal_sale_view(document, document.supplier)
     )
     cfop_issues = document_cfop_issues(document, setting, fiscal_sale)
     if cfop_issues:
@@ -2651,6 +2679,7 @@ def authorize_fiscal_document(
                 selectinload(FiscalDocument.sale).selectinload(Sale.payments),
                 selectinload(FiscalDocument.sale).selectinload(Sale.client),
                 selectinload(FiscalDocument.fiscal_client),
+                selectinload(FiscalDocument.supplier),
                 selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.fiscal_product),
                 selectinload(FiscalDocument.fiscal_items).selectinload(FiscalDocumentItem.original_product),
             )
@@ -2661,7 +2690,7 @@ def authorize_fiscal_document(
         fiscal_sale = (
             _fiscal_sale_view(document, document.sale)
             if document.sale is not None
-            else _manual_fiscal_sale_view(document)
+            else _manual_fiscal_sale_view(document, document.supplier)
         )
         # NFC-e e NF-e seguem a mesma regra: rejeicao comum conserva o numero.
         # Somente a rejeicao 539, cuja resposta traz a chave que a SEFAZ ja

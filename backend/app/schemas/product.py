@@ -28,6 +28,10 @@ class ProductBase(BaseModel):
     category: str | None = Field(default=None, max_length=100)
     stock_location: str | None = Field(default=None, max_length=120)
     tracks_batch: bool = False
+    requires_manufacturing_date: bool = False
+    requires_expiration_date: bool = False
+    requires_temperature: bool = False
+    minimum_shelf_life_days: int | None = Field(default=None, ge=0)
     initial_batch_number: str | None = Field(default=None, max_length=80)
     initial_expiration_date: date | None = None
     sale_price: Decimal = Field(default=0, ge=0)
@@ -94,6 +98,10 @@ class ProductUpdate(BaseModel):
     category: str | None = Field(default=None, max_length=100)
     stock_location: str | None = Field(default=None, max_length=120)
     tracks_batch: bool | None = None
+    requires_manufacturing_date: bool | None = None
+    requires_expiration_date: bool | None = None
+    requires_temperature: bool | None = None
+    minimum_shelf_life_days: int | None = Field(default=None, ge=0)
     initial_batch_number: str | None = Field(default=None, max_length=80)
     initial_expiration_date: date | None = None
     sale_price: Decimal | None = Field(default=None, ge=0)

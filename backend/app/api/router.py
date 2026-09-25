@@ -43,6 +43,7 @@ from app.api.routes import (
     service_orders,
     site,
     stock_entries,
+    supplier_product_links,
     tickets,
     uploads,
     xml_inbox,
@@ -81,6 +82,7 @@ api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboar
 api_router.include_router(uploads.router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(products.router, prefix="/products", tags=["products"])
 api_router.include_router(stock_entries.router, prefix="/stock", tags=["stock"])
+api_router.include_router(supplier_product_links.router, prefix="/stock/supplier-links", tags=["stock-supplier-links"])
 api_router.include_router(xml_inbox.router, prefix="/xml-inbox", tags=["xml-inbox"])
 api_router.include_router(production_orders.router, prefix="/production-orders", tags=["production-orders"])
 api_router.include_router(fiscal.router, prefix="/fiscal", tags=["fiscal"])

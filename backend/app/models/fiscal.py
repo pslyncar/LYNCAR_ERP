@@ -88,6 +88,7 @@ class FiscalDocument(Base):
     )
     sale_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sales.id", ondelete="SET NULL"), index=True)
     fiscal_client_id: Mapped[Optional[int]] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), index=True)
+    supplier_id: Mapped[Optional[int]] = mapped_column(ForeignKey("suppliers.id", ondelete="SET NULL"), index=True)
     document_type: Mapped[str] = mapped_column(String(10), nullable=False, default="nfce")
     model: Mapped[str] = mapped_column(String(2), nullable=False, default="65")
     series: Mapped[Optional[int]] = mapped_column()
@@ -154,6 +155,7 @@ class FiscalDocument(Base):
 
     sale = relationship("Sale", back_populates="fiscal_documents")
     fiscal_client = relationship("Client")
+    supplier = relationship("Supplier")
     fiscal_items = relationship(
         "FiscalDocumentItem",
         back_populates="document",
@@ -294,8 +296,12 @@ class FiscalDocumentItem(Base):
     cbenef: Mapped[Optional[str]] = mapped_column(String(20))
     ibs_cbs_cst: Mapped[Optional[str]] = mapped_column(String(10))
     ibs_cbs_classification: Mapped[Optional[str]] = mapped_column(String(20))
+    cbs_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
+    ibs_state_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
+    ibs_city_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
     selective_tax_cst: Mapped[Optional[str]] = mapped_column(String(10))
     selective_tax_classification: Mapped[Optional[str]] = mapped_column(String(20))
+    selective_tax_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(7, 4))
     created_by_user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

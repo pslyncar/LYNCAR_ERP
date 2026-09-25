@@ -23,6 +23,10 @@ class Product(Base):
     category: Mapped[Optional[str]] = mapped_column(String(100))
     stock_location: Mapped[Optional[str]] = mapped_column(String(120))
     tracks_batch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    requires_manufacturing_date: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    requires_expiration_date: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    requires_temperature: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    minimum_shelf_life_days: Mapped[Optional[int]] = mapped_column()
     initial_batch_number: Mapped[Optional[str]] = mapped_column(String(80))
     initial_expiration_date: Mapped[Optional[date]] = mapped_column(Date)
     sale_price: Mapped[Decimal] = mapped_column(Numeric(12, 4), nullable=False, default=0)
@@ -82,6 +86,8 @@ class Product(Base):
     sale_items = relationship("SaleItem", back_populates="product")
     tax_rules = relationship("ProductTaxRule", cascade="all, delete-orphan")
     stock_movements = relationship("StockMovement", back_populates="product")
+    supplier_links = relationship("SupplierProductLink", back_populates="product")
+    barcodes = relationship("ProductBarcode", back_populates="product", cascade="all, delete-orphan")
     batches = relationship("ProductBatch", back_populates="product", cascade="all, delete-orphan")
     composition_items = relationship(
         "ProductCompositionItem",

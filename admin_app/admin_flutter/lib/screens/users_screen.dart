@@ -356,6 +356,7 @@ class _UserDialogState extends State<_UserDialog> {
   late bool _active;
   late bool _appAccess;
   late bool _discountOverride;
+  late bool _stockEntryReversal;
   bool _saving = false;
   String? _error;
 
@@ -379,6 +380,9 @@ class _UserDialogState extends State<_UserDialog> {
         user?.permissions.contains('sales:discount:override') ??
         (_selectedRole?.permissions.contains('sales:discount:override') ??
             false);
+    _stockEntryReversal =
+        user?.permissions.contains('stock:entries:reverse') ??
+        (_selectedRole?.permissions.contains('stock:entries:reverse') ?? false);
   }
 
   @override
@@ -435,6 +439,12 @@ class _UserDialogState extends State<_UserDialog> {
           allowed: _discountOverride,
         );
       }
+      await widget.api.setSystemUserPermission(
+        widget.token,
+        savedUser.id,
+        permissionCode: 'stock:entries:reverse',
+        allowed: _stockEntryReversal,
+      );
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (error) {
       if (await _showDuplicateEmailBlock(error)) return;
@@ -637,6 +647,18 @@ class _UserDialogState extends State<_UserDialog> {
                           : null,
                     );
                   },
+                ),
+                const SizedBox(height: 4),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  secondary: const Icon(Icons.undo_outlined),
+                  title: const Text('Permitir estorno de entradas'),
+                  subtitle: const Text(
+                    'Libera este funcionário para solicitar estorno de recebimentos já confirmados. A operação exige motivo e validações.',
+                  ),
+                  value: _stockEntryReversal,
+                  onChanged: (value) =>
+                      setState(() => _stockEntryReversal = value),
                 ),
                 const SizedBox(height: 4),
                 SwitchListTile(

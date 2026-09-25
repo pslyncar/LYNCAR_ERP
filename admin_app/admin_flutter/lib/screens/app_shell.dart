@@ -4,6 +4,7 @@ import 'package:gap/gap.dart';
 
 import '../models/session.dart';
 import '../navigation/app_navigation.dart';
+import '../features/nfse/presentation/nfse_screen.dart';
 import 'cash_closings_screen.dart';
 import 'client_store_screen.dart';
 import 'clients_screen.dart';
@@ -38,7 +39,8 @@ import 'sales_screen.dart';
 import 'settings_screen.dart';
 import 'service_orders_screen.dart';
 import 'service_contracts_screen.dart';
-import 'stock_entries_screen.dart';
+import 'receiving_module_screen.dart';
+import 'supplier_product_links_screen.dart';
 import 'stock_withdrawals_screen.dart';
 import 'support_screen.dart';
 import 'suppliers_screen.dart';
@@ -501,7 +503,17 @@ class _AppShellState extends State<AppShell> {
             label: 'Entradas',
             icon: Icons.input_outlined,
             selectedIcon: Icons.input,
-            screen: StockEntriesScreen(session: widget.session),
+            screen: ReceivingModuleScreen(session: widget.session),
+          ),
+        if (widget.session.hasModule('stock_entries') &&
+            (widget.session.can('stock:entries:view') ||
+                widget.session.can('products:view')))
+          _Destination(
+            category: AppNavigationSection.stock,
+            label: 'Vínculos de fornecedores',
+            icon: Icons.link_outlined,
+            selectedIcon: Icons.link,
+            screen: SupplierProductLinksScreen(session: widget.session),
           ),
         if (widget.session.hasModule('suppliers') &&
             (widget.session.can('suppliers:view') ||
@@ -555,6 +567,16 @@ class _AppShellState extends State<AppShell> {
                     onStartIssue: () =>
                         setState(() => _issuingFiscalDocument = true),
                   ),
+          ),
+        if (widget.session.hasModule('fiscal') &&
+            widget.session.canUseFiscal &&
+            widget.session.can('fiscal:documents:view'))
+          _Destination(
+            category: AppNavigationSection.fiscal,
+            label: 'NFS-e',
+            icon: Icons.receipt_long_outlined,
+            selectedIcon: Icons.receipt_long,
+            screen: NfseScreen(session: widget.session),
           ),
         if (widget.session.hasModule('reports') &&
             widget.session.can('reports:view'))
