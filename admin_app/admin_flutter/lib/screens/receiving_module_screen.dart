@@ -317,13 +317,25 @@ class _ReceivingModuleScreenState extends State<ReceivingModuleScreen> {
                       final date = event['created_at']?.toString() ?? '';
                       final user = event['user_name']?.toString() ?? 'Sistema';
                       final reason = event['reason']?.toString();
+                      final source = event['source']?.toString() ?? 'web';
+                      final oldValue = event['old_value']?.toString();
+                      final newValue = event['new_value']?.toString();
+                      final details = [
+                        '$user • ${_auditSourceLabel(source)}',
+                        date,
+                        if (reason != null && reason.isNotEmpty) reason,
+                        if (oldValue != null && oldValue.isNotEmpty)
+                          'Antes: $oldValue',
+                        if (newValue != null && newValue.isNotEmpty)
+                          'Depois: $newValue',
+                      ].join('\n');
                       return ListTile(
                         dense: true,
-                        leading: const Icon(Icons.history),
-                        title: Text(event['action']?.toString() ?? 'Evento'),
-                        subtitle: Text(
-                          '$user • $date${reason == null || reason.isEmpty ? '' : '\n$reason'}',
+                        leading: Icon(_auditIcon(event['action']?.toString())),
+                        title: Text(
+                          _auditActionLabel(event['action']?.toString()),
                         ),
+                        subtitle: Text(details),
                       );
                     },
                   ),
@@ -342,6 +354,58 @@ class _ReceivingModuleScreenState extends State<ReceivingModuleScreen> {
           context,
         ).showSnackBar(SnackBar(content: Text(error.message)));
       }
+    }
+  }
+
+  String _auditSourceLabel(String source) {
+    switch (source) {
+      case 'mobile':
+        return 'Lançado pelo aplicativo/coletor';
+      case 'web':
+        return 'Feito pelo computador';
+      case 'system':
+        return 'Processado pelo sistema';
+      default:
+        return source;
+    }
+  }
+
+  String _auditActionLabel(String? action) {
+    switch (action) {
+      case 'entry_created':
+        return 'Entrada criada';
+      case 'item_checked':
+        return 'Item conferido';
+      case 'product_associated':
+        return 'Produto associado';
+      case 'receipt_confirmed':
+        return 'Recebimento confirmado';
+      case 'full_return_requested':
+        return 'Devolução integral solicitada';
+      case 'devolution_draft_prepared':
+        return 'Devolução preparada';
+      case 'receipt_reversed':
+        return 'Entrada estornada';
+      default:
+        return action ?? 'Evento da entrada';
+    }
+  }
+
+  IconData _auditIcon(String? action) {
+    switch (action) {
+      case 'receipt_confirmed':
+        return Icons.check_circle_outline;
+      case 'product_associated':
+        return Icons.link_outlined;
+      case 'item_checked':
+        return Icons.fact_check_outlined;
+      case 'devolution_draft_prepared':
+      case 'full_return_requested':
+        return Icons.assignment_return_outlined;
+      case 'receipt_reversed':
+        return Icons.undo_outlined;
+      default:
+        return Icons.history;
     }
   }
 

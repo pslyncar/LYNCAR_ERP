@@ -1229,6 +1229,7 @@ def receive_stock_entry_mobile_item(
         entry,
         current_user,
         "item_checked",
+        source="mobile",
         item=changed_item,
         new_value=f"quantity={received_quantity}; status={check_status}",
         reason=item_in.check_notes or "Conferência do item atualizada.",

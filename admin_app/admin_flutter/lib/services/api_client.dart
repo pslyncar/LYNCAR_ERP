@@ -1694,9 +1694,7 @@ class ApiClient {
       headers: _authHeaders(token),
     );
     final data = _decodeListResponse(response);
-    return data
-        .whereType<Map<String, dynamic>>()
-        .toList(growable: false);
+    return data.whereType<Map<String, dynamic>>().toList(growable: false);
   }
 
   Future<Map<String, dynamic>> updateSupplierProductLink(
@@ -1739,7 +1737,7 @@ class ApiClient {
       Uri.parse('$baseUrl/stock/entries/$entryId/audit'),
       headers: _authHeaders(token),
     );
-    final data = _decodeResponse(response) as List<dynamic>;
+    final data = _decodeListResponse(response);
     return data.cast<Map<String, dynamic>>();
   }
 
