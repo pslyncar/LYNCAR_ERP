@@ -189,6 +189,90 @@ class _ReceivingModuleScreenState extends State<ReceivingModuleScreen> {
     );
   }
 
+  Future<void> _registerPendingSupplier(XmlInboxMessage message) async {
+    final nameController = TextEditingController(
+      text: message.supplierName ?? '',
+    );
+    final documentController = TextEditingController(
+      text: message.supplierDocument ?? '',
+    );
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cadastrar fornecedor do XML'),
+        content: SizedBox(
+          width: 460,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Confira os dados identificados no XML. O CNPJ será usado para liberar esta nota.',
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Razão social / nome',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: documentController,
+                readOnly: true,
+                decoration: const InputDecoration(
+                  labelText: 'CNPJ/CPF do XML',
+                  border: OutlineInputBorder(),
+                  suffixIcon: Icon(Icons.verified_outlined),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.person_add_alt_1_outlined),
+            label: const Text('Cadastrar fornecedor'),
+          ),
+        ],
+      ),
+    );
+    final name = nameController.text.trim();
+    final document = documentController.text.trim();
+    nameController.dispose();
+    documentController.dispose();
+    if (confirmed != true || name.length < 2 || document.isEmpty) return;
+    try {
+      await _api.createSupplier(
+        widget.session.token,
+        SupplierPayload(name: name, documentNumber: document),
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Fornecedor cadastrado. A nota foi liberada para importação.',
+          ),
+        ),
+      );
+      _load();
+    } on ApiException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.message)));
+      }
+    }
+  }
+
   Future<void> _reprocess(StockEntry entry) async {
     try {
       await _api.reprocessStockEntryMatching(widget.session.token, entry.id);
@@ -227,7 +311,7 @@ class _ReceivingModuleScreenState extends State<ReceivingModuleScreen> {
                 : ListView.separated(
                     shrinkWrap: true,
                     itemCount: events.length,
-                    separatorBuilder: (_, __) => const Divider(),
+                    separatorBuilder: (_, _) => const Divider(),
                     itemBuilder: (context, index) {
                       final event = events[index];
                       final date = event['created_at']?.toString() ?? '';
@@ -945,13 +1029,10 @@ class _ReceivingModuleScreenState extends State<ReceivingModuleScreen> {
         DataCell(_statusChip(pendingMeta)),
         DataCell(
           pendingSupplier
-              ? Tooltip(
-                  message:
-                      'Cadastre o fornecedor com o CNPJ do XML para liberar a importação.',
-                  child: const Icon(
-                    Icons.lock_outline,
-                    color: Color(0xff94a3b8),
-                  ),
+              ? FilledButton.icon(
+                  onPressed: () => _registerPendingSupplier(message),
+                  icon: const Icon(Icons.person_add_alt_1_outlined, size: 17),
+                  label: const Text('Cadastrar fornecedor'),
                 )
               : IconButton(
                   tooltip: 'Importar XML',
@@ -1055,9 +1136,10 @@ class _ReceivingModuleScreenState extends State<ReceivingModuleScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: pendingSupplier
-                  ? const Text(
-                      'Cadastre o fornecedor pelo CNPJ para liberar.',
-                      style: TextStyle(color: Color(0xffb45309)),
+                  ? FilledButton.icon(
+                      onPressed: () => _registerPendingSupplier(message),
+                      icon: const Icon(Icons.person_add_alt_1_outlined),
+                      label: const Text('Cadastrar fornecedor'),
                     )
                   : IconButton(
                       tooltip: 'Importar XML',
