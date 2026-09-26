@@ -1578,13 +1578,17 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
       }
       amount = informed;
     }
-    final index = _cart.indexWhere((item) => item.product.id == product.id);
     final wasEmpty = _cart.isEmpty;
     setState(() {
       _error = null;
-      if (index >= 0) {
-        _cart[index].quantity += amount;
+      final existingIndex = widget.windowsAppMode
+          ? _cart.indexWhere((item) => item.product.id == product.id)
+          : -1;
+      if (existingIndex >= 0) {
+        _cart[existingIndex].quantity += amount;
       } else {
+        // No Web, cada bip normal representa uma linha. A quantidade só fica
+        // agrupada nessa linha quando veio explicitamente antes do código.
         _cart.add(_CartItem(product: product, quantity: amount));
       }
       _scanQuantity = 1;
@@ -2864,6 +2868,10 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
       _barcodeFocus.requestFocus();
       return;
     }
+    if (!widget.windowsAppMode && _cart.length == 1) {
+      await _cancelCurrentSaleWithFiscalAuthorization();
+      return;
+    }
     setState(() => _sensitiveActionOpen = true);
     try {
       final authorized = await _requestFiscalAuthorization(
@@ -2926,6 +2934,21 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
         title: 'Autorizar cancelamento da venda',
       );
       if (!authorized || !mounted) return;
+      if (!widget.windowsAppMode) {
+        final canceledSale = _saleSnapshotForOpenCart();
+        try {
+          await receipt_print.openNonFiscalSaleReceipt(
+            sale: canceledSale,
+            companyName: _receiptCompanyName,
+            companyDocument: _fiscalSettings?.cnpj,
+            cashRegisterNumber: _cashRegisterNumber,
+            operatorName: _operatorName,
+            cancellation: true,
+          );
+        } catch (_) {
+          // O cancelamento do carrinho não deve ficar bloqueado pela impressão.
+        }
+      }
       setState(() {
         _cart.clear();
         _discount.text = '0,00';
@@ -2945,6 +2968,37 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
         _sensitiveActionOpen = false;
       }
     }
+  }
+
+  Sale _saleSnapshotForOpenCart() {
+    return Sale(
+      id: 0,
+      source: 'pdv',
+      status: 'cancelada',
+      subtotalAmount: _subtotal,
+      discountAmount: _discountValue,
+      totalAmount: _total,
+      amountPaid: 0,
+      changeAmount: 0,
+      soldAt: DateTime.now(),
+      sellerName: _operatorName,
+      cashRegisterNumber: _cashRegisterNumber,
+      items: [
+        for (var index = 0; index < _cart.length; index++)
+          SaleItem(
+            id: index,
+            productId: _cart[index].product.id,
+            barcode: _cart[index].product.barcode,
+            description: _pdvText(_cart[index].product.name),
+            quantity: _cart[index].quantity,
+            unit: _cart[index].product.unit,
+            unitPrice: _cart[index].unitPrice,
+            discountAmount: 0,
+            totalPrice: _cart[index].quantity * _cart[index].unitPrice,
+          ),
+      ],
+      payments: const [],
+    );
   }
 
   int get _subtotalCents => _cart.fold(
@@ -4221,6 +4275,7 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
                 final cart = _CartPanel(
                   pdvMode: true,
                   compact: compact,
+                  showItemActions: widget.windowsAppMode,
                   items: _cart,
                   discount: _discount,
                   paymentMethod: _paymentMethod,
@@ -6874,10 +6929,11 @@ class _PdvPanel extends StatelessWidget {
   }
 }
 
-class _CartPanel extends StatelessWidget {
+class _CartPanel extends StatefulWidget {
   const _CartPanel({
     this.pdvMode = false,
     this.compact = false,
+    this.showItemActions = true,
     required this.items,
     required this.discount,
     required this.paymentMethod,
@@ -6895,6 +6951,7 @@ class _CartPanel extends StatelessWidget {
 
   final bool pdvMode;
   final bool compact;
+  final bool showItemActions;
   final List<_CartItem> items;
   final TextEditingController discount;
   final String paymentMethod;
@@ -6910,69 +6967,136 @@ class _CartPanel extends StatelessWidget {
   final VoidCallback? onFinish;
 
   @override
+  State<_CartPanel> createState() => _CartPanelState();
+}
+
+class _CartPanelState extends State<_CartPanel> {
+  final _itemsScrollController = ScrollController();
+  int _lastItemCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _lastItemCount = widget.items.length;
+  }
+
+  @override
+  void didUpdateWidget(covariant _CartPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.items.length != _lastItemCount) {
+      _lastItemCount = widget.items.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_itemsScrollController.hasClients) return;
+        _itemsScrollController.animateTo(
+          _itemsScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _itemsScrollController.dispose();
+    super.dispose();
+  }
+
+  Widget _itemsList() {
+    if (widget.items.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 24),
+        child: Text('Nenhum item na venda.'),
+      );
+    }
+
+    return ListView.builder(
+      controller: _itemsScrollController,
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      itemCount: widget.items.length,
+      itemBuilder: (context, index) => _CartItemTile(
+        item: widget.items[index],
+        onChanged: widget.onChanged,
+        onRemove: widget.onRemove,
+        showItemActions: widget.showItemActions,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return AppCard(
-      padding: EdgeInsets.all(compact ? 16 : (pdvMode ? 24 : 18)),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              'Venda atual',
-              style: TextStyle(
-                fontSize: compact ? 18 : 22,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            SizedBox(height: compact ? 8 : 10),
-            if (items.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 24),
-                child: Text('Nenhum item na venda.'),
-              )
-            else
-              for (final item in items)
-                _CartItemTile(
-                  item: item,
-                  onChanged: onChanged,
-                  onRemove: onRemove,
-                ),
-            Divider(height: compact ? 18 : 26),
-            _MoneyRow('Subtotal', subtotal),
-            if (parseBrazilianNumber(discount.text) > 0)
-              _MoneyRow('Desconto', -parseBrazilianNumber(discount.text)),
-            SizedBox(height: compact ? 10 : 14),
-            _MoneyRow('Total', total, large: true, pdvMode: pdvMode),
-            _MoneyRow(
-              'Forma atual',
-              0,
-              textValue: _paymentMethodLabel(paymentMethod),
-            ),
-            const SizedBox(height: 8),
-            _PdvHintLine(
-              icon: Icons.keyboard_outlined,
-              text: 'F3 CPF/CNPJ. F6 pagamento. F4 desconto. F5 cancela item.',
-            ),
-            if (paid > 0 || change > 0) ...[
-              const SizedBox(height: 10),
-              _MoneyRow('Ultimo recebido', paid),
-              _MoneyRow('Troco', change),
-            ],
-            if (saving) ...[
-              const SizedBox(height: 14),
-              const LinearProgressIndicator(minHeight: 3),
-              const SizedBox(height: 8),
-              const Text(
-                'Finalizando venda...',
-                textAlign: TextAlign.center,
+      padding: EdgeInsets.all(widget.compact ? 16 : (widget.pdvMode ? 24 : 18)),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final hasFixedHeight = constraints.maxHeight.isFinite;
+          final items = widget.pdvMode && hasFixedHeight
+              ? Expanded(child: _itemsList())
+              : ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: widget.pdvMode ? 300 : 420,
+                  ),
+                  child: _itemsList(),
+                );
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Venda atual',
                 style: TextStyle(
-                  color: Color(0xFF1D4ED8),
+                  fontSize: widget.compact ? 18 : 22,
                   fontWeight: FontWeight.w900,
                 ),
               ),
+              SizedBox(height: widget.compact ? 8 : 10),
+              items,
+              Divider(height: widget.compact ? 18 : 26),
+              _MoneyRow('Subtotal', widget.subtotal),
+              if (parseBrazilianNumber(widget.discount.text) > 0)
+                _MoneyRow(
+                  'Desconto',
+                  -parseBrazilianNumber(widget.discount.text),
+                ),
+              SizedBox(height: widget.compact ? 10 : 14),
+              _MoneyRow(
+                'Total',
+                widget.total,
+                large: true,
+                pdvMode: widget.pdvMode,
+              ),
+              _MoneyRow(
+                'Forma atual',
+                0,
+                textValue: _paymentMethodLabel(widget.paymentMethod),
+              ),
+              const SizedBox(height: 8),
+              _PdvHintLine(
+                icon: Icons.keyboard_outlined,
+                text:
+                    'F3 CPF/CNPJ. F6 pagamento. F4 desconto. F5 cancela item.',
+              ),
+              if (widget.paid > 0 || widget.change > 0) ...[
+                const SizedBox(height: 10),
+                _MoneyRow('Ultimo recebido', widget.paid),
+                _MoneyRow('Troco', widget.change),
+              ],
+              if (widget.saving) ...[
+                const SizedBox(height: 14),
+                const LinearProgressIndicator(minHeight: 3),
+                const SizedBox(height: 8),
+                const Text(
+                  'Finalizando venda...',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF1D4ED8),
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ],
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -7009,11 +7133,13 @@ class _CartItemTile extends StatelessWidget {
     required this.item,
     required this.onChanged,
     required this.onRemove,
+    required this.showItemActions,
   });
 
   final _CartItem item;
   final VoidCallback onChanged;
   final ValueChanged<_CartItem> onRemove;
+  final bool showItemActions;
 
   @override
   Widget build(BuildContext context) {
@@ -7036,28 +7162,31 @@ class _CartItemTile extends StatelessWidget {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Diminuir',
-            onPressed: () {
-              if (item.quantity > 1) item.quantity -= 1;
-              onChanged();
-            },
-            icon: const Icon(Icons.remove_circle_outline),
-          ),
+          if (showItemActions)
+            IconButton(
+              tooltip: 'Diminuir',
+              onPressed: () {
+                if (item.quantity > 1) item.quantity -= 1;
+                onChanged();
+              },
+              icon: const Icon(Icons.remove_circle_outline),
+            ),
           Text(formatBrazilianDecimal(item.quantity)),
-          IconButton(
-            tooltip: 'Aumentar',
-            onPressed: () {
-              item.quantity += 1;
-              onChanged();
-            },
-            icon: const Icon(Icons.add_circle_outline),
-          ),
-          IconButton(
-            tooltip: 'Cancelar item com autorização fiscal',
-            onPressed: () => onRemove(item),
-            icon: const Icon(Icons.do_not_disturb_on_outlined),
-          ),
+          if (showItemActions)
+            IconButton(
+              tooltip: 'Aumentar',
+              onPressed: () {
+                item.quantity += 1;
+                onChanged();
+              },
+              icon: const Icon(Icons.add_circle_outline),
+            ),
+          if (showItemActions)
+            IconButton(
+              tooltip: 'Cancelar item com autorização fiscal',
+              onPressed: () => onRemove(item),
+              icon: const Icon(Icons.do_not_disturb_on_outlined),
+            ),
         ],
       ),
     );

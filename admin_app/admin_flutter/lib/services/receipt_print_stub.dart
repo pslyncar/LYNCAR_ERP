@@ -22,6 +22,7 @@ Future<void> openNonFiscalSaleReceipt({
   String? operatorName,
   List<SaleInstallmentPayload> installments = const [],
   int? creditInstallmentCount,
+  bool cancellation = false,
 }) async {
   // A impressão térmica nativa do app Windows será ligada ao driver local.
 }

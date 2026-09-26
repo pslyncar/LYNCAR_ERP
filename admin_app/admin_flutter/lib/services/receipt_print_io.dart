@@ -25,6 +25,7 @@ Future<void> openNonFiscalSaleReceipt({
   String? operatorName,
   List<SaleInstallmentPayload> installments = const [],
   int? creditInstallmentCount,
+  bool cancellation = false,
 }) async {
   if (!Platform.isWindows) return;
   await _printWindowsRaw(
@@ -35,6 +36,7 @@ Future<void> openNonFiscalSaleReceipt({
       clientName: clientName,
       cashRegisterNumber: cashRegisterNumber,
       operatorName: operatorName,
+      cancellation: cancellation,
     ),
   );
 }
@@ -245,6 +247,7 @@ List<int> _buildReceiptBytes({
   String? companyDocument,
   String? cashRegisterNumber,
   String? operatorName,
+  bool cancellation = false,
 }) {
   const width = 48;
   final bytes = <int>[27, 64, 27, 77, 0, 27, 97, 1, 27, 69, 1];
@@ -259,8 +262,12 @@ List<int> _buildReceiptBytes({
   }
   line(_repeat('=', width));
   command([27, 69, 1]);
-  line('CUPOM NAO FISCAL');
-  line('NAO E DOCUMENTO FISCAL');
+  line(cancellation ? 'CANCELAMENTO DE VENDA' : 'CUPOM NAO FISCAL');
+  line(
+    cancellation
+        ? 'COMPROVANTE GERENCIAL - SEM VALOR FISCAL'
+        : 'NAO E DOCUMENTO FISCAL',
+  );
   command([27, 69, 0, 27, 97, 0]);
   line(_repeat('=', width));
   line('Venda: ${sale.number ?? sale.id}');

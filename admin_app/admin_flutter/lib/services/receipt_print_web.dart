@@ -36,6 +36,7 @@ Future<void> openNonFiscalSaleReceipt({
   String? operatorName,
   List<SaleInstallmentPayload> installments = const [],
   int? creditInstallmentCount,
+  bool cancellation = false,
 }) async {
   final receipt = _buildNonFiscalSaleReceiptHtml(
     sale: sale,
@@ -46,6 +47,7 @@ Future<void> openNonFiscalSaleReceipt({
     operatorName: operatorName,
     installments: installments,
     creditInstallmentCount: creditInstallmentCount,
+    cancellation: cancellation,
   );
   final blob = html.Blob([receipt], 'text/html;charset=utf-8');
   final url = html.Url.createObjectUrlFromBlob(blob);
@@ -210,6 +212,7 @@ String _buildNonFiscalSaleReceiptHtml({
   String? operatorName,
   List<SaleInstallmentPayload> installments = const [],
   int? creditInstallmentCount,
+  bool cancellation = false,
 }) {
   final rows = sale.items.map((item) {
     return '''
@@ -245,7 +248,7 @@ String _buildNonFiscalSaleReceiptHtml({
 <html>
 <head>
   <meta charset="utf-8">
-  <title>Cupom não fiscal ${_escape(sale.number ?? sale.id.toString())}</title>
+  <title>${cancellation ? 'Cancelamento de venda' : 'Cupom não fiscal'} ${_escape(sale.number ?? sale.id.toString())}</title>
   <style>
     @page { size: 80mm auto; margin: 3mm; }
     * { box-sizing: border-box; }
@@ -279,8 +282,8 @@ String _buildNonFiscalSaleReceiptHtml({
     ${document.isEmpty ? '' : '<div class="document">CNPJ ${_escape(_formatDocument(document))}</div>'}
   </div>
   <div class="stamp">
-    <div class="stamp-title">CUPOM NÃO FISCAL</div>
-    <div class="stamp-subtitle">NÃO É DOCUMENTO FISCAL</div>
+    <div class="stamp-title">${cancellation ? 'CANCELAMENTO DE VENDA' : 'CUPOM NÃO FISCAL'}</div>
+    <div class="stamp-subtitle">${cancellation ? 'COMPROVANTE GERENCIAL - SEM VALOR FISCAL' : 'NÃO É DOCUMENTO FISCAL'}</div>
   </div>
   <div class="between"><span>Venda</span><span>${_escape(sale.number ?? sale.id.toString())}</span></div>
   ${((cashRegisterNumber ?? sale.cashRegisterNumber) ?? '').trim().isEmpty ? '' : '<div>Caixa: ${_escape((cashRegisterNumber ?? sale.cashRegisterNumber)!.trim())}</div>'}
