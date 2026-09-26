@@ -57,11 +57,13 @@ class AppShell extends StatefulWidget {
     required this.session,
     required this.onLogout,
     required this.onPdvCashOpenChanged,
+    this.onEnsurePdvToken,
   });
 
   final Session session;
   final VoidCallback onLogout;
   final ValueChanged<bool> onPdvCashOpenChanged;
+  final Future<String?> Function()? onEnsurePdvToken;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -400,6 +402,7 @@ class _AppShellState extends State<AppShell> {
             screen: PdvScreen(
               session: widget.session,
               fullscreen: _pdvFullscreen,
+              onEnsurePdvToken: widget.onEnsurePdvToken,
               onPdvCashOpenChanged: widget.onPdvCashOpenChanged,
               onPdvFullscreenChanged: (value) {
                 setState(() => _pdvFullscreen = value);

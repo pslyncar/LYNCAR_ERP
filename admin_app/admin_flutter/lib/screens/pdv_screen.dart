@@ -3199,17 +3199,20 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
     }
   }
 
+  bool _ensureCartEmptyForCashAction(String action) {
+    if (_cart.isEmpty) return true;
+    setState(
+      () => _error =
+          'Não é possível $action o caixa com produto no carrinho. Finalize ou cancele a venda atual antes de continuar.',
+    );
+    return false;
+  }
+
   Future<void> _pauseCash() async {
     if (_cashPaused || !_cashOpen || _shortcutBlocked || _pauseCashDialogOpen) {
       return;
     }
-    if (_cart.isNotEmpty) {
-      setState(
-        () => _error =
-            'Finalize ou cancele a venda atual antes de fechar temporariamente o caixa.',
-      );
-      return;
-    }
+    if (!_ensureCartEmptyForCashAction('pausar')) return;
     _pauseCashDialogOpen = true;
     bool? confirmed;
     final dialogFocus = FocusNode();
@@ -3271,90 +3274,104 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
     setState(() => _authorizationDialogOpen = true);
     final code = TextEditingController();
     final pin = TextEditingController();
+    final dialogFocus = FocusNode();
     String? error;
     var loading = false;
     try {
       final authorization = await showDialog<PdvAuthorization>(
         context: context,
         barrierDismissible: false,
-        builder: (context) => StatefulBuilder(
-          builder: (context, setDialogState) {
-            Future<void> resume() async {
-              if (loading) return;
-              setDialogState(() {
-                loading = true;
-                error = null;
-              });
-              try {
-                final token =
-                    await widget.onEnsurePdvToken?.call() ??
-                    widget.session.token;
-                if (token.trim().isEmpty) {
-                  error = 'Sessão do PDV expirada. Entre novamente.';
-                  return;
-                }
-                final result = await _api.authorizePdvAction(
-                  token,
-                  code: code.text,
-                  pin: pin.text,
-                  action: 'open_cash',
-                );
-                if (context.mounted) Navigator.of(context).pop(result);
-              } on ApiException catch (apiError) {
-                setDialogState(() => error = apiError.message);
-              } finally {
-                if (context.mounted) setDialogState(() => loading = false);
-              }
+        builder: (context) => KeyboardListener(
+          focusNode: dialogFocus,
+          autofocus: true,
+          onKeyEvent: (event) {
+            if (event is KeyDownEvent &&
+                event.logicalKey == LogicalKeyboardKey.escape &&
+                !loading) {
+              Navigator.of(context).pop();
             }
-
-            return AlertDialog(
-              title: const Text('Reabrir caixa'),
-              content: SizedBox(
-                width: 380,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      'Informe o código e o PIN do operador para continuar o mesmo movimento.',
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: code,
-                      autofocus: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Código do operador',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: pin,
-                      obscureText: true,
-                      onSubmitted: (_) => resume(),
-                      decoration: const InputDecoration(
-                        labelText: 'Senha/PIN',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    if (error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(
-                        error!,
-                        style: const TextStyle(color: Color(0xFFB91C1C)),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              actions: [
-                FilledButton.icon(
-                  onPressed: loading ? null : resume,
-                  icon: const Icon(Icons.lock_open_outlined),
-                  label: Text(loading ? 'Validando...' : 'Reabrir (F8)'),
-                ),
-              ],
-            );
           },
+          child: StatefulBuilder(
+            builder: (context, setDialogState) {
+              Future<void> resume() async {
+                if (loading) return;
+                setDialogState(() {
+                  loading = true;
+                  error = null;
+                });
+                try {
+                  final token =
+                      await widget.onEnsurePdvToken?.call() ??
+                      widget.session.token;
+                  // No Web, a API autentica pelo cookie HttpOnly; o token
+                  // exposto ao Flutter pode permanecer vazio por segurança.
+                  if (token.trim().isEmpty && !kIsWeb) {
+                    error = 'Sessão do PDV expirada. Entre novamente.';
+                    return;
+                  }
+                  final result = await _api.authorizePdvAction(
+                    token,
+                    code: code.text,
+                    pin: pin.text,
+                    action: 'open_cash',
+                  );
+                  if (context.mounted) Navigator.of(context).pop(result);
+                } on ApiException catch (apiError) {
+                  setDialogState(() => error = apiError.message);
+                } finally {
+                  if (context.mounted) setDialogState(() => loading = false);
+                }
+              }
+
+              return AlertDialog(
+                title: const Text('Reabrir caixa'),
+                content: SizedBox(
+                  width: 380,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Informe o código e o PIN do operador para continuar o mesmo movimento.',
+                      ),
+                      const SizedBox(height: 14),
+                      TextField(
+                        controller: code,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                          labelText: 'Código do operador',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: pin,
+                        obscureText: true,
+                        onSubmitted: (_) => resume(),
+                        decoration: const InputDecoration(
+                          labelText: 'Senha/PIN',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: const TextStyle(color: Color(0xFFB91C1C)),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                actions: [
+                  FilledButton.icon(
+                    onPressed: loading ? null : resume,
+                    icon: const Icon(Icons.lock_open_outlined),
+                    label: Text(loading ? 'Validando...' : 'Reabrir (F8)'),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       );
       if (authorization == null || !mounted) return;
@@ -3370,6 +3387,7 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
     } finally {
       code.dispose();
       pin.dispose();
+      dialogFocus.dispose();
       if (mounted) {
         setState(() => _authorizationDialogOpen = false);
       } else {
@@ -3379,6 +3397,8 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
   }
 
   Future<void> _showCloseCashDialog() async {
+    if (!_ensureCartEmptyForCashAction('fechar')) return;
+
     final authorized = await _requestFiscalAuthorization(
       action: 'authorize_close_cash',
       title: 'Liberar fechamento do caixa',
@@ -3472,6 +3492,11 @@ class _PdvScreenState extends State<PdvScreen> with WidgetsBindingObserver {
       return;
     }
     final countedAmount = parseBrazilianNumber(countedCash.text);
+    if (!_ensureCartEmptyForCashAction('fechar')) {
+      countedCash.dispose();
+      closingNotes.dispose();
+      return;
+    }
     setState(() => _saving = true);
     try {
       final closing = await _api.createCashClosing(

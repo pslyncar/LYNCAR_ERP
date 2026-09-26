@@ -327,6 +327,30 @@ class _AuthGateState extends State<AuthGate> {
     unawaited(_sendHeartbeat(session));
   }
 
+  Future<String?> _ensurePdvToken() async {
+    final current = _session;
+    if (current == null) return null;
+
+    // No PDV Web, a sessão autenticada fica no cookie HttpOnly. O token
+    // exposto ao Flutter pode estar vazio ou desatualizado; rotacione-o antes
+    // de autorizar a reabertura do caixa.
+    if (kIsWeb && !_mobileAppMode) {
+      try {
+        final refreshed = await ApiClient(
+          current.apiBaseUrl,
+        ).refreshSession(current);
+        if (mounted) {
+          setState(() => _session = refreshed);
+        }
+        return refreshed.token;
+      } catch (_) {
+        return current.token.isEmpty ? null : current.token;
+      }
+    }
+
+    return current.token;
+  }
+
   Future<void> _storeSession(Session session) {
     if (kIsWeb && !_mobileAppMode) {
       return Future.value();
@@ -548,6 +572,7 @@ class _AuthGateState extends State<AuthGate> {
           child: AppShell(
             session: session,
             onLogout: _logout,
+            onEnsurePdvToken: _ensurePdvToken,
             onPdvCashOpenChanged: (open) {
               if (_pdvCashOpen == open) return;
               setState(() => _pdvCashOpen = open);
